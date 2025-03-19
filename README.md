@@ -12,7 +12,7 @@ flowchart TD
     D --> F[Plugin 2]
     D --> G[Plugin n]
     H[Community Code]
-    H -->|Develops &amp; Contributes| D
+    H -->|Develops & Contributes| D
 
 Transform your ideas into powerful G-Assist plugins! Whether you're a Python developer, C++ enthusiast, or just getting started, our plugin system makes it easy to extend G-Assist's capabilities. Create custom commands, automate tasks, or build entirely new features - the possibilities are endless!
 
