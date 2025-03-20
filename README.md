@@ -101,53 +101,82 @@ Explore our official plugins:
 - 🎵 Spotify Music Player
 - [More coming soon!]
 
-### NVIDIA Plugin Example - Gemini
-- Built with Python
-- Uses personal API key in separate config file (*never* read by NVIDIA)
-- Flexible model selection (default: `gemini-2.0-flash`)
-- Streams responses
-- Maintains context (chat history)
+### 🤖 NVIDIA Plugin Example - Gemini
+A powerful AI integration showcasing the capabilities of G-Assist plugins.
 
-#### Connecting to Gemini with API Key 
-1. Get an API Key from [Google AI Studio] (https://aistudio.google.com/apikey)
-- You can get free or paid tiers
-2. Copy the key and paste in `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gemini.key`
+#### ✨ Key Features
+- 🐍 Built with Python for easy customization
+- 🔑 Secure API key management (stored locally, *never* accessed by NVIDIA)
+- 🔄 Flexible model selection (default: `gemini-2.0-flash`)
+- ⚡ Real-time response streaming
+- 🧠 Contextual awareness with chat history
 
-#### How to write `initialize` function 
-The initialize function should be the starting point for your plugin. It should set up the plugin with any required information or initialize a 3rd party client, if applicable. 
-In Gemini's case, it reads in the API Key from the file and configures the `google.generativeai` client with it. 
+#### 🔑 Setting Up Your API Key
+1. Get your API Key:
+   - Visit [Google AI Studio](https://aistudio.google.com/apikey)
+   - Choose between free or paid tiers
+   - Generate your unique API key
 
-#### Streaming responses
-Gemini has the ability to stream responses back to the user. In order to accomplish this, the plugin sends chunks back to the user using `write_response` function. 
+2. Configure the Plugin:
+   ```bash
+   # Store your key in the designated location
+   echo "YOUR_API_KEY" > %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gemini.key
+   ```
+
+#### 🚀 Plugin Initialization
+The `initialize` function serves as your plugin's entry point:
 
 ```python
-# Initialize model and chat session
-generative_model = genai.GenerativeModel(model)
-chat = generative_model.start_chat(history=gemini_history)
-
-# Stream response
-response = chat.send_message(latest_input, stream=True)
-
-for chunk in response:
-    if chunk.text:
-        logging.info(f'Response chunk: {chunk.text}')
-        write_response(generate_message_response(chunk.text))
+def initialize():
+    """
+    Sets up the Gemini plugin with necessary configurations.
+    - Reads API key from secure location
+    - Configures Google GenerativeAI client
+    - Initializes chat history
+    """
+    api_key = read_api_key_from_file()
+    genai.configure(api_key=api_key)
+    setup_chat_history()
 ```
+
+#### ⚡ Streaming Responses
+Implement real-time response streaming for better user experience:
+
+```python
+async def stream_response(user_input):
+    """
+    Streams Gemini's responses in real-time chunks.
+    
+    Args:
+        user_input (str): The user's message
+    """
+    # Initialize model and chat session
+    generative_model = genai.GenerativeModel(model)
+    chat = generative_model.start_chat(history=gemini_history)
+
+    # Stream response in chunks
+    response = chat.send_message(user_input, stream=True)
+    
+    for chunk in response:
+        if chunk.text:
+            logging.info(f'Response chunk: {chunk.text}')
+            write_response(generate_message_response(chunk.text))
+```
+
+> 💡 **Pro Tips**:
+> - Use environment variables for additional configuration
+> - Implement error handling for API key validation
+> - Consider rate limiting for API usage optimization
 
 ## 🌟 Community-Built Plugins
 Check out what others have built:
 - [Submit your plugin here!]
 
-## 📋 Example Projects
-Learn by example with our sample plugins:
-
 ## 🛠️ Development Tools
-- 🐍 Python Bindings Documentation
+- 🐍 [Python Bindings](./Bindings/Python)
 
 ## 🆘 Need Help?
-- 📖 Check our [Documentation](link-to-docs)
-- 💬 Join our [Community Forum](link-to-forum)
-- 🐛 Report issues on [GitHub](link-to-github)
+- 🐛 Report issues on [GitHub](https://github.com/nvidia/g-assist)
 
 ## 📄 License
 This project is licensed under the [License Name] - see the [LICENSE](LICENSE) file for details.
