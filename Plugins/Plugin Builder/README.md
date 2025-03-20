@@ -1,6 +1,6 @@
-# G-Assist Plugin Generator
+# G-Assist Plugin Builder
 
-Transform your ideas into functional G-Assist plugins with minimal coding! This tool uses OpenAI's Custom GPT to generate plugin code, making it easier than ever to extend G-Assist's capabilities. Whether you want to create a weather plugin, a task manager, or any other custom functionality, the Plugin Generator streamlines the entire development process.
+Transform your ideas into functional G-Assist plugins with minimal coding! This tool uses OpenAI's Custom GPT to generate plugin code, making it easier than ever to extend G-Assist's capabilities. Whether you want to create a weather plugin, a task manager, or any other custom functionality, the Plugin Builder streamlines the entire development process.
 
 ## ✨ What Can It Do?
 - 🤖 Generate complete plugin code using AI
@@ -11,6 +11,7 @@ Transform your ideas into functional G-Assist plugins with minimal coding! This 
 ## 📋 Before You Start
 Make sure you have:
 - G-Assist installed on your system
+- An OpenAI account
 - Access to [Project G-Assist Custom GPT on OpenAI](https://chatgpt.com/g/g-67bcb083cc0c8191b7ca74993785baad-g-assist-plugin-builder) 
 - Basic understanding of plugin requirements
 
@@ -95,7 +96,7 @@ You can create plugins for:
 - **Plugin not working?** Double-check the deployment folder structure
 
 ## 👥 Want to Contribute?
-We welcome contributions to improve the plugin generator! Whether it's:
+We welcome contributions to improve the Plugin Builder! Whether it's:
 - Adding new templates
 - Improving code generation
 - Enhancing documentation
