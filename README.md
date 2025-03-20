@@ -171,7 +171,11 @@ async def stream_response(user_input):
 
 ## 🌟 Community-Built Plugins
 Check out what others have built:
-- [Submit your plugin here!]
+- [Your Plugin Here] - Submit your plugin using a pull request! We welcome contributions that:
+  - Follow our [contribution guidelines](CONTRIBUTING.md)
+  - Include proper documentation and examples
+  - Have been tested thoroughly
+  - Add unique value to the ecosystem
 
 ## 🛠️ Development Tools
 - 🐍 [Python Bindings](./Bindings/Python)
@@ -180,7 +184,7 @@ Check out what others have built:
 - 🐛 Report issues on [GitHub](https://github.com/nvidia/g-assist)
 
 ## 📄 License
-This project is licensed under the [License Name] - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Contributing
 We love contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to help improve G-Assist plugins.
