@@ -101,12 +101,12 @@ Explore our official plugins:
 - 🎵 Spotify Music Player
 - [More coming soon!]
 
-### 🤖 NVIDIA Plugin Example - Gemini
-A powerful AI integration showcasing the capabilities of G-Assist plugins.
+### 🤖 NVIDIA Plugin Example - Twitch
+A Twitch API integration showcasing the capabilities of G-Assist plugins.
 
 #### ✨ Key Features
 - 🐍 Built with Python for easy customization
-- 🔑 Secure API key management (stored locally, *never* accessed by NVIDIA)
+- 🔑 Secure secret management (stored locally, *never* accessed by NVIDIA)
 - 🔄 Flexible model selection (default: `gemini-2.0-flash`)
 - ⚡ Real-time response streaming
 - 🧠 Contextual awareness with chat history
