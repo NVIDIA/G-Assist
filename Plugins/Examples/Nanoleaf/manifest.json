@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-nanoleaf.exe",
+  "persistent": true,
+  "functions": [{
+    "name": "nanoleaf_change_room_lights",
+    "description": "Set the color of the Nanoleaf LEDs",
+    "tags": [
+      "lighting",
+      "wall"
+    ],
+    "properties": {
+      "color": {
+        "type": "string",
+        "description": "the color"
+      }
+    }
+  }]
+}

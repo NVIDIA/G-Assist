@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-gemini.exe",
+  "persistent": false,
+  "passthrough": true,
+  "functions": [
+    {
+      "name": "query_gemini",
+      "description": "Support for general queries including but not limited to gaming wiki queries, weather, news, food, etc.",
+      "tags": ["gemini", "google", "chat", "question", "answers", "query", "knowledge", "queries"],
+      "properties": {
+        "input": {
+          "type": "string",
+          "description": "the user's input"
+        },
+        "game": {
+          "type": "string",
+          "description": "an optional parameter that specifies which game is currently being played"
+        }
+      }
+    }
+  ]
+}

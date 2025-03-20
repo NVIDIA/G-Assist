@@ -103,10 +103,36 @@ Explore our official plugins:
 
 ### NVIDIA Plugin Example - Gemini
 - Built with Python
+- Uses personal API key in separate config file (*never* read by NVIDIA)
+- Flexible model selection (default: `gemini-2.0-flash`)
+- Streams responses
+- Maintains context (chat history)
+
+#### Connecting to Gemini with API Key 
+1. Get an API Key from [Google AI Studio] (https://aistudio.google.com/apikey)
+- You can get free or paid tiers
+2. Copy the key and paste in `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gemini.key`
 
 #### How to write `initialize` function 
+The initialize function should be the starting point for your plugin. It should set up the plugin with any required information or initialize a 3rd party client, if applicable. 
+In Gemini's case, it reads in the API Key from the file and configures the `google.generativeai` client with it. 
+
 #### Streaming responses
-#### Connecting to Gemini with API Key 
+Gemini has the ability to stream responses back to the user. In order to accomplish this, the plugin sends chunks back to the user using `write_response` function. 
+
+```python
+# Initialize model and chat session
+generative_model = genai.GenerativeModel(model)
+chat = generative_model.start_chat(history=gemini_history)
+
+# Stream response
+response = chat.send_message(latest_input, stream=True)
+
+for chunk in response:
+    if chunk.text:
+        logging.info(f'Response chunk: {chunk.text}')
+        write_response(generate_message_response(chunk.text))
+```
 
 ## 🌟 Community-Built Plugins
 Check out what others have built:
@@ -117,7 +143,6 @@ Learn by example with our sample plugins:
 
 ## 🛠️ Development Tools
 - 🐍 Python Bindings Documentation
-- 📗 Node.js Bindings Documentation
 
 ## 🆘 Need Help?
 - 📖 Check our [Documentation](link-to-docs)

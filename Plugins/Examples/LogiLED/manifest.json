@@ -1,0 +1,40 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-logiled.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "logi_change_keyboard_lights",
+      "description": "Changes the color of the keyboard's LEDs",
+      "tags": [ "lighting", "keyboard", "Logiled", "Logitech", "logi" ],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "the color"
+        }
+      }
+    },
+    {
+      "name": "logi_change_mouse_lights",
+      "description": "Changes the color of the mouse's LEDs",
+      "tags": [ "lighting", "mouse", "Logiled", "Logitech", "logi" ],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "the color"
+        }
+      }
+    },
+    {
+      "name": "logi_change_headphone_lights",
+      "description": "Changes the color of the headset's LEDs",
+      "tags": [ "lighting", "headphones", "headset", "Logiled", "Logitech", "logi" ],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "the color"
+        }
+      }
+    }
+  ]
+}
