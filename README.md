@@ -6,7 +6,7 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 - 🐍 Python plugins for rapid development
 - ⚡ C++ plugins for performance-critical applications
 - 🤖 AI-powered plugins using our ChatGPT integration
-- 🔌 Custom UI elements and system interactions
+- 🔌 Custom system interactions
 - 🎮 Game and application integrations
 
 ## 🚀 Quick Start
