@@ -164,9 +164,10 @@ async def stream_response(user_input):
 ```
 
 > 💡 **Pro Tips**:
-> - Use environment variables for additional configuration
+> - Use a `config.json` file for additional configuration
 > - Implement error handling for API key validation
 > - Consider rate limiting for API usage optimization
+> - Add logging to a dedicated log file (`plugin-name.log`) for comprehensive debugging and troubleshooting
 
 ## 🌟 Community-Built Plugins
 Check out what others have built:
