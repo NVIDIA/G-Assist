@@ -5,7 +5,7 @@
   "passthrough": false,
   "functions": [
     {
-      "name": "is_twitch_user_live",
+      "name": "check_twitch_live_status",
       "description": "Checks if a Twitch user is live and retrieves stream details.",
       "tags": [
         "twitch",

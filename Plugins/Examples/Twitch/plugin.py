@@ -378,7 +378,7 @@ def main() -> None:
             
             if func == "initialize":
                 response = initialize()
-            elif func == "is_twitch_user_live":
+            elif func == "check_twitch_live_status":
                 response = check_twitch_live_status(params)
             elif func == "shutdown":
                 response = shutdown()
