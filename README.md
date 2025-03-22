@@ -152,12 +152,12 @@ The manifest file acts as the bridge between G-Assist and your plugin. G-Assist 
 
 ## 📚 NVIDIA-Built System Assist Plugins
 Explore our official plugins:
-- 🤖 [Gemini AI Integration](Plugins\Examples\Gemini)
-- 🎮 [Logitech Peripheral Lighting](Plugins\Examples\LogiLED)
-- 🎥 [Corsair Peripheral Lighting](Plugins\Examples\Corsair)
-- 💡 [Nanoleaf Room Lighting](Plugins\Examples\Nanoleaf)
-- 📺 [Twitch Integration](Plugins\Examples\Twitch)
-- 🎵 [Spotify Music Player](Plugins\Examples\Spotify)
+- 🤖 [Gemini AI Integration](./Plugins\Examples\Gemini)
+- 🎮 [Logitech Peripheral Lighting](./Plugins\Examples\LogiLED)
+- 🎥 [Corsair Peripheral Lighting](./Plugins\Examples\Corsair)
+- 💡 [Nanoleaf Room Lighting](./Plugins\Examples\Nanoleaf)
+- 📺 [Twitch Integration](./Plugins/Examples/Twitch)
+- 🎵 [Spotify Music Player](./Plugins/Examples/Spotify)
 - [More coming soon!]
 
 ### 🤖 NVIDIA Plugin Example - Twitch
