@@ -156,7 +156,7 @@ Explore our official plugins:
 - 🎮 [Logitech Peripheral Lighting](Plugins\Examples\LogiLED)
 - 🎥 [Corsair Peripheral Lighting](Plugins\Examples\Corsair)
 - 💡 [Nanoleaf Room Lighting](Plugins\Examples\Nanoleaf)
-- 📺 [Twitch Integration](Plugin\Examples\Twitch)
+- 📺 [Twitch Integration](Plugins\Examples\Twitch)
 - 🎵 [Spotify Music Player](Plugins\Examples\Spotify)
 - [More coming soon!]
 
