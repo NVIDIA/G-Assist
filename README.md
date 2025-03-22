@@ -20,7 +20,7 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 
 ## 🚀 Quick Start
 
-### Python Plugin Development
+### 🐍 Python Development
 Get started quickly using our Python bindings:
 
 1. **Install the Package**
@@ -55,7 +55,26 @@ print(response)
 
 See our [Python Bindings Guide](./Bindings/Python) for detailed examples and advanced usage.
 
-## System Assist Module Architecture
+### 💻 Sample Application
+Want to see G-Assist in action? Try our sample app:
+
+```bash
+cd SampleApp
+```
+
+**Requirements:**
+- Windows 10/11
+- NVIDIA GPU
+- NVIDIA driver 572.83+
+- Visual Studio 2019+ (if building from source)
+
+Choose from:
+- [Download pre-built binary](SampleApp/RISE_sample_app.exe)
+- [Build from source](SampleApp/README.md)
+
+The sample app provides a testing environment for G-Assist's chat capabilities and demonstrates core functionality.
+
+## 📐 System Assist Module Architecture
 
 ```mermaid
 flowchart TD
@@ -87,7 +106,9 @@ To help, we've created a python binding to jumpstart your development.
 ```
 cd plugins\bindings\python-bindings
 ```
-## Extending System Assistant (Plugins)
+or a ready-made sample app 
+
+## 🔌 Extending System Assistant (Plugins)
 ### 🔧 Technical Details
 ### Plugin Architecture
 - `g-assist-plugin-<plugin-name>.exe` - Executable file that executes plugin functionality
@@ -99,7 +120,7 @@ cd plugins\bindings\python-bindings
     - `persistent` [true, false] - if the plugin should remain running throughout the entire G-Assist lifecycle 
 - `config.json` - Config file containing any required information for the plugin (API key, usernames, other specifications)
 
-### 🔌 Plugin Integration
+### Plugin Integration
 ### How to Call a Plugin from G-Assist
 
 The manifest file acts as the bridge between G-Assist and your plugin. G-Assist automatically scans the plugin directory to discover available plugins.
@@ -476,7 +497,7 @@ plugins/twitch/
   - Add health checks and automatic recovery
   - Monitor API quota usage
 
-### 🔧 Testing the Plugin
+### 🧪 Testing the Plugin
 1. **Setup**
    - Get API credentials
         - Visit https://dev.twitch.tv/console to create your application

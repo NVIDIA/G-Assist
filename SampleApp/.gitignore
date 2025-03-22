@@ -1,0 +1,6 @@
+.vs/
+*.h
+*.lib
+nlohmann
+x64
+NvApp
