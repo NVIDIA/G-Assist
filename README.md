@@ -3,13 +3,20 @@
 Transform your ideas into powerful G-Assist plugins! Whether you're a Python developer, C++ enthusiast, or just getting started, our plugin system makes it easy to extend G-Assist's capabilities. Create custom commands, automate tasks, or build entirely new features - the possibilities are endless!
 
 ## 📋 Table of Contents
-- [Features](#-features)
+- [What Can You Build?](#-what-can-you-build)
 - [Quick Start](#-quick-start)
-- [Architecture](#-architecture)
-- [Plugin Development](#-plugin-development)
-- [Official Plugins](#-official-plugins)
-- [Community Plugins](#-community-plugins)
-- [Support](#-support)
+  - [🐍 Python Development](#-python-development)
+  - [💻 Sample Application](#-sample-application)
+- [System Architecture](#-system-assist-module-architecture)
+- [Extending System Assistant](#-extending-system-assistant-plugins)
+  - [🔧 Technical Details](#-technical-details)
+  - [🔌 Plugin Integration](#-plugin-integration)
+- [NVIDIA-Built Plugins](#-nvidia-built-system-assist-plugins)
+- [Community Plugins](#-community-built-plugins)
+- [Development Tools](#-development-tools)
+- [Need Help?](#-need-help)
+- [License](#-license)
+- [Contributing](#-contributing)
 
 ## ✨ What Can You Build?
 - 🐍 Python plugins for rapid development
