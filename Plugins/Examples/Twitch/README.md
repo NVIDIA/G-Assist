@@ -122,7 +122,7 @@ If you run into issues:
 This is an internal NVIDIA project. Please follow NVIDIA's internal contribution guidelines.
 
 ## 📄 License
-Apache License - All rights reserved.
+Apache License 2.0 - All rights reserved.
 
 ## 🙏 Acknowledgments
 - 🎮 Built on the [Twitch API](https://dev.twitch.tv/docs/api/)

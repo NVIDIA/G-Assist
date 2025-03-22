@@ -1,0 +1,95 @@
+# 🚀 G-Assist Python Binding
+
+Transform your Python applications into powerful AI-enabled experiences with G-Assist! This binding makes it incredibly easy to integrate G-Assist's capabilities into your Python projects. We've abstracted away the complexity of state machines and callbacks, making everything beautifully synchronous and straightforward.
+
+## ✨ What Can It Do?
+- 🤖 Send commands to G-Assist and receive responses with just a few lines of code
+- 🔄 Synchronous, blocking calls for easier programming
+- 🎯 Simple, clean API that gets out of your way
+- 🧩 Easy integration into any Python project
+
+## 📋 Before You Start
+Make sure you have:
+- Python 3.x installed on your computer
+- pip package manager
+- G-Assist core services installed on your system
+
+## 🚀 Getting Started
+
+### Step 1: Install the Package
+From the directory where the setup.py exists, run:
+```bash
+pip install .
+```
+
+### Step 2: Basic Usage
+Here's all you need to get started:
+```python
+from rise import rise
+
+# Register your client
+rise.register_rise_client()
+
+# Send a command and get response
+response = rise.send_rise_command('Hello')
+
+# Print the response
+print(response)
+```
+
+## 💬 Interactive Chat Example
+
+Want to build a more interactive experience? Check out this complete chat application that includes animated thinking bubbles and colored output!
+
+```python
+from rise import rise
+import time
+from colorama import Fore, Style, init  # type: ignore
+import sys
+import threading
+
+def thinking_bubble(stop_event):
+    while not stop_event.is_set():
+        for _ in range(3):
+            if stop_event.is_set():
+                break
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            time.sleep(0.5)
+        sys.stdout.write('\b\b\b   \b\b\b')  # Erase the dots
+
+def main():
+    rise.register_rise_client()
+
+    while True:
+        # Get user input
+        user_prompt = input(Fore.CYAN + "ME: " + Style.RESET_ALL)
+        stop_event = threading.Event()  # Event to signal the thinking bubble to stop
+        thinking_thread = threading.Thread(
+            target=thinking_bubble, args=(stop_event,))
+        thinking_thread.start()  # Start the thinking dots in a separate thread
+        response = rise.send_rise_command(user_prompt)
+        stop_event.set()  # Signal the thinking thread to stop
+        thinking_thread.join()  # Wait for the thread to finish
+        print(Fore.YELLOW + "RISE: " + response)
+
+if __name__ == "__main__":
+    main()
+```
+
+## 🖼️ Sample Output
+![Terminal Output Example](chat-example.png)
+
+## 🔍 Troubleshooting Tips
+- **Commands not working?** Make sure G-Assist core services are running
+- **Installation issues?** Verify your Python version and pip installation
+- **Response delays?** Check your network connection
+
+## 🆘 Need Help?
+If you run into any issues:
+1. Verify that G-Assist core services are running
+2. Check your Python environment setup
+3. Try restarting your application
+
+## 📄 License
+This project is licensed under the Apache License 2.0 - see the LICENSE file for details.

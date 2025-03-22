@@ -20,11 +20,40 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 
 ## 🚀 Quick Start
 
-### Hello World Plugin
-Use our python bindings
-[need tutorial]
+### Python Plugin Development
+Get started quickly using our Python bindings:
 
-`pip install -r requirements`
+1. **Install the Package**
+```bash
+cd plugins/bindings/python-bindings
+pip install .
+```
+
+2. **Create Your First Plugin**
+```python
+from rise import rise
+
+# Initialize G-Assist connection
+rise.register_rise_client()
+
+# Create a simple command handler
+def handle_command(command):
+    return {
+        "success": True,
+        "message": f"Received: {command}"
+    }
+
+# Send and receive messages
+response = rise.send_rise_command("Hello G-Assist!")
+print(response)
+```
+
+> 💡 **Requirements**:
+> - Python 3.x
+> - G-Assist core services installed
+> - pip package manager
+
+See our [Python Bindings Guide](./Bindings/Python) for detailed examples and advanced usage.
 
 ## System Assist Module Architecture
 
@@ -546,7 +575,7 @@ Check out what others have built:
 - 🐛 Report issues on [GitHub](https://github.com/nvidia/g-assist)
 
 ## 📄 License
-This project is licensed under the Apache License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
