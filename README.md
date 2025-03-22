@@ -9,8 +9,6 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
   - [💻 Sample Application](#-sample-application)
 - [System Architecture](#-system-assist-module-architecture)
 - [Extending System Assistant](#-extending-system-assistant-plugins)
-  - [Plugin Architecture](#-plugin-architecture)
-  - [Plugin Integration](#-plugin-integration)
 - [NVIDIA-Built Plugins](#-nvidia-built-system-assist-plugins)
 - [Community Plugins](#-community-built-plugins)
 - [Development Tools](#-development-tools)
