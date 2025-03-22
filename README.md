@@ -109,7 +109,6 @@ cd plugins\bindings\python-bindings
 or a ready-made sample app 
 
 ## 🔌 Extending System Assistant (Plugins)
-### 🔧 Technical Details
 ### Plugin Architecture
 - `g-assist-plugin-<plugin-name>.exe` - Executable file that executes plugin functionality
 - `manifest.json` - Manifest file that contains: 
