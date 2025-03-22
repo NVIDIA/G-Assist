@@ -120,7 +120,7 @@ or a ready-made sample app
 - `config.json` - Config file containing any required information for the plugin (API key, usernames, other specifications)
 
 ### Plugin Integration
-### How to Call a Plugin from G-Assist
+#### How to Call a Plugin from G-Assist
 
 The manifest file acts as the bridge between G-Assist and your plugin. G-Assist automatically scans the plugin directory to discover available plugins.
 
