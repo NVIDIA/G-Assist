@@ -25,8 +25,8 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 
 ## 🚀 Quick Start
 
-### 🐍 Python Development
-Get started quickly using our Python bindings:
+### 🐍 Python Development with System Assist
+Get started quickly using our Python bindings of the [C++ APIs](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h#L25283):
 
 1. **Install the Package**
 ```bash
