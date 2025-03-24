@@ -1,35 +1,88 @@
-# Corsair Illumination Plugin for G-Assist
-The _Corsair Illumination Plugin for G-Assist_ allows a user to change the color of the LEDs found on supported devices.
+# 💡 Corsair Illumination Plugin for G-Assist
 
-While devices that support the _iCUE SDK v4.0.84_ should be supported, some devices may not. This code was tested on a limited number of devices.
+Transform your Corsair devices into an interactive lighting experience with G-Assist! This plugin lets you control your Corsair RGB lighting using simple voice commands or the G-Assist interface. Whether you're gaming or working, controlling your Corsair lighting has never been easier.
 
-## Quick Start
-1. Clone the _Corsair Illumination Plugin for G-Assist_
-2. Download and install _[Corsair iCUE Software](https://www.corsair.com/us/en/s/downloads)_ 
-    - Location: https://www.corsair.com/us/en/s/downloads
-3. Download and extract _[iCUE SDK v4.0.84](https://github.com/CorsairOfficial/cue-sdk/releases/download/v4.0.84/iCUESDK_4.0.84.zip)_ to the project's root directory
-    - Location: https://github.com/CorsairOfficial/cue-sdk/releases/tag/v4.0.84 > `iCUESDK_4.0.85.zip`
-4. Download and extract _[JSON for Modern C++ version 3.11.3](https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip)_  to the project's root directory
-    - Location https://github.com/nlohmann/json/releases/tag/v3.11.3 > `include.zip`
-5. Open and build the _Visual Studio 2022_ solution
+## ✨ What Can It Do?
+- 🎨 Control Corsair device RGB lighting with voice or text commands
+- 🎵 Sync lighting effects across multiple devices
+- 🔌 Works with devices supporting iCUE SDK v4.0.84
+- 🎮 Seamlessly integrates with your G-Assist setup
+- 🔧 Easy to set up and configure
 
-## Setup
-Download and extract the required header files and libraries into the project directory.
+## 📋 Before You Start
+Make sure you have:
+- Windows PC
+- Corsair iCUE Software installed
+- Compatible Corsair devices
+- G-Assist installed on your system
+- Visual Studio 2022
 
-```
-git clone https://github.com/nvidia/g-assist/examples/corsair
+💡 **Tip**: Not all Corsair devices are supported. Check your device compatibility with iCUE SDK v4.0.84!
+
+## 🚀 Installation Guide
+
+### Step 1: Get the Files
+```bash
+git clone --recurse-submodules <repository-url>
 cd corsair
+```
+This downloads all the necessary files to your computer.
+
+### Step 2: Get Required Dependencies
+1. Download [Corsair iCUE Software](https://www.corsair.com/us/en/s/downloads)
+2. Download [iCUE SDK v4.0.84](https://github.com/CorsairOfficial/cue-sdk/releases/download/v4.0.84/iCUESDK_4.0.84.zip)
+3. Download [JSON for Modern C++ v3.11.3](https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip)
+
+💡 **Tip**: Make sure to install iCUE Software before proceeding with the build!
+
+### Step 3: Set Up Dependencies
+```bash
+# Extract the SDK
 tar -xf path\to\iCUESDK_4.0.84.zip
+
+# Extract JSON library
 mkdir json && tar -xf path\to\include.zip -C json
 ```
 
-## Build
-1. Open the _Visual Studio 2022_ solution
-2. Select target build [Debug, Release]
-3. From the Menu Bar, select `Build` > `Build Solution`
+### Step 4: Build It
+1. Open the solution in Visual Studio 2022
+2. Select your build configuration (Debug/Release)
+3. Build the solution (F7 or Build → Build Solution)
 
-## Run as a Plugin
-1. Copy the built files: 
-    - Copy the `g-assist-plugin-corsair.exe` file from the output folder
-    - Copy the `manifest.json` file from the project root directory
-2. Move the files to the plugin directory `%programdata%\NVIDIA Corporation\nvtopps\rise\adapters\corsair`
+### Step 5: Install the Plugin
+1. Create this folder (if it doesn't exist):
+   ```
+   %programdata%\NVIDIA Corporation\nvtopps\rise\adapters\corsair
+   ```
+   💡 **Tip**: Copy and paste this path directly into File Explorer's address bar!
+
+2. Copy these files to the folder you just created:
+   - `g-assist-plugin-corsair.exe` (from your build output folder)
+   - `manifest.json` (from project root)
+
+## 🎮 How to Use
+Once everything is set up, you can control your Corsair devices through G-Assist! Try these commands:
+- "Hey Corsair, set my keyboard to red"
+- "/fc Change my Corsair lights to rainbow"
+- "/corsair set all devices to blue"
+
+💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
+
+## 🔍 Troubleshooting Tips
+- **Build failing?** Make sure all dependencies are extracted to the correct locations
+- **Commands not working?** Verify iCUE Software is running
+- **Device not responding?** Check if your device is supported by iCUE SDK v4.0.84
+- **Plugin not loading?** Double-check the installation folder path
+
+## 👥 Want to Contribute?
+We'd love your help making this plugin even better! Feel free to submit issues and pull requests.
+
+## 📄 License
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Need Help?
+If you run into any issues:
+1. Make sure iCUE Software is running
+2. Verify that G-Assist is running
+3. Check if your devices are recognized in iCUE
+4. Try restarting both iCUE and G-Assist

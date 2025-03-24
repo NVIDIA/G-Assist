@@ -1,4 +1,4 @@
-# 🎮 RISE NvTOPPS Sample Application
+# 🎮 G-Assist NvTOPPS Sample Application
 
 Transform your applications with NVIDIA G-Assist functionality! This sample app demonstrates how to integrate G-Assist's powerful chat capabilities into your own projects using NvTOPPS.
 
@@ -56,25 +56,25 @@ All required files should end up in the [gassist_sample_app](./gassist_sample_ap
 ### First Time Setup
 1. Install NVIDIA driver (572.83+)
 2. Launch `gassist_sample_app.exe`
-3. Wait for automatic RISE component installation
+3. Wait for automatic G-Assist component installation
 4. Let initialization complete
 
 ### Using the Chat Interface
-1. Watch for successful RISE backend connection
+1. Watch for successful G-Assist backend connection
 2. Type your message in the chat interface
 3. Press Enter to send
 4. Wait for AI response
 
-💡 **Tip**: The app will automatically check and install any missing RISE components on first launch
+💡 **Tip**: The app will automatically check and install any missing G-Assist components on first launch
 
 ## 🔍 Troubleshooting Tips
 - **App won't start?**
   - Check your driver version
   - Verify all files are present
-  - Ensure GPU is RISE-compatible
+  - Ensure GPU is G-Assist-compatible
 - **Chat not responding?**
   - Check internet connection
-  - Verify RISE services are running
+  - Verify G-Assist services are running
   - Try restarting the app
 
 ## 🔌 Key APIs
