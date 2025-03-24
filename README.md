@@ -18,7 +18,7 @@ Project G-Assist is built for community expansion. Whether you're a Python devel
 - C++ plugins for performance-critical applications
 - AI-driven features using the ChatGPT-powered Plugin Builder
 - Custom system interactions for hardware and OS automation
-- Game and application integration that enhance PC performance or add new commands
+- Game and application integrations that enhance PC performance or add new commands
 
 If you're looking for inspiration, check out our sample plugins for controling peripheral & smart home lighting, invoking larger AI models like Gemini, managing Spotify tracks, or even checking streamers' online status on Twitch — and then let your own ideas take G-Assist to the next level!
 
