@@ -2,6 +2,14 @@
 
 Transform your ideas into powerful G-Assist plugins! Whether you're a Python developer, C++ enthusiast, or just getting started, our plugin system makes it easy to extend G-Assist's capabilities. Create custom commands, automate tasks, or build entirely new features - the possibilities are endless!
 
+# 💡 Why develop with G-Assist
+
+- Leverage the power of a local SLM running on your own GPU
+- Integrate GPU and system optimization into your applications using our C++ and python bindings
+- Build an agentic frameworks using tools such as Langflow
+- Extend and customize the functionality of G-Assist with plugins
+- Interact with your AI powered plugins from NVAPP's performant In-Game overlay (IGO) and make it your imaginations's playground !
+
 ## 📋 Table of Contents
 - [What Can You Build?](#-what-can-you-build)
 - [Quick Start](#-quick-start)
@@ -19,7 +27,7 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 ## ✨ What Can You Build?
 - 🐍 Python plugins for rapid development
 - ⚡ C++ plugins for performance-critical applications
-- 🤖 AI-powered plugins using our ChatGPT integration
+- 🤖 AI-powered plugins using our ChatGPT assisted plugin builder
 - 🔌 Custom system interactions
 - 🎮 Game and application integrations
 
