@@ -1,3 +1,39 @@
+### 💻 Sample Application
+Want to see G-Assist in action? Try our sample app:
+
+```bash
+cd SampleApp
+```
+
+**Requirements:**
+- Windows 10/11
+- NVIDIA GPU
+- NVIDIA driver 572.83+
+- Visual Studio 2019+ (if building from source)
+
+Choose from:
+- [Download pre-built binary](SampleApp/RISE_sample_app.exe)
+- [Build from source](SampleApp/README.md)
+
+### APIs to Access G-Assist
+#### Register to Receive G-Assist Updates
+ Informs G-Assist of a client's presence by registering a callback to the client processes. Registration also triggers models and adapters downloads for later use.
+``` C++
+NVAPI_INTERFACE NvAPI_RegisterRiseCallback(__in NV_RISE_CALLBACK_SETTINGS* pCallbackSettings)
+```
+#### Send G-Assist Requests
+G-Assist clients send requests to G-Assist to run inference on their behalf
+
+``` C++
+NVAPI_INTERFACE NvAPI_RequestRise(__in NV_REQUEST_RISE_SETTINGS* requestContent)
+```
+
+To help, we've created a python binding to jumpstart your development. 
+```
+cd plugins\bindings\python-bindings
+```
+or a ready-made sample app 
+
 # RISE NvTOPPS Sample Application
 
 A sample implementation demonstrating NVIDIA RISE (Runtime Inference System Engine) functionality using NvTOPPS. This application provides a testing environment for RISE's chat capabilities.
