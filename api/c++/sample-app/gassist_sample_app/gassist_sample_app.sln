@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.9.34607.119
+VisualStudioVersion = 17.13.35913.81 d17.13
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RISE_sample_app", "RISE_sample_app\RISE_sample_app.vcxproj", "{92E2EEC0-80E3-4786-91A5-F730924006B2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "gassist_sample_app", "gassist_sample_app.vcxproj", "{92E2EEC0-80E3-4786-91A5-F730924006B2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +26,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {468AC7EB-A285-4FDD-ADC5-20406CB15BBA}
+		SolutionGuid = {7211203C-0AB3-4FD8-A6F8-E6BE337A833B}
 	EndGlobalSection
 EndGlobal

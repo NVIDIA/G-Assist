@@ -1,123 +1,101 @@
-### 💻 Sample Application
-Want to see G-Assist in action? Try our sample app:
+# 🎮 RISE NvTOPPS Sample Application
 
-```bash
-cd SampleApp
-```
+Transform your applications with NVIDIA G-Assist functionality! This sample app demonstrates how to integrate G-Assist's powerful chat capabilities into your own projects using NvTOPPS.
 
-**Requirements:**
+## ✨ What Can It Do?
+- 🤖 Implement G-Assist's chat capabilities in your applications
+- 🔄 Receive real-time G-Assist updates through callbacks
+- 🚀 Run AI inference directly through G-Assist
+- 💻 Test G-Assist functionality in a complete working environment
+- 🔧 Easy to configure and customize
+
+## 📋 Before You Start
+Make sure you have:
 - Windows 10/11
 - NVIDIA GPU
-- NVIDIA driver 572.83+
-- Visual Studio 2019+ (if building from source)
+- NVIDIA driver 572.83 or newer
+- Visual Studio 2019+ (for building from source)
 
-Choose from:
-- [Download pre-built binary](SampleApp/RISE_sample_app.exe)
-- [Build from source](SampleApp/README.md)
+💡 **Tip**: Check your NVIDIA driver version in NVIDIA App under "Drivers" page
 
-### APIs to Access G-Assist
-#### Register to Receive G-Assist Updates
- Informs G-Assist of a client's presence by registering a callback to the client processes. Registration also triggers models and adapters downloads for later use.
-``` C++
+## 🔧 Required Components
+
+The required NVIDIA API and JSON library are included as submodules in this repository.
+
+1. **Clone with Submodules**
+```bash
+# Option 1: Clone with submodules in one command
+git clone --recurse-submodules <repository-url>
+
+# Option 2: If you already cloned the repository
+git submodule init
+git submodule update
+```
+
+If you downloaded the repository as a ZIP file, you'll need to manually download these dependencies:
+- NVIDIA NVAPI files from [NVIDIA GitHub](https://github.com/NVIDIA/nvapi.git)
+- JSON library from [nlohmann/json](https://github.com/nlohmann/json.git)
+
+All required files should end up in the [gassist_sample_app](./gassist_sample_app) directory.
+
+## 🚀 Building from Source
+
+1. Clone or download this repository
+2. Open `gassist_sample_app.sln` in Visual Studio
+3. Configure your build:
+   ```
+   - Check file locations
+   - Select Debug/Release configuration
+   - Match platform target to your system
+   ```
+4. Hit Build! (F7 or Build → Build Solution)
+
+## 🎮 How to Use
+
+### First Time Setup
+1. Install NVIDIA driver (572.83+)
+2. Launch `gassist_sample_app.exe`
+3. Wait for automatic RISE component installation
+4. Let initialization complete
+
+### Using the Chat Interface
+1. Watch for successful RISE backend connection
+2. Type your message in the chat interface
+3. Press Enter to send
+4. Wait for AI response
+
+💡 **Tip**: The app will automatically check and install any missing RISE components on first launch
+
+## 🔍 Troubleshooting Tips
+- **App won't start?**
+  - Check your driver version
+  - Verify all files are present
+  - Ensure GPU is RISE-compatible
+- **Chat not responding?**
+  - Check internet connection
+  - Verify RISE services are running
+  - Try restarting the app
+
+## 🔌 Key APIs
+
+### [Register for G-Assist Updates](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h#L25283)
+```C++
 NVAPI_INTERFACE NvAPI_RegisterRiseCallback(__in NV_RISE_CALLBACK_SETTINGS* pCallbackSettings)
 ```
-#### Send G-Assist Requests
-G-Assist clients send requests to G-Assist to run inference on their behalf
 
-``` C++
+### [Send G-Assist Requests](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h#L25344)
+```C++
 NVAPI_INTERFACE NvAPI_RequestRise(__in NV_REQUEST_RISE_SETTINGS* requestContent)
 ```
 
-To help, we've created a python binding to jumpstart your development. 
-```
-cd plugins\bindings\python-bindings
-```
-or a ready-made sample app 
+## 🆘 Need Help?
+- Review G-Assist documentation
+- Report issues on [GitHub](https://github.com/nvidia/g-assist)
 
-# RISE NvTOPPS Sample Application
+## 📄 License
+[Apache 2.0 License](./LICENSE)
 
-A sample implementation demonstrating NVIDIA RISE (Runtime Inference System Engine) functionality using NvTOPPS. This application provides a testing environment for RISE's chat capabilities.
-
-## Prerequisites
-
-### Required Components
-1. **NVIDIA API Files**
-   - Source: [NVIDIA GitHub](https://github.com/NVIDIA/nvapi)
-   - Required files:
-     - All `.h` header files
-     - `nvapi64.lib`
-     - `nvapi.h`
-
-2. **JSON Library**
-   - Source: [nlohmann/json](https://github.com/nlohmann/json/tree/develop/include/nlohmann)
-   - Required: Complete `nlohmann` directory
-
-3. **File Setup**
-   - Copy all required files to the [RISE_sample_app](\RISE_sample_app) directory
-   - Ensure `main.cpp` and all dependencies are in the same location
-
-### System Requirements
-- Windows 10/11
-- NVIDIA GPU
-- RISE-compatible NVIDIA driver (version 572.83 or newer)
-- Visual Studio 2019 or later (for building from source)
-
-## Installation Options
-
-### Option 1: Pre-built Binary
-1. Download the pre-compiled executable from [Sample App](\RISE_sample_app.exe)
-2. Ensure you have a RISE-compatible driver installed
-3. Run the executable directly
-
-### Option 2: Building from Source
-1. Clone or download this repository
-2. Verify all prerequisites are met
-3. Open `RISE_sample_app.sln` in Visual Studio
-4. Configure the build:
-   - Verify file locations
-   - Select build configuration (Debug/Release)
-   - Ensure platform target matches your system
-5. Build the solution (F7 or Build → Build Solution)
-
-## Usage Guide
-
-### Initial Setup
-1. Install NVIDIA driver (minimum version 572.83)
-2. Verify RISE components are present on your system
-
-### Running the Application
-1. Launch `RISE_sample_app.exe`
-2. First-time launch:
-   - Application will automatically check for RISE components
-   - Missing components will be installed automatically with progress updates
-   - Wait for installation and initialization to complete
-
-### Using the Chat Interface
-1. Application will establish connection to RISE backend
-2. Type your queries in the chat interface
-3. Press Enter to send messages
-4. Wait for AI responses
-
-### Troubleshooting
-- If the application fails to start:
-  - Verify driver version
-  - Check all required files are present
-  - Ensure GPU is RISE-compatible
-- If chat doesn't respond:
-  - Check internet connectivity
-  - Verify RISE services are running
-  - Restart the application
-
-## Development Notes
+## 🛠️ Development Notes
 - Built using NVIDIA NVAPI SDK
-- Implements NvTOPPS for RISE communication
+- Implements NvTOPPS for G-Assist communication
 - Uses nlohmann/json for JSON parsing
-
-## Support
-For issues or questions:
-- Check NVIDIA developer forums
-- Review RISE documentation
-- Contact NVIDIA support
-
-## License
-Apache 2.0 License

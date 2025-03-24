@@ -1,0 +1,6 @@
+[submodule "api/c++/sample-app/gassist_sample_app/nvapi"]
+	path = api/c++/sample-app/gassist_sample_app/nvapi
+	url = https://github.com/NVIDIA/nvapi.git
+[submodule "api/c++/sample-app/gassist_sample_app/json"]
+	path = api/c++/sample-app/gassist_sample_app/json
+	url = https://github.com/nlohmann/json.git

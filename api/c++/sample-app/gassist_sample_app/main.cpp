@@ -2,10 +2,10 @@
 #include <string>
 #include <thread>
 #include <future>
-#include "nvapi.h"
+#include "nvapi/nvapi.h"    
 
 // JSON library - you can use a different one if preferred
-#include "nlohmann/json.hpp"
+#include "json/include/nlohmann/json.hpp"
 
 /*
  * This is a very simple C++ code to be used as an example for RISE Clients. Please check README for proper build & test. 
