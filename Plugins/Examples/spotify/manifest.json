@@ -1,0 +1,98 @@
+{
+    "manifestVersion": 1,
+    "executable": "g-assist-plugin-spotify.exe",
+    "persistent": true,
+    "functions": [
+        {
+            "name": "spotify_start_playback",
+            "description": "Starts the playback of Spotify device. If no parameters are provided, playback will start on the device with the current track. If parameters are provided, Spotify will search for the item using the type, name and artist parameters, and begin playing the first item that is returned from the search.",
+            "tags": [ "music" ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "[optional] type - the type of item to play. 'type' can be one or more of the following types: 'artist','album','track'. If multiple types are desired, pass in a comma separated string; e.g., 'track,album'."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "[optional] name - the string of the name of album, track (song) or playlist. Everything enclosed in quotation marks denotes the name of the track, album or playlist. For example, in the query that asks 'Play 'Shake it Off' by Taylor Swift', the name is 'Shake it Off'."
+                },
+                "artist": {
+                    "type": "string",
+                    "description": "[optional] artist - the string of the name of the artist. Usually denoted by the word 'by' in a query. For example, in the query that asks 'Play 'Shake it Off' by Taylor Swift', the artist name is 'Taylor Swift'."
+                }
+            }
+        },
+        {
+            "name": "spotify_pause_playback",
+            "description": "Pause the playback of Spotify device.",
+            "tags": [ "music" ]
+        },
+        {
+            "name": "spotify_next_track",
+            "description": "Skip user's playback to next track.",
+            "tags": [ "music" ]
+        },
+        {
+            "name": "spotify_previous_track",
+            "description": "Skip user's playback to previous track.",
+            "tags": [ "music" ]
+        },
+        {
+            "name": "spotify_shuffle_playback",
+            "description": "Toggle shuffle on or off for user's playback.",
+            "tags": [ "music" ],
+            "properties": {
+                "state": {
+                    "type": "boolean",
+                    "description": "State in which shuffle should be set to. 'true' is to shuffle user's playback. 'false' is to not shuffle user's playback."
+                }
+            }
+        },
+        {
+            "name": "spotify_set_volume",
+            "description": "Set playback volume to the level specified by the user.",
+            "tags": [ "music" ],
+            "properties": {
+                "volume_percent ": {
+                    "type": "number",
+                    "description": "The volume to set. Must be a value from 0 to 100 inclusive."
+                }
+            }
+        },
+        {
+            "name": "spotify_get_currently_playing",
+            "description": "Get the object currently being played on the user's Spotify account.",
+            "tags": [ "music" ]
+        },
+        {
+            "name": "spotify_queue_track",
+            "description": "Add an item to the end of the user's current playback queue.",
+            "tags": [ "music" ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "[optional] type - the types of item to queue. One or more of 'artist','album','track'. If multiple types are desired, pass in a comma separated string; e.g., 'track,album'."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "[optional] name - the string of the name of album, track or playlist"
+                },
+                "artist": {
+                    "type": "string",
+                    "description": "[optional] artist - the string of the name of the artist"
+                }
+            }
+        }, 
+        {
+            "name": "spotify_get_user_playlists",
+            "description": "Get a list of the top playlists owned or followed by a Spotify user. A user can specify the number of playlists they want to see or if not, the function will return the top ten playlists.",
+            "tags": [ "music" ],
+            "properties": {
+                "limit": {
+                    "type": "number",
+                    "description": "[optional] limit - the number of playlists to return. The default limit is 10."
+                }
+            }
+        }
+    ]
+}

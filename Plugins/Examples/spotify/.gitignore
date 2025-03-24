@@ -1,0 +1,10 @@
+.venv*/
+build/
+dist/
+Lib/
+Scripts/
+.cache
+*.log
+config.json
+*.cfg
+.vscode/

@@ -12,9 +12,10 @@ Transform your applications with NVIDIA G-Assist functionality! This sample app 
 ## 📋 Before You Start
 Make sure you have:
 - Windows 10/11
-- NVIDIA GPU
+- NVIDIA GPU (RTX 30 series or newer recommended)
 - NVIDIA driver 572.83 or newer
 - Visual Studio 2019+ (for building from source)
+- CMake 3.15+ (for building from source)
 
 💡 **Tip**: Check your NVIDIA driver version in NVIDIA App under "Drivers" page
 

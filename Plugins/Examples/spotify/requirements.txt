@@ -1,0 +1,2 @@
+spotipy==2.25.0
+pyinstaller==6.11.0

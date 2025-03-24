@@ -528,5 +528,5 @@ This is an internal NVIDIA project. Please follow NVIDIA's internal contribution
 Apache License 2.0 - All rights reserved.
 
 ## 🙏 Acknowledgments
-- 🎮 Built on the [Twitch API](https://dev.twitch.tv/docs/api/)
+- 🎮 Built using the [Twitch API](https://dev.twitch.tv/docs/api/)
 - 🚀 Part of the NVIDIA G-Assist platform
