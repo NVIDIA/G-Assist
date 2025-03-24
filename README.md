@@ -36,13 +36,13 @@ Transform your ideas into powerful G-Assist plugins! Whether you're a Python dev
 ### 🐍 Python Development with System Assist
 Get started quickly using our Python bindings of the [C++ APIs](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h#L25283):
 
-1. **Install the Package**
+1. **Install the binding locally**
 ```bash
 cd plugins/bindings/python-bindings
 pip install .
 ```
 
-2. **Create Your First Plugin**
+2. **Chat with G-Assist**
 ```python
 from rise import rise
 
@@ -60,6 +60,8 @@ def handle_command(command):
 response = rise.send_rise_command("Hello G-Assist!")
 print(response)
 ```
+3. **Extend G-Assist**
+
 
 > 💡 **Requirements**:
 > - Python 3.x
