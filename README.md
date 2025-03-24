@@ -1,34 +1,28 @@
-# 🚀 G-Assist System Assistant
+# 🚀 Project G-Assist Plugins
 
-Transform your ideas into powerful AI-enabled applications with G-Assist! This NVIDIA system lets you build applications that leverage local AI models running directly on your GPU. Whether you're creating game integrations, system automation tools, or AI-powered applications, G-Assist provides the foundation you need.
+Project G-Assist is an experimental on-device AI Assistant that helps RTX users control a broad range of PC settings, from optimizing game and system settings, charting frame rates and other key performance statistics, to controlling select peripheral lighting — all via basic voice or text commands.
 
-## 💡 Why G-Assist?
+Project G-Assist is built for community expansion. Whether you're a Python developer, C++ enthusiast, or just getting started — its Plugin architecture makes it easy to define new commands for G-Assist to execute. We can't wait to see what the community dreams up.
 
-Build powerful AI-enabled applications with G-Assist:
+## 💡 Why Plugins Matter
 
-- **Local AI Power** 🧠
-  - Run SLMs directly on your GPU
-  - Get fast, reliable responses
-  - Maintain data privacy
+- Leverage a responsive Small Language Model (SLM) running locally on your own RTX GPU
+- Extend and customize G-Assist with functionality that enhances your PC experience
+- Interact with G-Assist from the NVIDIA Overlay without needing to tab out or switch programs
+- Invoke AI-powered GPU and system controls in your applications using C++ and python bindings
+- Integrate with agentic frameworks using tools like Langflow to embed G-Assist in bigger AI pipelines
 
-- **Flexible Development** 🛠️
-  - Use Python or C++ bindings
-  - Access GPU and system optimization APIs
-  - Build with modern AI frameworks like Langflow
+## ✨ What Can You Build?
 
-- **Plugin Ecosystem** 🔌
-  - Create custom plugins easily
-  - Extend G-Assist's core functionality
-  - Share with the community
+- Python plugins for rapid development
+- C++ plugins for performance-critical applications
+- AI-driven features using the ChatGPT-powered Plugin Builder
+- Custom system interactions for hardware and OS automation
+- Game and application integration that enhance PC performance or add new commands
 
-- **Gaming Integration** 🎮
-  - Access G-Assist and G-Assist Plugins through NVIDA App's In-Game Overlay
-  - Control your GPU and system configuration while gaming
-  - Create immersive experiences
+If you're looking for inspiration, check out our sample plugins for controling peripheral & smart home lighting, invoking larger AI models like Gemini, managing Spotify tracks, or even checking streamers' online status on Twitch — and then let your own ideas take G-Assist to the next level!
 
-Get started quickly with our comprehensive tools and examples!
-
-## 🚀 Quick Start
+## 🚀 Quick Start 
 
 ### 🐍 Python Development with G-Assist
 Get started quickly using our Python bindings of the [C++ APIs](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h#L25283):
