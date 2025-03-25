@@ -152,7 +152,7 @@ plugins/
 
 - `g-assist-plugin-<plugin-name>.exe` - Executable file that executes plugin functionality
 - `manifest.json` - Manifest file that contains: 
-    - name of the plugin
+    - name of the plugin executable
     - plugin description
     - list of functions and their parameters, with descriptions for each
     - `tags` - array of keywords used to describe the plugin's functionality
