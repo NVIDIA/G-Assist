@@ -59,7 +59,6 @@ See our [Python Bindings Guide](./api/bindings/python/README.md) for detailed ex
 
 See our [C++ Sample Application](./api/c++/sample-app) to create a testing environment for G-Assist's chat capabilities and demonstrates core functionality.
 
-### Extending G-Assist (Plugins)
 ### 🤖 NVIDIA Plugin Example - Twitch
 
 Try these commands:
