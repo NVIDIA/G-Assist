@@ -16,7 +16,7 @@ Project G-Assist is built for community expansion. Whether you're a Python devel
 
 - Python plugins for rapid development
 - C++ plugins for performance-critical applications
-- AI-driven features using the ChatGPT-powered Plugin Builder
+- AI-driven features using the [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
 - Custom system interactions for hardware and OS automation
 - Game and application integrations that enhance PC performance or add new commands
 
@@ -213,6 +213,7 @@ Check out what others have built:
 ## 🛠️ Development Tools
 - 🐍 [Python Bindings](./api/bindings/python/)
 - [C++ Sample Application](./api/c++/sample-app/)
+- [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
 
 ## 🆘 Need Help?
 - 🐛 Report issues on [GitHub](https://github.com/nvidia/g-assist)
