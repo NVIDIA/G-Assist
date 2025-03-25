@@ -67,8 +67,8 @@ pyinstaller --name gemini-plugin plugin.py
 Once installed, you can use Gemini through G-Assist! Try these examples:
 
 ### Basic Text Generation
-- Hey Gemini, tell me about artificial intelligence.
-- /gemini Explain ray tracing using a real-world analogy in one sentence. ELI5
+- Hey Google, tell me about artificial intelligence.
+- /google Explain ray tracing using a real-world analogy in one sentence. ELI5
 
 ## ⚠️ Limitations
 - 🌐 Requires active internet connection

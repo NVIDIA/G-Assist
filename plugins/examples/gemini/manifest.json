@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "executable": "g-assist-plugin-gemini.exe",
+  "executable": "g-assist-plugin-google.exe",
   "persistent": false,
   "passthrough": true,
   "functions": [

@@ -1,2 +1,2 @@
-Release/g-assist-plugin-gemini.exe filter=lfs diff=lfs merge=lfs -text
+Release/g-assist-plugin-google.exe filter=lfs diff=lfs merge=lfs -text
 Release/* filter=lfs diff=lfs merge=lfs -text
