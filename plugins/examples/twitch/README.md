@@ -1,4 +1,4 @@
-# 📺 Twitch Status Plugin for NVIDIA G-Assist 🎮
+# 📺 Twitch Status Plugin for NVIDIA G-Assist
 
 Transform your G-Assist experience with real-time Twitch stream status checking! This plugin lets you monitor your favorite Twitch streamers directly through the G-Assist platform. Whether you want to know if your favorite streamer is live or get details about their current stream, checking Twitch status has never been easier.
 

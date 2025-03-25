@@ -55,7 +55,7 @@ Response: Your GPU is an NVIDIA GeForce RTX 5090 with a Driver version of 572.83
 > - G-Assist core services installed
 > - pip package manager
 
-See our [Python Bindings Guide](./api/bindings/python) for detailed examples and advanced usage.
+See our [Python Bindings Guide](./api/bindings/python/README.md) for detailed examples and advanced usage.
 
 See our [C++ Sample Application](./api/c++/sample-app) to create a testing environment for G-Assist's chat capabilities and demonstrates core functionality.
 
@@ -102,22 +102,23 @@ See our [Twitch Plugin Example Code](./plugins/examples/twitch/) for a step-by-s
 
 
 ## 📋 Table of Contents
-- [Why G-Assist?](#-why-g-assist)
-- [Quick Start](#-quick-start)
+- [🚀 Project G-Assist Plugins](#-project-g-assist-plugins)
+- [💡 Why Plugins Matter](#-why-plugins-matter)
+- [✨ What Can You Build?](#-what-can-you-build)
+- [🚀 Quick Start](#-quick-start)
   - [🐍 Python Development with G-Assist](#-python-development-with-g-assist)
-  - [Extending G-Assist (Plugins)](#extending-g-assist-plugins)
-    - [🤖 Twitch Plugin Example](#-nvidia-plugin-example---twitch)
-- [System Architecture](#-g-assist-module-architecture)
-- [Extending G-Assist](#-extending-g-assist-plugins)
-  - [✨ What Can You Build?](#-what-can-you-build)
+  - [🤖 NVIDIA Plugin Example - Twitch](#-nvidia-plugin-example---twitch)
+- [📐 G-Assist Module Architecture](#-g-assist-module-architecture)
+- [🔌 Extending G-Assist (Plugins)](#-extending-g-assist-plugins)
+  - [✨ What Can You Build?](#-what-can-you-build-1)
   - [📦 Plugin Architecture](#-plugin-architecture)
   - [Plugin Integration](#plugin-integration)
-- [NVIDIA-Built Plugins](#-nvidia-built-g-assist-plugins)
-- [Community-Built Plugins](#-community-built-plugins)
-- [Development Tools](#-development-tools)
-- [Need Help?](#-need-help)
-- [License](#-license)
-- [Contributing](#-contributing)
+- [📚 NVIDIA-Built G-Assist Plugins](#-nvidia-built-g-assist-plugins)
+- [🌟 Community-Built Plugins](#-community-built-plugins)
+- [🛠️ Development Tools](#-development-tools)
+- [🆘 Need Help?](#-need-help)
+- [📄 License](#-license)
+- [🤝 Contributing](#-contributing)
 
 ## 📐 G-Assist Module Architecture
 
