@@ -31,10 +31,13 @@ from rise import rise
 rise.register_rise_client()
 
 # Send a command and get response
-response = rise.send_rise_command('Hello')
+response = rise.send_rise_command('What is my GPU?')
 
 # Print the response
 print(response)
+"""
+Response: Your GPU is an NVIDIA GeForce RTX 5090 with a Driver version of 572.83.
+"""
 ```
 
 ## 💬 Interactive Chat Example
@@ -76,6 +79,34 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+## 💻 G-Assist Sample GUI
+
+Transform your G-Assist experience with our modern chat interface! This sample application provides a sleek, desktop-ready GUI for interacting with G-Assist.
+
+### Features
+- 🎨 Modern, dark-themed interface
+- 💬 Real-time chat interactions
+- 🔄 Live status indicators
+- 🚀 Easy to use and customize
+
+### Running the GUI
+```bash
+# Install required packages
+pip install -r requirements.txt
+
+# Launch the application
+python rise-gui.py
+```
+
+💡 **Tip**: The GUI will automatically open in your default web browser. If it doesn't, navigate to `http://localhost:5000` manually.
+
+### Requirements
+- Node.js (for full Electron experience)
+- Modern web browser
+- Python packages from requirements.txt
+
+If Node.js is not installed, the application will fall back to a simplified browser interface automatically.
 
 ## 🖼️ Sample Output
 ![Terminal Output Example](chat-example.png)
