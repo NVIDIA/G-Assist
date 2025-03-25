@@ -138,7 +138,6 @@ If Node.js is not installed, the application will fall back to a simplified brow
 ## 🔍 Troubleshooting Tips
 - **Commands not working?** Make sure G-Assist core services are running
 - **Installation issues?** Verify your Python version and pip installation
-- **Response delays?** Check your network connection
 
 ## 🆘 Need Help?
 If you run into any issues:
