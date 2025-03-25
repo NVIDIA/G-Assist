@@ -270,7 +270,7 @@ def execute_initialize_command() -> dict:
 
     if not key:
         logging.error('No API key found')
-        return generate_failure_response('Missing API key')
+        return generate_success_response() # this allows us to print the error ##bug to be fixed in driver
 
     try:
         client = genai.Client(api_key=key)
@@ -361,15 +361,14 @@ def execute_query_gemini_command(params: dict = None, context: dict = None, syst
     '''
     global API_KEY, CONFIG_FILE, model, client
 
-    execute_initialize_command()
-
     if API_KEY is None:
         ERROR_MESSAGE = (
             "It looks like your API key is missing or invalid. Please update " +
             f"{API_KEY_FILE} with a valid key and restart G-Assist.\n\n" +
             "To obtain an API, visit https://ai.google.dev."
         )
-        return generate_failure_response(ERROR_MESSAGE)
+        write_response(generate_message_response(ERROR_MESSAGE))
+        return generate_success_response() #print nothing, the initialize will have done so ## bug to be fixed in driver
 
     # Load model config
     if os.path.isfile(CONFIG_FILE):
