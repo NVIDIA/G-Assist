@@ -217,7 +217,7 @@ function App() {
         <div className="messages">
           {messages.map((msg, index) => (
             <div key={index} className={`message ${msg.type}`}>
-              <div className="message-content">
+              <div className={`message-content ${msg.type}`}>
                 <div className="message-header">
                   <span className="sender">
                     {msg.type === 'user' ? 'You ' : msg.type === 'assistant' ? 'RISE ' : 'System '}
@@ -463,6 +463,10 @@ body {
   opacity: 0.9; /* Slightly transparent for all messages */
   border: 1px dashed var(--border-color); /* Dashed border for all messages */
 }
+                            
+.assistant {
+  text-align: left !important;                        
+}
 
 /* Default text alignment */
 .message-content {
@@ -478,7 +482,7 @@ body {
 /* System and assistant messages alignment - left aligned */
 .message.system .message-content,
 .message.assistant .message-content {
-  text-align: left;
+  text-align: left !important;
   margin-right: auto;
 }
 
@@ -1082,6 +1086,9 @@ body {
             stroke-linecap: round;
             stroke-linejoin: round;
         }
+        .assistant {
+          text-align: left !important;                        
+        }
     </style>
 </head>
 <body>
@@ -1165,7 +1172,7 @@ body {
                 
                 // Create the inner container with bounding box styling
                 const contentDiv = document.createElement('div');
-                contentDiv.className = 'message-content';
+                contentDiv.className = `message-content ${type}`;
                 
                 // Create and append the sender element
                 const sender = document.createElement('span');

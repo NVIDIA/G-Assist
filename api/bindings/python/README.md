@@ -13,6 +13,30 @@ Make sure you have:
 - Python 3.x installed on your computer
 - pip package manager
 - G-Assist core services installed on your system
+- Visual C++ Build Tools (Option 1 or 2 below)
+
+### Required Downloads
+1. **Option 1: Visual Studio (Recommended for Developers)**
+   - Download [Visual Studio Community](https://visualstudio.microsoft.com/vs/community/)
+   - During installation, select:
+     - "Desktop development with C++"
+     - "Python development" (optional, but recommended)
+   
+   💡 **Tip**: This option is best if you plan to do any development work
+
+2. **Option 2: Visual C++ Runtime Only**
+   - Download the x64 version from Microsoft: [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+   - Install it before running any G-Assist Python applications
+   - Restart your computer if needed
+
+   💡 **Tip**: Choose this option if you only need to run the application
+
+3. **Python Requirements**
+```bash
+pip install -r requirements.txt
+```
+
+💡 **Tip**: The "Could not find module" error often means Visual C++ components are missing or need to be updated.
 
 ## 🚀 Getting Started
 
@@ -109,7 +133,7 @@ python rise-gui.py
 If Node.js is not installed, the application will fall back to a simplified browser interface automatically.
 
 ## 🖼️ Sample Output
-![Terminal Output Example](chat-example.png)
+![G-Assist GUI Output Example](rise-gui-example.png)
 
 ## 🔍 Troubleshooting Tips
 - **Commands not working?** Make sure G-Assist core services are running
