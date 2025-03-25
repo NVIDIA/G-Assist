@@ -19,6 +19,9 @@ Make sure you have:
 
 ## 🚀 Getting Started
 
+### GPT Plugin Builder
+![Plugin Builder GIF](./plugin-builder.gif)
+
 ### Step 1: Generate Your Plugin
 1. Access the [OpenAI Custom GPT](https://chatgpt.com/g/g-67bcb083cc0c8191b7ca74993785baad-g-assist-plugin-builder) for plugin generation
 2. Start by clearly describing your plugin's purpose and functionality. For example:
