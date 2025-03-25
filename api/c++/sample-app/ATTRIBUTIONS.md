@@ -28,7 +28,6 @@
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
     ```
-## nvapi [MIT License] (https://github.com/NVIDIA/nvapi/blob/main/License.txt)
 
     ```
     nvapi.lib and nvapi64.lib are licensed under the following terms:
