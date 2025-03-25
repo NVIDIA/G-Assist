@@ -138,13 +138,6 @@ flowchart TD
 
 Transform your ideas into powerful G-Assist plugins! Whether you're a Python developer, C++ enthusiast, or just getting started, our plugin system makes it easy to extend G-Assist's capabilities. Create custom commands, automate tasks, or build entirely new features - the possibilities are endless!
 
-## ✨ What Can You Build?
-- 🐍 Python plugins for rapid development
-- ⚡ C++ plugins for performance-critical applications
-- 🤖 AI-powered plugins using our ChatGPT assisted plugin builder
-- 🔌 Custom system interactions
-- 🎮 Game and application integrations
-
 ### 📦 Plugin Architecture
 
 Each plugin lives in its own directory named after the plugin (this name is used to invoke the plugin):
