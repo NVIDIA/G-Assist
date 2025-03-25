@@ -194,10 +194,10 @@ The manifest file acts as the bridge between G-Assist and your plugin. G-Assist 
 
 ## 📚 NVIDIA-Built G-Assist Plugins
 Explore our official plugins:
-- 🤖 [Gemini AI Integration](./pluginseExamples\gemini)
-- 🎮 [Logitech Peripheral Lighting](./plugins\examples\logiled)
-- 🎥 [Corsair Peripheral Lighting](./plugins\examples\corsair)
-- 💡 [Nanoleaf Room Lighting](./plugins\examples\nanoleaf)
+- 🤖 [Gemini AI Integration](./plugins/examples/gemini)
+- 🎮 [Logitech Peripheral Lighting](./plugins/examples/logiled)
+- 🎥 [Corsair Peripheral Lighting](./plugins/examples/corsair)
+- 💡 [Nanoleaf Room Lighting](./plugins/examples/nanoleaf)
 - 📺 [Twitch Integration](./plugins/examples/twitch)
 - 🎵 [Spotify Music Player](./plugins/examples/spotify)
 - [More coming soon!]
