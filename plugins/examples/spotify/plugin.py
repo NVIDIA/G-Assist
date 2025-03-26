@@ -202,7 +202,7 @@ def get_client_secret(config_file: str) -> str | None:
 
     @param[in] config_file  configuration file
 
-    @return the the client_secret of the Spotify account or `None` if an error occurred
+    @return the client_secret of the Spotify account or `None` if an error occurred
     reading the configuration file
     '''
     secret = None
