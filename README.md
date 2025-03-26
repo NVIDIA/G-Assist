@@ -57,8 +57,6 @@ Response: Your GPU is an NVIDIA GeForce RTX 5090 with a Driver version of 572.83
 
 See our [Python Bindings Guide](./api/bindings/python/README.md) for detailed examples and advanced usage.
 
-See our [C++ Sample Application](./api/c++/sample-app) to create a testing environment for G-Assist's chat capabilities and demonstrates core functionality.
-
 ### 🤖 NVIDIA Plugin Example - Twitch
 
 Try these commands:
@@ -212,7 +210,6 @@ Check out what others have built:
 
 ## 🛠️ Development Tools
 - 🐍 [Python Bindings](./api/bindings/python/)
-- [C++ Sample Application](./api/c++/sample-app/)
 - [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
 
 ## 🆘 Need Help?
