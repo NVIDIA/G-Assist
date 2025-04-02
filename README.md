@@ -29,7 +29,7 @@ Get started quickly using our Python bindings of the [C++ APIs](https://github.c
 
 1. **Install the binding locally**
 ```bash
-cd plugins/bindings/python-bindings
+cd api/bindings/python
 pip install .
 ```
 
