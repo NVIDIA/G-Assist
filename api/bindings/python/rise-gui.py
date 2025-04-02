@@ -27,13 +27,14 @@ def send_message():
     """API endpoint to send messages to RISE"""
     data = request.json
     message = data.get('message', '')
-    
+    adapter = data.get('adapter', '')
+    system_prompt = data.get('system_prompt', '')
     if not message:
         return jsonify({'error': 'Empty message'}), 400
     
     try:
         # Send message to RISE
-        response = rise.send_rise_command(message)
+        response = rise.send_rise_command(message, adapter, system_prompt)
         #response = f"RISE module is commented out. Your message was: {message}"
         return jsonify({'response': response})
     except Exception as e:
@@ -143,7 +144,6 @@ function App() {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState('Ready');
   const [isTyping, setIsTyping] = useState(false);
-  const [vendor, setVendor] = useState('MSI');
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -244,17 +244,10 @@ function App() {
           )}
           <div ref={messagesEndRef} />
         </div>
-        <form onSubmit={sendMessage} className="input-area">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your message here..."
-          />
-          <button type="submit" disabled={isTyping}>
-            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <form class="input-area" id="messageForm">
+          <input type="text" id="messageInput" placeholder="Type your message here..." autofocus class="message-input">
+          <button type="submit" id="sendButton">
+            <svg class="send-icon" viewBox="0 0 24 24">
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
@@ -264,12 +257,6 @@ function App() {
           <div className="status-indicator">
             <span className={`status-dot ${status === 'Ready' ? 'online' : status === 'Processing' ? 'busy' : 'offline'}`}></span>
             {status}
-          </div>
-          <div className="vendor-selector">
-            <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
-              <option value="MSI">MSI</option>
-              <option value="ASUS">ASUS</option>
-            </select>
           </div>
         </div>
       </div>
@@ -386,11 +373,20 @@ body {
   background-color: var(--status-offline);
   color: var(--bg-primary);
 }
+                        
+.chat-page {
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+}
+.settings-pane {
+  flex: 1
+}
 
 .chat-container {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 2;
   padding: 24px;
   background-color: var(--bg-primary);
   overflow: hidden;
@@ -499,13 +495,19 @@ body {
   font-weight: 600;
   letter-spacing: 0.5px;
 }
+                        
+.timestamp-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 5px;
+}
 
 .timestamp {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.75rem;
   opacity: 0.8;
   position: absolute;
-  bottom: 5px;
+  bottom: 1px;
   right: 10px;
   display: inline-block; /* Ensure it's displayed */
   /* Fix for disappearing timestamps */
@@ -640,6 +642,17 @@ body {
   height: 20px;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.3));
 }
+                        
+textarea {
+    height: 15rem;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 1rem;
+    font-family: inherit;
+    outline: none;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+}
 
 .status-bar {
   padding: 10px 16px;
@@ -695,37 +708,6 @@ body {
   border: 2px solid currentColor;
   opacity: 0.5;
   animation: pulse 2s infinite;
-}
-
-.vendor-selector {
-  display: flex;
-  align-items: center;
-}
-
-.vendor-selector select {
-  background-color: var(--bg-primary);
-  color: var (--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 4px 8px;
-  font-size: 0.85rem;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.vendor-selector select:hover {
-  border-color: var(--accent-primary);
-}
-
-.vendor-selector select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.2);
-}
-
-.vendor-selector select option {
-  background-color: var(--bg-secondary);
-  color: var (--text-primary);
 }
 
 @keyframes pulse {
@@ -849,11 +831,43 @@ body {
             -webkit-text-fill-color: transparent;
             text-shadow: 0 0 20px rgba(118, 185, 0, 0.3);
         }
+                        
+        textarea {
+          height: 15rem;
+          border-radius: 10px;
+          border: none;
+          padding: 10px;
+          font-size: 1rem;
+          font-family: inherit;
+          outline: none;
+          background-color: var(--input-bg);
+          color: var(--text-primary);
+        }
+                        
+        .chat-page {
+            display: flex;
+            flex-direction: row;
+            gap: 1rem;
+            height: 100%
+        }
+        .settings-pane {
+            flex: 1;
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column; 
+            gap: 1rem;
+            padding: 2rem 1rem;
+        }
+        .settings-container {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
         
         .chat-container {
             display: flex;
             flex-direction: column;
-            flex: 1;
+            flex: 2;
             padding: 24px;
             background-color: var(--bg-primary);
             overflow: hidden;
@@ -946,12 +960,19 @@ body {
             color: var(--accent-primary);
         }
         
+        .timestamp-container {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 5px;
+        }
+        
         .timestamp {
             color: var(--text-secondary);
             font-size: 0.7rem;
             position: absolute;
-            bottom: 5px;
+            bottom: 1px;
             right: 10px;
+            margin-top: 10px;
         }
         
         .text {
@@ -1013,6 +1034,19 @@ body {
         
         input::placeholder {
             color: var(--text-secondary);
+        }
+                        
+        .adapter-input {
+            background-color: var(--input-bg);
+            color: var(--text-primary);
+            border: none;
+            padding: 12px 16px;
+            border-radius: var(--border-radius);
+            flex: 1;
+       }
+                        
+        .message-input {
+            flex: 2;
         }
         
         button {
@@ -1095,38 +1129,54 @@ body {
     <header>
         <h1>RISE</h1>
     </header>
-    <div class="chat-container">
-        <div class="messages" id="messages">
-            <div class="message system">
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="sender">System</span>
-                    </div>
-                    <div class="text">Welcome to RISE. How can I assist you today?</div>
-                    <span class="timestamp"></span>
-                </div>
-            </div>
-        </div>
-        <form class="input-area" id="messageForm">
-            <input type="text" id="messageInput" placeholder="Type your message here..." autofocus>
-            <button type="submit" id="sendButton">
-                <svg class="send-icon" viewBox="0 0 24 24">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-            </button>
-        </form>
-        <div class="status-bar">
-            <div class="status-indicator">
-                <span class="status-dot online" id="statusDot"></span>
-                <span id="status">Ready</span>
-            </div>
-        </div>
+    <div class="chat-page">
+      <div class="chat-container">
+          <div class="messages" id="messages">
+              <div class="message system">
+                  <div class="message-content">
+                      <div class="message-header">
+                          <span class="sender">System</span>
+                      </div>
+                      <div class="text">Welcome to RISE. How can I assist you today?</div>
+                      <span class="timestamp"></span>
+                  </div>
+              </div>
+          </div>
+          <form class="input-area" id="messageForm">
+              <input type="text" id="messageInput" placeholder="Type your message here..." autofocus class="message-input">
+              <button type="submit" id="sendButton">
+                  <svg class="send-icon" viewBox="0 0 24 24">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+              </button>
+          </form>
+          <div class="status-bar">
+              <div class="status-indicator">
+                  <span class="status-dot online" id="statusDot"></span>
+                  <span id="status">Ready</span>
+              </div>
+          </div>
+      </div>
+      <div class="settings-pane">
+          <h3>Settings</h3>
+          <hr/>
+          <div class="settings-container">
+            <h5>Adapter</h5>
+            <input type="text" id="adapterInput" placeholder="Adapter (optional)" class="adapter-input" >
+           </div>
+           <div class="settings-container">
+            <h5>System Prompt</h5>
+            <textarea id="systemPromptInput" placeholder="System Prompt (optional)" class="system-prompt-input"></textarea>
+           </div>
+      </div>
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const messageForm = document.getElementById('messageForm');
             const messageInput = document.getElementById('messageInput');
+            const adapterInput = document.getElementById('adapterInput');
+            const systemPromptInput = document.getElementById('systemPromptInput');
             const messagesContainer = document.getElementById('messages');
             const statusText = document.getElementById('status');
             const statusDot = document.getElementById('statusDot');
@@ -1135,6 +1185,8 @@ body {
             messageForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const message = messageInput.value.trim();
+                const adapter = adapterInput.value.trim().toLowerCase();
+                const system_prompt = systemPromptInput.value.trim().toLowerCase();
                 if (!message) return;
                 
                 // Add user message
@@ -1148,7 +1200,7 @@ body {
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ message })
+                        body: JSON.stringify({ message, adapter, system_prompt })
                     });
                     
                     const data = await response.json();

@@ -189,7 +189,7 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str) -> Optional[str]:
+def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') -> Optional[str]:
     """
     Send a command to RISE and wait for the response.
 
@@ -212,7 +212,13 @@ def send_rise_command(command: str) -> Optional[str]:
             'prompt': command,
             'context_assist': {}
         }
-        
+
+        if (adapter != ''): 
+            command_obj['adapter'] = adapter
+
+        if(system_prompt != ''):
+            command_obj['context_assist']['officialAdapterSystemPrompt'] = system_prompt
+
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = json.dumps(command_obj).encode('utf-8')
         content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
