@@ -117,7 +117,7 @@ Transform your G-Assist experience with our modern chat interface! This sample a
 ### Running the GUI
 ```bash
 # Install required packages
-pip install -r requirements.txt
+pip install .
 
 # Launch the application
 python rise-gui.py
