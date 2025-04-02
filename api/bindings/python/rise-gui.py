@@ -62,7 +62,7 @@ def start_electron_app():
             subprocess.run(['npx', 'create-react-app', electron_dir], check=True)
             
             # Install Electron and other dependencies
-            subprocess.run(['npm', 'install', '--save', 'electron', 'electron-builder', 'concurrently', 'wait-on', 'axios'], 
+            subprocess.run(['npm', 'install', '--save', 'electron', 'electron-builder', 'concurrently', 'wait-on', 'axios', 'chart.js@4.4.2'], 
                           cwd=electron_dir, check=True)
             
             # Create Electron main.js file
@@ -136,6 +136,7 @@ app.on('activate', function () {
             with open(os.path.join(electron_dir, 'src', 'App.js'), 'w') as f:
                 f.write('''
 import React, { useState, useEffect, useRef } from 'react';
+import Chart from 'chart.js/auto';
 import axios from 'axios';
 import './App.css';
 
@@ -1171,6 +1172,7 @@ textarea {
            </div>
       </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const messageForm = document.getElementById('messageForm');
@@ -1205,7 +1207,7 @@ textarea {
                     
                     const data = await response.json();
                     if (response.ok) {
-                        addMessage('assistant', data.response);
+                        addMessage('assistant', data.response.completed_response, data.response.completed_chart);
                     } else {
                         addMessage('system', `Error: ${data.error}`);
                     }
@@ -1216,8 +1218,114 @@ textarea {
                     statusBar.textContent = 'Error: Communication failed';
                 }
             });
-            
-            function addMessage(type, text) {
+            function getScalesForData(chunkData) {
+                let axes = {};
+
+                if (chunkData?.length > 0) {
+                    chunkData.forEach((chartData, index) => {
+                        const xAxisName = `x${(index !== 0) ? index : ''}`;
+                        const yAxisName = `y${(index !== 0) ? index : ''}`;
+                        if (index === 0) {
+                            axes = {
+                                ...axes,
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: (chartData.xUnit !== '%') ? `${chartData.xUnit}` : ''
+                                    },
+                                    callback: function (value) {
+                                        if (chartData.xUnit === '%') {
+                                            return value + '%';
+                                        } else {
+                                            return value
+                                        }
+                                    }
+                                },
+                                y: {
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: (chartData.yUnit !== '%') ? `${chartData.yUnit}` : ''
+                                    },
+                                    ticks: {
+                                        callback: function (value) {
+                                            if (chartData.yUnit === '%') {
+                                                return value + '%';
+                                            } else {
+                                                return value
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if ((axes.y !== undefined) && (chartData.yUpperLimit !== undefined)) {
+                                axes.y.max = chartData.yUpperLimit
+                            }
+                            if ((axes.y !== undefined) && (chartData.yLowerLimit !== undefined)) {
+                                axes.y.min = chartData.yLowerLimit
+                            }
+                        } else if (index > 0) {
+                            if (chartData.xUnit !== chunkData[0].xUnit) {
+                                axes = {
+                                    ...axes,
+                                    [xAxisName]: {
+                                        position: 'top',
+                                        title: {
+                                            display: true,
+                                            text: (chartData.xUnit !== '%') ? `${chartData.xUnit}` : ''
+                                        },
+                                        callback: function (value) {
+                                            if (chartData.xUnit === '%') {
+                                                return value + '%';
+                                            } else {
+                                                return value
+                                            }
+                                        },
+                                        grid: {
+                                            drawOnChartArea: false, // only want the grid lines for one axis to show up
+                                        }
+                                    }
+                                }
+                            } else if (chartData.yUnit !== chunkData[0].yUnit) {
+                                axes = {
+                                    ...axes,
+                                    [yAxisName]: {
+                                        position: 'right',
+                                        title: {
+                                            display: true,
+                                            text: (chartData.yUnit !== '%') ? `${chartData.yUnit}` : ''
+                                        },
+                                        ticks: {
+                                            callback: function (value) {
+                                                if (chartData.yUnit === '%') {
+                                                    return value + '%';
+                                                } else {
+                                                    return value
+                                                }
+                                            }
+                                        },
+                                        grid: {
+                                            drawOnChartArea: false, // only want the grid lines for one axis to show up
+                                        }
+                                    }
+                                }
+
+                                if ((axes[yAxisName] !== undefined) && (chartData.yUpperLimit !== undefined)) {
+                                    axes[yAxisName].max = chartData.yUpperLimit
+                                }
+                                if ((axes[yAxisName] !== undefined) && (chartData.yLowerLimit !== undefined)) {
+                                    axes[yAxisName].min = chartData.yLowerLimit
+                                }
+                            }
+                        }
+                    })
+                }
+                return axes
+            }
+                    
+            function addMessage(type, text, chart = '') {
+                let chartId = '';
                 // Create the outer message container
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${type}`;
@@ -1237,6 +1345,16 @@ textarea {
                 textSpan.className = 'text';
                 textSpan.textContent = text;
                 contentDiv.appendChild(textSpan);
+                        
+                // Create and append the chart element
+                if(chart !== '') {
+                    const chartDiv = document.createElement('div');
+                    const chartCanvas = document.createElement('canvas');
+                    chartId = `chart-${Math.floor(Math.random() * 1000000)}`;
+                    chartCanvas.setAttribute('id', chartId);
+                    chartDiv.appendChild(chartCanvas);
+                    contentDiv.appendChild(chartDiv);
+                }
                 
                 // Create and append the timestamp element
                 const timestamp = document.createElement('span');
@@ -1249,7 +1367,53 @@ textarea {
                 
                 // Append the message to the messages container
                 messagesContainer.appendChild(messageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;                        
+                if(chart !== '') {
+                  const chartData = JSON.parse(chart);
+                  const ctx = document.getElementById(chartId);
+                  const labels = chartData[0].data.map((item) => item.x)
+
+                  const chartObj = {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: chartData.map((chartInfo, index) => {
+                            return {
+                                label: chartInfo.chartTitle,
+                                data: chartInfo.data.map((item) => item.y),
+                                xAxisID: (index !== 0 && chartInfo.xUnit !== chartData[0].xUnit) ? `x${index}` : 'x',
+                                yAxisID: (index !== 0 && chartInfo.yUnit !== chartData[0].yUnit) ? `y${index}` : 'y',
+                            }
+                        })
+                    },
+                    options: {
+                          borderWidth: 1,
+                          pointRadius: 1,
+                          responsive: true,
+                          maintainAspectRatio: true,
+                          scales: getScalesForData(chartData),
+                          plugins: {
+                              tooltip: {
+                                  callbacks: {
+                                      label: function (context) {
+                                          let label = context.dataset.label || '';
+
+                                          if (label) {
+                                              label += ': ';
+                                          }
+                                          if (context.parsed.y !== null) {
+                                              label += context.parsed.y;
+                                              label += ` ${chartData[context.datasetIndex].yUnit}`;
+                                          }
+                                          return label;
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  };
+                  new Chart(ctx, chartObj);
+                }
             }
         });
     </script>

@@ -33,6 +33,7 @@ global nvapi
 global callback_settings
 callback = None
 response = ''
+chart = ''
 response_done = False
 ready = False
 progress_bar = None
@@ -115,7 +116,7 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
         ready: Indicates RISE system readiness
         progress_bar: Manages download/installation progress visualization
     """
-    global response, response_done, ready, progress_bar
+    global response, response_done, ready, progress_bar, chart
 
     data = data_ptr.contents
     if data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_READY:
@@ -128,6 +129,11 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
         response += data.content.decode('utf-8')
+        if data.completed == 1:
+            response_done = True
+    elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_GRAPH:
+        chart += data.content.decode('utf-8')
+
         if data.completed == 1:
             response_done = True
 
@@ -205,7 +211,7 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
     Raises:
         AttributeError: If there's an error accessing the RISE API
     """
-    global nvapi, response_done, response
+    global nvapi, response_done, response, chart
 
     try:
         command_obj = {
@@ -235,8 +241,10 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
 
         response_done = False
         completed_response = response
+        completed_chart = chart
         response = ''
-        return completed_response
+        chart = ''
+        return {'completed_response': completed_response,'completed_chart': completed_chart}
 
     except AttributeError as e:
         print(f"An error occurred: {e}")
