@@ -14,6 +14,8 @@ Make sure you have:
 - pip package manager
 - G-Assist core services installed on your system
 - Visual C++ Build Tools (Option 1 or 2 below)
+- NVIDIA NVAPI header files from [NVIDIA GitHub](https://github.com/NVIDIA/nvapi) (if you choose to build the project)
+  - Files should be placed in the [./api/bindings/python/](./api/bindings/python/) directory  
 
 ### Required Downloads
 1. **Option 1: Visual Studio (Recommended for Developers)**
