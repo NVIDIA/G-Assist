@@ -154,10 +154,19 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
 
 
 # Initialize DLL/shared library path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-lib_path = os.path.join(script_dir, "python_binding.dll")
-nvapi = ctypes.CDLL(lib_path)
-
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LIB_PATH = os.path.join(SCRIPT_DIR, "python_binding.dll")
+try:
+    nvapi = ctypes.CDLL(LIB_PATH)
+except OSError as e:
+    if "vcruntime" in str(e).lower() or "msvcp" in str(e).lower() or "cannot load" in str(e).lower():
+        print("\n❌ Missing Visual C++ Redistributable (x64)")
+        print("Download and install it from:")
+        print("https://aka.ms/vs/17/release/vc_redist.x64.exe\n")
+        sys.exit(1)
+    else:
+        raise  # re-raise unexpected errors
+    
 # Configure API function signatures
 nvapi.register_rise_callback.argtypes = [ctypes.POINTER(NV_RISE_CALLBACK_SETTINGS_V1)]
 nvapi.register_rise_callback.restype = ctypes.c_int
@@ -195,7 +204,7 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') -> Optional[str]:
+def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') -> Optional[dict]:
     """
     Send a command to RISE and wait for the response.
 
@@ -206,7 +215,7 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
         command: The text command to send to RISE
 
     Returns:
-        Optional[str]: The response from RISE, or None if an error occurs
+        Optional[dict]: The response from RISE, or None if an error occurs
 
     Raises:
         AttributeError: If there's an error accessing the RISE API

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="rise",                      # Name of the package
+    name="gassist",                      # Name of the package
     version="0.0.1",                  # Version of your package
     description="Python interfaces into G-Assist module",  # Short description
     url="",                           # URL to the project (e.g., GitHub)
@@ -14,8 +14,8 @@ setup(
     ],
     include_package_data=True,        # Include files specified by MANIFEST.in (if any)
     package_data={
-        # Include the precompiled DLL file in the rise package.
-        "rise": ["python_binding.dll"]
+        # Include the precompiled DLL file in the g-assist package.
+        "gassist": ["python_binding.dll"]
     },
     zip_safe=False  # Disables zip-safe mode; needed for binaries in some cases.
 )
