@@ -91,6 +91,13 @@ If you run into issues:
 3. Ensure your `config.json` is properly formatted
 4. Try restarting G-Assist
 
+## 👥 Want to Contribute?
+We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+
+## 📄 License
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
 ## 🙏 Acknowledgments
 - 🎮 Built using the [Spotify Web API](https://developer.spotify.com/documentation/web-api)
 - 🚀 Part of the NVIDIA G-Assist platform
+- We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.

@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 1,
+  "executable": "./weather-plugin.exe",
+  "persistent": true,
+  "passthrough": false,
+  "functions": [
+    {
+      "name": "get_weather_info",
+      "description": "Fetches weather information for a given city.",
+      "tags": ["weather", "forecast"],
+      "properties": {
+        "city": {
+          "type": "string",
+          "description": "The name of the city to get the weather for."
+        }
+      }
+    }
+  ]
+}

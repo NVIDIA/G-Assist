@@ -83,13 +83,13 @@ Once installed, you can use Gemini through G-Assist! Try these examples:
 - **Unexpected Responses?** Check the configuration in `config.json`
 
 ## 👥 Want to Contribute?
-We'd love your help making this plugin even better! Feel free to submit a Pull Request following NVIDIA's contribution guidelines.
+We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## ⚖️ Legal Note
-This plugin is a third-party integration and is not officially associated with Google or its Gemini API. NVIDIA Project G-Assist is a trademark of NVIDIA Corporation.
+## 🙏 Acknowledgments
+We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
 
 ## 🆘 Need Help?
 If you run into issues:

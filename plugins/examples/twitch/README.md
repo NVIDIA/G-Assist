@@ -521,12 +521,13 @@ If you run into issues:
 3. 📂 Make sure all files are in the correct locations
 4. 🔄 Try restarting the G-Assist platform
 
-## 👥 Contributing
-This is an internal NVIDIA project. Please follow NVIDIA's internal contribution guidelines.
+## 👥 Want to Contribute?
+We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
 ## 📄 License
-Apache License 2.0 - All rights reserved.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 - 🎮 Built using the [Twitch API](https://dev.twitch.tv/docs/api/)
 - 🚀 Part of the NVIDIA G-Assist platform
+- We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.

@@ -75,7 +75,7 @@ Once everything is set up, you can control your Corsair devices through G-Assist
 - **Plugin not loading?** Double-check the installation folder path
 
 ## 👥 Want to Contribute?
-We'd love your help making this plugin even better! Feel free to submit issues and pull requests.
+We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
 ## 📄 License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
