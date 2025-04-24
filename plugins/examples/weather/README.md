@@ -64,7 +64,7 @@ Try these commands:
 
 When checking weather:
 ```text
-Current weather in London: Partly cloudy, 15°C, Humidity: 65%, Wind: 10 km/h
+Partly cloudy, 15 degrees Celsius, Humidity: 65%
 ```
 
 ## ❓ Troubleshooting Tips
