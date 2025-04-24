@@ -13,7 +13,6 @@ Transform your G-Assist experience with real-time stock market data! This plugin
 
 ## 📋 Before You Start
 Make sure you have:
-- 💻 Windows PC
 - 🐍 Python 3.6 or higher installed
 - 🔑 Twelve Data API key
 - 🚀 NVIDIA G-Assist installed
