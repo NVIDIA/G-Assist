@@ -67,6 +67,22 @@ This will create a `dist\spotify` folder containing all the required files for t
 
 💡 **Tip**: Make sure all G-Assist clients are closed when copying files!
 
+### **Workaround for Authentication**
+1. Run a command to trigger Spotify: 
+   
+   `"Hey Spotify, what are my top playlists?`
+2. Log in to Spotify in the launched browser window
+3. Copy the new URL to a new file in `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify` called  `auth.json`
+ 
+   ```json
+   {
+      "auth_state": "<URL HERE>"
+   }
+   ```
+4. Rerun the command 
+  
+   `"Hey Spotify, what are my top playlists?`
+
 ## 🎮 Available Functions
 The plugin includes these main functions:
 - `spotify_start_playback`: Start playing music

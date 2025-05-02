@@ -22,6 +22,10 @@ AUTHORIZATION_URL = "https://accounts.spotify.com/authorize"
 AUTH_URL = "https://accounts.spotify.com/api/token"
 BASE_URL = "https://api.spotify.com/v1"
 
+AUTH_STATE = None
+ACCESS_TOKEN = None
+
+
 def get_spotify_auth_url():
     """
     Generate the Spotify authorization URL for the user to log in and approve.
@@ -73,7 +77,6 @@ def authorize_user():
     auth_url = get_spotify_auth_url()
     webbrowser.open(auth_url)
 
-    # Step 2: Prompt the user to paste the redirected URL
 
 def complete_auth_user(callback_url): 
     global ACCESS_TOKEN
@@ -114,7 +117,7 @@ def main():
     global CLIENT_ID
     global CLIENT_SECRET
     global USERNAME
-
+    global ACCESS_TOKEN
     SUCCESS = 0
     FAILURE = 1
     TOOL_CALLS_PROPERTY = 'tool_calls'
@@ -122,14 +125,28 @@ def main():
     PARAMS_PROPERTY = 'params'
     INITIALIZE_COMMAND = 'initialize'
     SHUTDOWN_COMMAND = 'shutdown'
-    CONFIG_FILE = os.path.join(f'{os.environ.get("PROGRAMDATA", ".")}{r'\NVIDIA Corporation\nvtopps\rise\plugins\spotify'}', 'config.json')
+    CONFIG_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+    AUTH_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
 
-    # Read the IP from the configuration file
-    CLIENT_ID = get_client_id(CONFIG_FILE)
-    CLIENT_SECRET = get_client_secret(CONFIG_FILE)
-    USERNAME = get_username(CONFIG_FILE)
-    if CLIENT_ID is None or CLIENT_SECRET is None:
-        logging.error('Unable to read the configuration file. Using default Client')
+    try:
+        # Read the IP from the configuration file
+        CLIENT_ID = get_client_id(CONFIG_FILE)
+        CLIENT_SECRET = get_client_secret(CONFIG_FILE)
+        USERNAME = get_username(CONFIG_FILE)
+        if CLIENT_ID is None or CLIENT_SECRET is None:
+            logging.error('Unable to read the configuration file. Using default Client')
+    except Exception as e:
+        logging.error(f'Error reading configuration file: {e}')
+
+    try:
+        AUTH_URL = get_auth_state(AUTH_FILE)
+        logging.info(f'AUTH_URL: {AUTH_URL}')
+        if AUTH_URL is not None:    
+            logging.info(f'Executing auth command')
+            execute_auth_command({"callback_url": AUTH_URL})
+            logging.info(f'ACCESS_TOKEN: {ACCESS_TOKEN}')
+    except Exception as e:
+        logging.error(f'Error getting auth state: {e}')
 
     # Generate command handler mapping
     commands = generate_command_handlers()
@@ -137,7 +154,6 @@ def main():
     # For demo purposes, we need to manually enter the Client ID and Secret
     try:
         logging.info('Starting plugin.')
-        #initialize
     except Exception as e:
         sys.exit(FAILURE)
 
@@ -155,29 +171,54 @@ def main():
 
         if TOOL_CALLS_PROPERTY in input:
             tool_calls = input[TOOL_CALLS_PROPERTY]
+            logging.info(f'tool_calls: "{tool_calls}"')
             for tool_call in tool_calls:
-                if FUNCTION_PROPERTY in tool_call:
+                if FUNCTION_PROPERTY in tool_call: 
                     cmd = tool_call[FUNCTION_PROPERTY]
+                    logging.info(f'func: "{cmd}"')
                     if(cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND):
+                        logging.info(f'cmd: "{cmd}"')
                         response = commands[cmd]()
                     else: 
-                        try:                
-                            response = commands[function](cmd[PARAMS_PROPERTY] if PARAMS_PROPERTY in cmd else {})
+                        try: 
+                            if ACCESS_TOKEN is None:
+                                logging.info(f'Authorizing Spotify')
+                                AUTH_URL = get_auth_state(AUTH_FILE)
+                                logging.info(f'AUTH_URL: {AUTH_URL}')
+                                if AUTH_URL is not None:
+                                    logging.info(f'Executing auth command')
+                                    execute_auth_command({"callback_url": AUTH_URL})
+                                else: 
+                                    execute_initialize_command()
+                                    continue
+                            logging.info(f'Executing command: {cmd} {tool_call}')
+                            response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {})
                         except Exception as e:
                             response = generate_failure_response({'message': f'Spotify Error: {e}'})
                 else:
-                    response = generate_failure_response({ 'message': f'Unknown command "{function}"' })
-            else:
-                response = generate_failure_response({ 'message': f'Unknown command "{function}"' })
+                    response = generate_failure_response({ 'message': f'Unknown command "{cmd}"' })
         else:
             response = generate_failure_response({ 'message': 'Malformed input' })
 
-        logging.info(f'Response: {function}')
+        logging.info(f'Response: {response}')
         write_response(response)
         if function == SHUTDOWN_COMMAND:
             break
 
     sys.exit(SUCCESS)
+
+def get_auth_state(auth_file: str) -> str | None:
+    if os.path.exists(auth_file):
+        with open(auth_file, 'r') as file:
+            data = json.load(file)
+            if 'auth_state' in data:
+                return data['auth_state']
+            else:
+                logging.info(f'No auth state found in {auth_file}')
+                return None
+    else:
+        logging.info(f'No auth file found in {auth_file}')
+        return None
 
 
 def get_client_id(config_file: str) -> str | None:
@@ -254,15 +295,17 @@ def generate_command_handlers() -> dict:
 def read_command() -> dict | None:
     ''' Reads a command from the communication pipe.
 
-    @return command details if the input was proper JSON; `None` otherwise
+    Returns:
+        Command details if the input was proper JSON; `None` otherwise
     '''
     try:
         STD_INPUT_HANDLE = -10
         pipe = windll.kernel32.GetStdHandle(STD_INPUT_HANDLE)
-        chunks = []
 
-        BUFFER_SIZE = 4096
+        # Read in chunks until we get the full message
+        chunks = []
         while True:
+            BUFFER_SIZE = 4096
             message_bytes = wintypes.DWORD()
             buffer = bytes(BUFFER_SIZE)
             success = windll.kernel32.ReadFile(
@@ -276,49 +319,54 @@ def read_command() -> dict | None:
             if not success:
                 logging.error('Error reading from command pipe')
                 return None
+            
+            # Add the chunk we read
+            chunk = buffer.decode('utf-8')[:message_bytes.value]
+            chunks.append(chunk)
+
+             # If we read less than the buffer size, we're done
             if message_bytes.value < BUFFER_SIZE:
                 break
 
+        # Combine all chunks and parse JSON
         retval = ''.join(chunks)
-        logging.info(f'Raw Input: {retval}')
         return json.loads(retval)
-    
+
     except json.JSONDecodeError:
-        logging.error(f'received invalid JSON: {retval}')
+        logging.error(f'Received invalid JSON: {retval}')
         return None
     except Exception as e:
-        logging.error(f'read_command() exception: {str(e)}')
+        logging.error(f'Exception in read_command(): {str(e)}')
         return None
+    
+def write_response(response:Response) -> None:
+    ''' Writes a response to the communication pipe.
 
-def write_response(response: Response) -> None:
-    """Write response to stdout pipe.
-    
-    Writes JSON-formatted response to Windows pipe with <<END>> marker.
-    The marker is used by the reader to determine the end of the response.
-    
-    Args:
-        response (Response): Response dictionary to write.
-    
-    Response Format:
-        JSON-encoded dictionary followed by <<END>> marker.
-        Example: {"success":true,"message":"Plugin initialized successfully"}<<END>>
-    """
+    Parameters:
+        response: Response
+    '''
     try:
         STD_OUTPUT_HANDLE = -11
-
         pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
+        message_len = len(message_bytes)
+
         bytes_written = wintypes.DWORD()
-        windll.kernel32.WriteFile(
+        success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
-            len(message_bytes),
+            message_len,
             bytes_written,
             None
         )
+
+        if not success:
+            logging.error('Error writing to response pipe')
+
     except Exception as e:
-        logging.error(f'Error writing response: {e}')
+        logging.error(f'Exception in write_response(): {str(e)}')
 
 def generate_failure_response(body:dict=None) -> dict:
     ''' Generates a response indicating failure.
@@ -438,7 +486,10 @@ def get_album_uri(params: dict) -> str:
     @return the URI of the album
     '''
     try:
-        search_term = urlencode({'q': f'album:"{params['name']}" {f'artist:"{params['artist']}"' if 'artist' in params else ''}', 'type': params['type']})
+        query = f'album:"{params["name"]}"'
+        if "artist" in params:
+            query += f' artist:"{params["artist"]}"'
+        search_term = urlencode({'q': query, 'type': params['type']})
         url = f"/search?{search_term}"
         response = call_spotify_api(url=url, request_method='GET', data=None)
         if response.status_code == 200:
@@ -458,7 +509,8 @@ def get_playlist_uri(params: dict) -> str:
     @return the URI of the playlist
     '''
     try:
-        search_term = urlencode({"q": f'"{params['name']}"', 'type': params['type']})
+        query = f'"{params["name"]}"'
+        search_term = urlencode({"q": query, 'type': params['type']})
         url = f"/search?{search_term}"
         response = call_spotify_api(url, request_method='GET', data=None)
 
@@ -487,7 +539,10 @@ def get_track_uri(params: dict) -> str:
         params = {'name': 'Yesterday', 'artist': 'The Beatles', 'type': 'track'}
     """
     try:
-        search_term = urlencode({"q": f'track:"{params['name']}" {f'artist:"{params['artist']}"' if 'artist' in params else ''}', 'type': params['type']})
+        query = f'track:"{params["name"]}"'
+        if "artist" in params:
+            query += f' artist:"{params["artist"]}"'
+        search_term = urlencode({"q": query, 'type': params['type']})
         url = f"/search?{search_term}"
         response = call_spotify_api(url, request_method='GET', data=None)
 
@@ -507,7 +562,10 @@ def get_generic_uri(params: dict) -> str:
     @return the URI of the track
     '''
     try:
-        search_term = {"q": f'{params['name']}{f'artist:"{params['artist']}"' if 'artist' in params else ''}', 'type': 'track'}
+        query = params["name"]
+        if "artist" in params:
+            query += f' artist:"{params["artist"]}"'
+        search_term = urlencode({"q": query, 'type': 'track'})
         url = f"/search?{search_term}"
         response = call_spotify_api(url, request_method='GET', data=None)
 
@@ -676,7 +734,10 @@ def execute_shuffle_command(params: dict) -> dict:
         response = call_spotify_api(url=url, request_method='PUT', data=None)    
 
         if response.status_code == 204 or response.status_code == 200: 
-            return generate_success_response({ 'message': f'Shuffle was toggled{(' on' if params['state'] is True else ' off') if params['state'] is not None else ''}.' })
+            state_text = ""
+            if params['state'] is not None:
+                state_text = " on" if params['state'] is True else " off"
+            return generate_success_response({ 'message': f'Shuffle was toggled{state_text}.' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
     except Exception as e:
@@ -708,7 +769,10 @@ def execute_volume_command(params: dict) -> dict:
             return generate_failure_response({ 'message': f'Volume Error: Device does not support volume control.' })
         
         if response.status_code == 204 or response.status_code == 200: 
-            return generate_success_response({ 'message': f'Volume was set{f' to {params["volume_level"]}' if params["volume_level"] else ''}.' })
+            volume_text = ""
+            if params["volume_level"]:
+                volume_text = f" to {params['volume_level']}"
+            return generate_success_response({ 'message': f'Volume was set{volume_text}.' })
         else: 
             return generate_failure_response({ 'message': f'Volume Error: {response}' })
     except Exception as e:
@@ -729,9 +793,15 @@ def execute_currently_playing_command(params: dict) -> dict:
             results = response.json()
             
             if results['is_playing'] is True:
-                return generate_success_response({'message': f'You\'re playing {results['item']['name']}{f' by {results['item']['artists'][0]['name']}' if results['item']['artists'][0]['name'] is not None else ''}'})
+                track_name = results['item']['name']
+                artist_name = results['item']['artists'][0]['name'] if results['item']['artists'][0]['name'] is not None else ''
+                artist_text = f" by {artist_name}" if artist_name else ''
+                return generate_success_response({'message': f"You're playing {track_name}{artist_text}"})
             else:
-                return generate_success_response({'message': f'The current track is "{results['item']['name']}"{f' by {results['item']['artists'][0]['name']}' if results['item']['artists'][0]['name'] is not None else ''}, but it\'s not currently playing.'})
+                track_name = results['item']['name']
+                artist_name = results['item']['artists'][0]['name'] if results['item']['artists'][0]['name'] is not None else ''
+                artist_text = f" by {artist_name}" if artist_name else ''
+                return generate_success_response({'message': f'The current track is "{track_name}"{artist_text}, but it\'s not currently playing.'})
         else: 
             return generate_success_response({ 'message': f'There is no track currently playing.' })
     except Exception as e:
@@ -780,12 +850,14 @@ def execute_get_user_playlists_command(params: dict) -> dict:
         if response.status_code == 200:
             results = response.json()
             items = results['items']
-            playlists = list(map(lambda s: s['name'], items))
+            # Strip emojis and special characters from playlist names
+            playlists = list(map(lambda s: ''.join(char for char in s['name'] if ord(char) < 128), items))
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
         
         if playlists is not None: 
-            return generate_success_response({ 'message': f'Top Playlists: \n\r{'\n\t'.join(playlists)}' })
+            playlist_text = '\n\t'.join(playlists)
+            return generate_success_response({ 'message': f'Top Playlists: \n{playlist_text}' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {results}' })
     except Exception as e:
