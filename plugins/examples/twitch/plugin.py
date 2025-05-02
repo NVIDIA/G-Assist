@@ -12,8 +12,8 @@ Configuration:
         "TWITCH_CLIENT_SECRET": "your_client_secret_here"
     }
 
-    Config location: %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\twitch\config.json
-    Log location: %USERPROFILE%\twitch.log
+    Config location: %PROGRAMDATA%\\NVIDIA Corporation\\nvtopps\\rise\\plugins\\twitch\\config.json
+    Log location: %USERPROFILE%\\twitch.log
 
 Commands Supported:
     - initialize: Initialize the plugin
@@ -218,11 +218,13 @@ def check_twitch_live_status(params: Dict[str, str]) -> Response:
 
         if "data" in response_data and response_data["data"]:
             stream_info = response_data["data"][0]
-            print(stream_info)
+            # Strip emojis from title and game name
+            title = ''.join(char for char in stream_info['title'] if ord(char) < 128)
+            game_name = ''.join(char for char in stream_info.get('game_name', 'Unknown')) if stream_info.get('game_name') else 'Unknown'
             return generate_response(True, 
                 f"{username} is LIVE!\n"
-                f"Title: {stream_info['title']}\n"
-                f"Game: {stream_info.get('game_name', 'Unknown')}\n"
+                f"Title: {title}\n"
+                f"Game: {game_name}\n"
                 f"Viewers: {stream_info['viewer_count']}\n"
                 f"Started At: {stream_info['started_at']}"
             )
