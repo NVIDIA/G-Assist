@@ -1,15 +1,15 @@
-# 🐍 G-Assist Python Plugin Template
+# G-Assist Python Plugin Template
 
 Transform your ideas into powerful G-Assist plugins with our Python template! This template provides everything you need to create Windows-based plugins that seamlessly communicate with the G-Assist plugin manager. Whether you're building your first plugin or your fiftieth, this template will help you get started quickly.
 
-## ✨ What Can It Do?
-- 🔌 Built-in pipe communication with G-Assist plugin manager
-- 🎮 Ready-to-use command handling system
-- 📝 Comprehensive logging system
-- 🚀 Support for initialization and shutdown procedures
-- 🔧 Easily extensible function framework
+## What Can It Do?
+- Built-in pipe communication with G-Assist plugin manager
+- Ready-to-use command handling system
+- Comprehensive logging system
+- Support for initialization and shutdown procedures
+- Easily extensible function framework
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Windows PC
 - Python 3.12 or higher
@@ -19,7 +19,7 @@ Make sure you have:
 
 💡 **Tip**: Use a virtual environment to keep your plugin dependencies isolated from other Python projects!
 
-## 🚀 Installation Guide
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -36,7 +36,7 @@ python -m pip install -r requirements.txt
 ```
 This creates a clean environment and installs all required packages.
 
-## 🎮 How to Customize
+## How to Customize
 
 ### Basic Command Structure
 The template comes with three example functions ready for customization:
@@ -67,21 +67,21 @@ commands = {
 
 💡 **Tip**: Use descriptive command names that reflect what your function does!
 
-## 📝 Logging
+## Logging
 Your plugin automatically logs to `python_plugin.log` in your user's profile directory. It tracks:
-- 🔄 Plugin startup and shutdown
-- 📥 Command reception and processing
-- ⚠️ Error conditions
-- 🎯 Function execution details
+- Plugin startup and shutdown
+- Command reception and processing
+- Error conditions
+- Function execution details
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Plugin not starting?** Check if Python 3.12+ is installed and in PATH
 - **Communication errors?** Verify pywin32 is installed correctly
 - **Commands not working?** Double-check your command registration
 - **Missing logs?** Ensure write permissions in user profile directory
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this template even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.

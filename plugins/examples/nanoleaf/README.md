@@ -2,14 +2,14 @@
 
 Transform your Nanoleaf LED panels into an interactive lighting experience with G-Assist! This plugin lets you control your Nanoleaf lights using simple voice commands or the G-Assist interface. Whether you want to set the mood for a movie night or brighten up your workspace, controlling your Nanoleaf panels has never been easier.
 
-## ✨ What Can It Do?
-- 🎨 Change your Nanoleaf panel colors with voice or text commands
-- 🗣️ Use natural language: speak or type your commands
-- 🔌 Works with any Nanoleaf device that supports the [Nanoleaf API](https://nanoleafapi.readthedocs.io/en/latest/index.html)
-- 🎮 Seamlessly integrates with your G-Assist setup
-- 🔧 Easy to set up and configure
+## What Can It Do?
+- Change your Nanoleaf panel colors with voice or text commands
+- Use natural language: speak or type your commands
+- Works with any Nanoleaf device that supports the [Nanoleaf API](https://nanoleafapi.readthedocs.io/en/latest/index.html)
+- Seamlessly integrates with your G-Assist setup
+- Easy to set up and configure
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Windows PC
 - Python 3.x installed on your computer
@@ -21,7 +21,7 @@ Make sure you have:
 
 💡 **Tip**: Not sure about your Nanoleaf's IP address? You can find it in your router's admin page under connected devices
 
-## 🚀 Installation Guide
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -71,7 +71,7 @@ copy config.json dist\g-assist-plugin-nanoleaf\config.json
    - `manifest.json`
    - `config.json`
 
-## 🎮 How to Use
+## How to Use
 Once everything is set up, you can control your Nanoleaf panels through G-Assist! Try these commands (either by voice or text):
 - "Change my room lights to blue"
 - "Hey nanoleaf, set my lights to rainbow"
@@ -79,21 +79,21 @@ Once everything is set up, you can control your Nanoleaf panels through G-Assist
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist - whatever works best for you!
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Can't find your Nanoleaf's IP?** Make sure your Nanoleaf is connected to your 2.4GHz WiFi network (5GHz networks are not supported)
 - **Commands not working?** Double-check that all three files were copied to the plugins folder
 - **Build script failed?** Make sure Python is added to your system's PATH
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues, check the troubleshooting section above. You can also:
 1. Make sure your Nanoleaf device is powered on and connected to your network
 2. Verify that G-Assist is running

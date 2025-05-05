@@ -2,13 +2,13 @@
 
 Transform your ideas into functional G-Assist plugins with minimal coding! This tool uses OpenAI's Custom GPT to generate plugin code, making it easier than ever to extend G-Assist's capabilities. Whether you want to create a weather plugin, a task manager, or any other custom functionality, the Plugin Builder streamlines the entire development process.
 
-## ✨ What Can It Do?
-- 🤖 Generate complete plugin code using AI
-- 📝 Create plugins that handle various types of queries
-- 🔌 Works with the G-Assist plugin system
-- 🔧 Minimal manual coding required
+## What Can It Do?
+- Generate complete plugin code using AI
+- Create plugins that handle various types of queries
+- Works with the G-Assist plugin system
+- Minimal manual coding required
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - G-Assist installed on your system
 - An OpenAI account
@@ -17,7 +17,7 @@ Make sure you have:
 
 💡 **Tip**: Familiarize yourself with G-Assist's plugin architecture before starting your development journey!
 
-## 🚀 Getting Started
+## Getting Started
 
 ### GPT Plugin Builder
 ![Plugin Builder GIF](./plugin-builder.gif)
@@ -83,7 +83,7 @@ pyinstaller --onedir --name your-plugin-name your_plugin.py
   - config.json
   - manifest.json
 
-## 🎮 Example Use Cases
+## Example Use Cases
 You can create plugins for:
 - Weather information
 - Task management
@@ -93,29 +93,29 @@ You can create plugins for:
 
 💡 **Tip**: Start with a simple plugin to understand the workflow before tackling more complex projects!
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Generation issues?** Make sure your plugin description is clear and specific
 - **Build errors?** Verify all dependencies are properly installed
 - **Plugin not working?** Double-check the deployment folder structure
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We welcome contributions to improve the Plugin Builder! Whether it's:
 - Adding new templates
 - Improving code generation
 - Enhancing documentation
 - Fixing bugs
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues:
 1. Check the troubleshooting section above
 2. Review the generated code for any obvious issues
 3. Verify your G-Assist installation
 4. Make sure your OpenAI API access is working correctly
 
-## 🙏 Acknowledgments
+## Acknowledgments
 Special thanks to:
 - OpenAI for their Custom GPT technology
 - All contributors who help improve this tool

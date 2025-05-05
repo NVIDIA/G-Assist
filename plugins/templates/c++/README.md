@@ -1,15 +1,15 @@
-# 🔧 G-Assist Plugin Template - C++
+# G-Assist Plugin Template - C++
 
 Start building your own G-Assist plugin with this C++ template! This template provides everything you need to create powerful G-Assist plugins. Whether you're building a device controller, a game integration, or something entirely new, this template will help you get started quickly.
 
-## ✨ What Can It Do?
-- 🏗️ Provides a complete foundation for G-Assist plugin development
-- 🔌 Includes all necessary boilerplate code and structures
-- 🎮 Seamlessly integrates with G-Assist's plugin system
-- 📚 Easy to understand and customize
-- 🚀 Ready for your creative ideas
+## What Can It Do?
+- Provides a complete foundation for G-Assist plugin development
+- Includes all necessary boilerplate code and structures
+- Seamlessly integrates with G-Assist's plugin system
+- Easy to understand and customize
+- Ready for your creative ideas
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Windows PC
 - Visual Studio 2022
@@ -18,7 +18,7 @@ Make sure you have:
 
 💡 **Tip**: This template is designed to be modular - you can easily add your own features while maintaining compatibility with G-Assist!
 
-## 🚀 Installation Guide
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -52,7 +52,7 @@ mkdir json && tar -xf path\to\include.zip -C json
    - `cpp-template.exe` (from your build output folder)
    - `manifest.json` (from project root)
 
-## 🎮 How to Customize
+## How to Customize
 Start customizing your plugin by:
 - Modifying the command handlers in `commands.cpp`
 - Adding your own features in new source files
@@ -61,19 +61,19 @@ Start customizing your plugin by:
 
 💡 **Tip**: Check out our other plugin examples to see how to implement specific features!
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Build failing?** Make sure JSON library is extracted to the correct location
 - **Plugin not loading?** Double-check the installation folder path
 - **Commands not working?** Verify your manifest.json is properly configured
 - **Compilation errors?** Make sure all required headers are included
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this template even better! Feel free to submit issues and pull requests.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues:
 1. Check the troubleshooting section above
 2. Review our plugin development documentation

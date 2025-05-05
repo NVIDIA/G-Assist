@@ -1,15 +1,15 @@
-# 💡 Corsair Illumination Plugin for G-Assist
+# Corsair Illumination Plugin for G-Assist
 
 Transform your Corsair devices into an interactive lighting experience with G-Assist! This plugin lets you control your Corsair RGB lighting using simple voice commands or the G-Assist interface. Whether you're gaming or working, controlling your Corsair lighting has never been easier.
 
-## ✨ What Can It Do?
-- 🎨 Control Corsair device RGB lighting with voice or text commands
-- 🎵 Sync lighting effects across multiple devices
-- 🔌 Works with devices supporting iCUE SDK v4.0.84
-- 🎮 Seamlessly integrates with your G-Assist setup
-- 🔧 Easy to set up and configure
+## What Can It Do?
+- Control Corsair device RGB lighting with voice or text commands
+- Sync lighting effects across multiple devices
+- Works with devices supporting iCUE SDK v4.0.84
+- Seamlessly integrates with your G-Assist setup
+- Easy to set up and configure
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Windows PC
 - Corsair iCUE Software installed
@@ -19,7 +19,7 @@ Make sure you have:
 
 💡 **Tip**: Not all Corsair devices are supported. Check your device compatibility with iCUE SDK v4.0.84!
 
-## 🚀 Installation Guide
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -60,7 +60,7 @@ mkdir json && tar -xf path\to\include.zip -C json
    - `g-assist-plugin-corsair.exe` (from your build output folder)
    - `manifest.json` (from project root)
 
-## 🎮 How to Use
+## How to Use
 Once everything is set up, you can control your Corsair devices through G-Assist! Try these commands:
 - "Hey Corsair, set my keyboard to red"
 - "/fc Change my Corsair lights to rainbow"
@@ -68,19 +68,19 @@ Once everything is set up, you can control your Corsair devices through G-Assist
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Build failing?** Make sure all dependencies are extracted to the correct locations
 - **Commands not working?** Verify iCUE Software is running
 - **Device not responding?** Check if your device is supported by iCUE SDK v4.0.84
 - **Plugin not loading?** Double-check the installation folder path
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues:
 1. Make sure iCUE Software is running
 2. Verify that G-Assist is running

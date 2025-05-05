@@ -1,15 +1,15 @@
-# 💡 Logitech G Illumination Plugin for G-Assist
+# Logitech G Illumination Plugin for G-Assist
 
 Transform your Logitech G devices into an interactive lighting experience with G-Assist! This plugin lets you control your Logitech RGB lighting using simple voice commands or the G-Assist interface. Whether you're gaming or working, controlling your Logitech lighting has never been easier.
 
-## ✨ What Can It Do?
-- 🎨 Change your Logitech device colors with voice or text commands
-- 🗣️ Use natural language: speak or type your commands
-- 🔌 Works with devices supporting the Logitech LED Illumination SDK
-- 🎮 Seamlessly integrates with your G-Assist setup
-- 🔧 Easy to set up and configure
+## What Can It Do?
+- Change your Logitech device colors with voice or text commands
+- Use natural language: speak or type your commands
+- Works with devices supporting the Logitech LED Illumination SDK
+- Seamlessly integrates with your G-Assist setup
+- Easy to set up and configure
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Windows PC
 - Logitech G HUB Gaming Software installed
@@ -19,7 +19,7 @@ Make sure you have:
 
 💡 **Tip**: Not all Logitech devices are supported. Check your device compatibility with LED Illumination SDK 9.00!
 
-## 🚀 Installation Guide
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -60,7 +60,7 @@ mkdir json && tar -xf path\to\include.zip -C json
    - `g-assist-plugin-logiled.exe` (from your build output folder)
    - `manifest.json` (from project root)
 
-## 🎮 How to Use
+## How to Use
 Once everything is set up, you can control your Logitech devices through G-Assist! Try these commands:
 - "Hey logiled, Set my mouse to red"
 - "/fc Change my Logitech keyboard to rainbow"
@@ -68,22 +68,22 @@ Once everything is set up, you can control your Logitech devices through G-Assis
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Build failing?** Make sure all dependencies are extracted to the correct locations
 - **Commands not working?** Verify G HUB is running
 - **Device not responding?** Check if your device is supported by LED SDK 9.00
 - **Plugin not loading?** Double-check the installation folder path
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues:
 1. Make sure G HUB is running and your devices are recognized
 2. Verify that G-Assist is running

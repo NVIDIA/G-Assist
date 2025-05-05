@@ -1,36 +1,36 @@
-# 📺 Twitch Status Plugin for NVIDIA G-Assist
+# Twitch Status Plugin for NVIDIA G-Assist
 
 Transform your G-Assist experience with real-time Twitch stream status checking! This plugin lets you monitor your favorite Twitch streamers directly through the G-Assist platform. Whether you want to know if your favorite streamer is live or get details about their current stream, checking Twitch status has never been easier.
 
-## ✨ What Can It Do?
-- 🎮 Check if any Twitch streamer is currently live
-- 📊 Get detailed stream information including:
-  - 🎥 Stream title
-  - 🎯 Game being played
-  - 👥 Current viewer count
-  - ⏰ Stream start time
-- 🔐 Automatic OAuth token management
-- 📝 Detailed logging for troubleshooting
+## What Can It Do?
+- Check if any Twitch streamer is currently live
+- Get detailed stream information including:
+  - Stream title
+  - Game being played
+  - Current viewer count
+  - Stream start time
+- Automatic OAuth token management
+- Detailed logging for troubleshooting
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
-- 💻 Windows PC
-- 🐍 Python 3.6 or higher installed
-- 🔑 Twitch Developer Application credentials
-- 🚀 NVIDIA G-Assist installed
+- Windows PC
+- Python 3.6 or higher installed
+- Twitch Developer Application credentials
+- NVIDIA G-Assist installed
 
 💡 **Tip**: Don't have Twitch Developer credentials yet? Visit the [Twitch Developer Console](https://dev.twitch.tv/console) to create them!
 
-## 🛠️ Quickstart
+## Quickstart
 
-### 📥 Step 1: Get the Files
+### Step 1: Get the Files
 ```bash
 git clone <repo link>
 cd twitch
 ```
 This downloads all the necessary files to your computer.
 
-### ⚙️ Step 2: Setup and Build
+### Step 2: Setup and Build
 1. Run the setup script:
 ```bash
 setup.bat
@@ -43,7 +43,7 @@ build.bat
 ```
 This creates the executable and prepares all necessary files.
 
-### 📦 Step 3: Install the Plugin
+### Step 3: Install the Plugin
 1. Navigate to the `dist` folder created by the build script
 2. Copy the `twitch` folder to:
 ```bash
@@ -56,7 +56,7 @@ This creates the executable and prepares all necessary files.
 - manifest.json
 - config.json (you'll need to update this with your Twitch credentials)
 
-### 🔐 Step 4: Configure Your Twitch Credentials
+### Step 4: Configure Your Twitch Credentials
 1. Open `config.json` in the plugin directory
 2. Add your Twitch Developer credentials:
 ```json
@@ -66,15 +66,15 @@ This creates the executable and prepares all necessary files.
 }
 ```
 
-## 💬 How to Use
+## How to Use
 Once everything is set up, you can check Twitch stream status through simple chat commands! Just talk to your assistant using natural language.
 
 Try these commands:
-- 🗣️ "Hey Twitch, is Ninja live?"
-- 🎯 "Check if shroud is streaming"
-- 🎮 "Is pokimane online right now?"
+- "Hey Twitch, is Ninja live?"
+- "Check if shroud is streaming"
+- "Is pokimane online right now?"
 
-### 📝 Example Responses
+### Example Responses
 
 When a streamer is live:
 ```text
@@ -90,28 +90,28 @@ When a streamer is offline:
 ninja is OFFLINE
 ```
 
-## ❓ Troubleshooting Tips
+## Troubleshooting Tips
 
-### 🔑 Authentication Issues
+### Authentication Issues
 - **Getting "Failed to authenticate" errors?**
-  - ✅ Verify your Client ID and Secret in config.json
-  - ✅ Check if your Twitch Developer Application is still active
-  - ✅ Make sure config.json is in the correct location
+  - Verify your Client ID and Secret in config.json
+  - Check if your Twitch Developer Application is still active
+  - Make sure config.json is in the correct location
 
-### 📡 Connection Issues
+### Connection Issues
 - **Plugin not responding?**
-  - ✅ Check if Python is installed correctly
-  - ✅ Verify your internet connection
-  - ✅ Make sure the Twitch API is accessible
+  - Check if Python is installed correctly
+  - Verify your internet connection
+  - Make sure the Twitch API is accessible
 
-### 📝 Logging
+### Logging
 The plugin logs all activity to:
 ```
 %USERPROFILE%\twitch.log
 ```
 Check this file for detailed error messages and debugging information.
 
-### 🚀 Step-by-Step Tutorial
+### Step-by-Step Tutorial
 
 1. **Create the Manifest File** (`manifest.json`)
     ```json
@@ -429,7 +429,7 @@ Check this file for detailed error messages and debugging information.
   - Add health checks and automatic recovery
   - Monitor API quota usage
 
-### 🧪 Testing the Plugin
+### Testing the Plugin
 1. **Setup**
    - Get API credentials
         - Visit https://dev.twitch.tv/console to create your application
@@ -501,7 +501,7 @@ Check this file for detailed error messages and debugging information.
 
 > ⚠️ **Important**: Always verify manifest.json executable name matches your PyInstaller output
 
-### 🚀 Next Steps
+### Next Steps
 - **Feature Enhancements**
   - Add channel information retrieval
   - Implement stream analytics
@@ -514,20 +514,20 @@ Check this file for detailed error messages and debugging information.
   - Document common issues and solutions
 
 
-## 🆘 Need Help?
+## Need Help?
 If you run into issues:
-1. 📋 Check the log file for specific error messages
-2. 🔑 Verify your Twitch Developer credentials are valid
-3. 📂 Make sure all files are in the correct locations
-4. 🔄 Try restarting the G-Assist platform
+1. Check the log file for specific error messages
+2. Verify your Twitch Developer credentials are valid
+3. Make sure all files are in the correct locations
+4. Try restarting the G-Assist platform
 
-## 👥 Want to Contribute?
+## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-- 🎮 Built using the [Twitch API](https://dev.twitch.tv/docs/api/)
-- 🚀 Part of the NVIDIA G-Assist platform
+## Acknowledgments
+- Built using the [Twitch API](https://dev.twitch.tv/docs/api/)
+- Part of the NVIDIA G-Assist platform
 - We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.

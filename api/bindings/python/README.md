@@ -1,14 +1,14 @@
-# 🚀 G-Assist Python Binding
+# G-Assist Python Binding
 
 Transform your Python applications into powerful AI-enabled experiences with G-Assist! This binding makes it incredibly easy to integrate G-Assist's capabilities into your Python projects. We've abstracted away the complexity of state machines and callbacks, making everything beautifully synchronous and straightforward.
 
-## ✨ What Can It Do?
-- 🤖 Send commands to G-Assist and receive responses with just a few lines of code
-- 🔄 Synchronous, blocking calls for easier programming
-- 🎯 Simple, clean API that gets out of your way
-- 🧩 Easy integration into any Python project
+## What Can It Do?
+- Send commands to G-Assist and receive responses with just a few lines of code
+- Synchronous, blocking calls for easier programming
+- Simple, clean API that gets out of your way
+- Easy integration into any Python project
 
-## 📋 Before You Start
+## Before You Start
 Make sure you have:
 - Python 3.x installed on your computer
 - pip package manager
@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 💡 **Tip**: The "Could not find module" error often means Visual C++ components are missing or need to be updated.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Step 1: Install the Package
 From the directory where the setup.py exists, run:
@@ -66,7 +66,7 @@ Response: Your GPU is an NVIDIA GeForce RTX 5090 with a Driver version of 572.83
 """
 ```
 
-## 💬 Interactive Chat Example
+## Interactive Chat Example
 
 Want to build a more interactive experience? Check out this complete chat application that includes animated thinking bubbles and colored output!
 
@@ -106,15 +106,15 @@ if __name__ == "__main__":
     main()
 ```
 
-## 💻 G-Assist Sample GUI
+## G-Assist Sample GUI
 
 Transform your G-Assist experience with our modern chat interface! This sample application provides a sleek, desktop-ready GUI for interacting with G-Assist.
 
 ### Features
-- 🎨 Modern, dark-themed interface
-- 💬 Real-time chat interactions
-- 🔄 Live status indicators
-- 🚀 Easy to use and customize
+- Modern, dark-themed interface
+- Real-time chat interactions
+- Live status indicators
+- Easy to use and customize
 
 ### Running the GUI
 ```bash
@@ -134,18 +134,18 @@ python rise-gui.py
 
 If Node.js is not installed, the application will fall back to a simplified browser interface automatically.
 
-## 🖼️ Sample Output
+## Sample Output
 ![G-Assist GUI Output Example](rise-gui-example.png)
 
-## 🔍 Troubleshooting Tips
+## Troubleshooting Tips
 - **Commands not working?** Make sure G-Assist core services are running
 - **Installation issues?** Verify your Python version and pip installation
 
-## 🆘 Need Help?
+## Need Help?
 If you run into any issues:
 1. Verify that G-Assist core services are running
 2. Check your Python environment setup
 3. Try restarting your application
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
