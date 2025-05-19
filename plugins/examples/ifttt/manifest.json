@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-ifttt.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "trigger_gaming_setup",
+      "description": "Triggers your custom IFTTT gaming setup — ideal for commands like 'It's gametime', 'It's game time', 'start my gaming scene', or 'activate gamer mode'.",
+      "tags": [
+        "gaming",
+        "gametime",
+        "game time",
+        "setup",
+        "lights",
+        "gamer",
+        "scene",
+        "rgb",
+        "start",
+        "activate"
+      ],
+      "properties": {
+        "event_name": {
+          "type": "string",
+          "description": "The IFTTT event name to trigger"
+        }
+      }
+    }
+  ]
+}

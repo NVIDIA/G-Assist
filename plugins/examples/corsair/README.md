@@ -80,9 +80,5 @@ We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](
 ## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## Need Help?
-If you run into any issues:
-1. Make sure iCUE Software is running
-2. Verify that G-Assist is running
-3. Check if your devices are recognized in iCUE
-4. Try restarting both iCUE and G-Assist
+## Acknowledgments
+We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
