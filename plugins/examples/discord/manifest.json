@@ -1,0 +1,51 @@
+{
+  "manifestVersion": 1,
+  "executable": "./g-assist-plugin-discord.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "send_message_to_discord_channel",
+      "description": "Send a text message to a Discord channel",
+      "tags": ["discord", "message"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The text content of the message"
+        }
+      }
+    },
+    {
+      "name": "send_latest_chart_to_discord_channel",
+      "description": "Send the latest .csv file from the G-Assist directory to a Discord channel",
+      "tags": ["discord", "file", "csv", "chart", "metrics", "performance data", "perf", "data"],
+      "properties": {
+        "caption": {
+          "type": "string",
+          "description": "[optional] An optional caption for the file attachment"
+        }
+      }
+    },
+    {
+      "name": "send_latest_shadowplay_clip_to_discord_channel",
+      "description": "Send the latest .mp4 Shadowplay clip from the specified directory to a Discord channel",
+      "tags": ["discord", "file", "video", "shadowplay", "clip", "replay"],
+      "properties": {
+        "caption": {
+          "type": "string",
+          "description": "[optional] An option caption for the video attachment"
+        }
+      }
+    },
+    {
+      "name": "send_latest_screenshot_to_discord_channel",
+      "description": "Send the latest .png screenshot from the specified directory to a Discord channel",
+      "tags": ["discord", "file", "screenshot", "pic"],
+      "properties": {
+        "caption": {
+          "type": "string",
+          "description": "[optional] An optional caption for the screenshot attachment"
+        }
+      }
+    }
+  ]
+}

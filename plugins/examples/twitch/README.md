@@ -9,19 +9,16 @@ Transform your G-Assist experience with real-time Twitch stream status checking!
   - Game being played
   - Current viewer count
   - Stream start time
-- Automatic OAuth token management
 - Detailed logging for troubleshooting
 
 ## Before You Start
 Make sure you have:
 - Windows PC
 - Python 3.6 or higher installed
-- Twitch Developer Application credentials
+- Twitch Developer Application credentials - Visit the [Twitch Developer Console](https://dev.twitch.tv/console) to create them
 - NVIDIA G-Assist installed
 
-💡 **Tip**: Don't have Twitch Developer credentials yet? Visit the [Twitch Developer Console](https://dev.twitch.tv/console) to create them!
-
-## Quickstart
+## Installation Guide
 
 ### Step 1: Get the Files
 ```bash
@@ -30,7 +27,14 @@ cd twitch
 ```
 This downloads all the necessary files to your computer.
 
-### Step 2: Setup and Build
+### Step 2: Set up your Twitch App
+- Register an application. Follow directions here: https://dev.twitch.tv/docs/authentication/register-app 
+    - Set OAuth Redirect URLs to http://localhost:3000
+    - Set Category to Application Integration
+- From your Developer Console, in the “Applications” tab, locate your app under “Developer Applications”, and click “Manage”.
+- Copy Client ID and Client Secret and paste to the `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` values in the `config.json file` 
+
+### Step 3: Setup and Build
 1. Run the setup script:
 ```bash
 setup.bat
@@ -43,31 +47,19 @@ build.bat
 ```
 This creates the executable and prepares all necessary files.
 
-### Step 3: Install the Plugin
+### Step 4: Install the Plugin
 1. Navigate to the `dist` folder created by the build script
 2. Copy the `twitch` folder to:
 ```bash
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\twitch
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
 ```
-💡 **Tip**: Copy and paste this path into File Explorer's address bar for easy navigation!
-
 💡 **Tip**: Make sure all files are copied, including:
 - The executable
 - manifest.json
-- config.json (you'll need to update this with your Twitch credentials)
-
-### Step 4: Configure Your Twitch Credentials
-1. Open `config.json` in the plugin directory
-2. Add your Twitch Developer credentials:
-```json
-{
-    "TWITCH_CLIENT_ID": "your_client_id_here",
-    "TWITCH_CLIENT_SECRET": "your_client_secret_here"
-}
-```
+- config.json (Make sure you've updated this with your Twitch credentials)
 
 ## How to Use
-Once everything is set up, you can check Twitch stream status through simple chat commands! Just talk to your assistant using natural language.
+Once everything is set up, you can check Twitch stream status through simple chat commands.
 
 Try these commands:
 - "Hey Twitch, is Ninja live?"
@@ -87,7 +79,7 @@ Started At: 2024-03-14T12:34:56Z
 
 When a streamer is offline:
 ```
-ninja is OFFLINE
+shroud is OFFLINE
 ```
 
 ## Troubleshooting Tips
@@ -95,14 +87,6 @@ ninja is OFFLINE
 ### Authentication Issues
 - **Getting "Failed to authenticate" errors?**
   - Verify your Client ID and Secret in config.json
-  - Check if your Twitch Developer Application is still active
-  - Make sure config.json is in the correct location
-
-### Connection Issues
-- **Plugin not responding?**
-  - Check if Python is installed correctly
-  - Verify your internet connection
-  - Make sure the Twitch API is accessible
 
 ### Logging
 The plugin logs all activity to:
@@ -110,6 +94,8 @@ The plugin logs all activity to:
 %USERPROFILE%\twitch.log
 ```
 Check this file for detailed error messages and debugging information.
+
+## Developer Documentation
 
 ### Step-by-Step Tutorial
 
@@ -424,9 +410,7 @@ Check this file for detailed error messages and debugging information.
   - Add request/response debugging for troubleshooting
 
 - **Performance & Reliability**
-  - Implement exponential backoff for rate limits
   - Cache OAuth tokens with proper expiration handling
-  - Add health checks and automatic recovery
   - Monitor API quota usage
 
 ### Testing the Plugin
@@ -499,27 +483,14 @@ Check this file for detailed error messages and debugging information.
         
         Copy the `dist\twitch` folder to the `plugins` directory `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\`
 
-> ⚠️ **Important**: Always verify manifest.json executable name matches your PyInstaller output
+> ⚠️ **Important**: Always verify `manifest.json` executable name matches your executable that was built
 
 ### Next Steps
-- **Feature Enhancements**
+- **Ideas for Feature Enhancements**
   - Add channel information retrieval
   - Implement stream analytics
   - Add top games listing
   - Create clip management features
-
-- **Documentation**
-  - Add usage examples
-  - Write troubleshooting guide
-  - Document common issues and solutions
-
-
-## Need Help?
-If you run into issues:
-1. Check the log file for specific error messages
-2. Verify your Twitch Developer credentials are valid
-3. Make sure all files are in the correct locations
-4. Try restarting the G-Assist platform
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
@@ -529,5 +500,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 - Built using the [Twitch API](https://dev.twitch.tv/docs/api/)
-- Part of the NVIDIA G-Assist platform
 - We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.

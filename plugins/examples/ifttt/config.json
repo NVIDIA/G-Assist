@@ -1,0 +1,6 @@
+{ 
+  "webhook_key": "", 
+  "event_name": "game_routine", 
+  "main_rss_url": "https://feeds.feedburner.com/ign/pc-articles",
+  "alternate_rss_url": "https://feeds.feedburner.com/ign/all"
+}

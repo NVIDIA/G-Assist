@@ -1,0 +1,4 @@
+requests
+pywin32>=223
+pyinstaller==6.11.0
+feedparser>=6.0.0

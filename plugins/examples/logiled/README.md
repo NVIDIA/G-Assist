@@ -82,10 +82,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
-
-## Need Help?
-If you run into any issues:
-1. Make sure G HUB is running and your devices are recognized
-2. Verify that G-Assist is running
-3. Check if your devices have the latest firmware
-4. Try restarting both G HUB and G-Assist

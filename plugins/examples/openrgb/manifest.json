@@ -1,0 +1,65 @@
+{
+  "manifestVersion": 1,
+  "executable": "./g-assist-plugin-openrgb.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "list_devices",
+      "description": "Returns a list of all connected RGB devices",
+      "tags": [
+        "openrgb",
+        "devices",
+        "list"
+      ]
+    },
+    {
+      "name": "disable_lighting",
+      "description": "Turns off lighting for all devices",
+      "tags": [
+        "openrgb",
+        "lighting",
+        "off"
+      ]
+    },
+    {
+      "name": "set_color",
+      "description": "Sets a specific color for a device by name",
+      "tags": [
+        "openrgb",
+        "lighting",
+        "color",
+        "set"
+      ],
+      "properties": {
+        "device_name": {
+          "type": "string",
+          "description": "[optional] Name of the device to set color for. If the user does not provide a device name, the color will be set for all devices."
+        },
+        "color_name": {
+          "type": "string",
+          "description": "Color value to set "
+        }
+      }
+    },
+    {
+      "name": "set_mode",
+      "description": "Sets a specific lighting mode/effect for a device",
+      "tags": [
+        "openrgb",
+        "lighting",
+        "mode",
+        "effect"
+      ],
+      "properties": {
+        "device_name": {
+          "type": "string",
+          "description": "[optional] Name of the device to set color for. If the user does not provide a device name, the color will be set for all devices."
+        },
+        "effect_name": {
+          "type": "string",
+          "description": "Name of the effect to set"
+        }
+      }
+    }
+  ]
+}
