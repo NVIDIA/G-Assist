@@ -24,6 +24,7 @@ BASE_URL = "https://api.spotify.com/v1"
 
 AUTH_STATE = None
 ACCESS_TOKEN = None
+REFRESH_TOKEN = None
 
 
 def get_spotify_auth_url():
@@ -73,7 +74,7 @@ def authorize_user():
     """
     Authorize the user using Spotify's API and return access/refresh tokens.
     """
-    # Step 1: Open the Spotify login page in the browser
+    # Open the Spotify login page in the browser
     auth_url = get_spotify_auth_url()
     webbrowser.open(auth_url)
 
@@ -82,28 +83,40 @@ def complete_auth_user(callback_url):
     global ACCESS_TOKEN
     global REFRESH_TOKEN
     
-    # Step 3: Extract the authorization code from the callback URL
-    auth_code = extract_code_from_url(callback_url)
-    if not auth_code:
-        raise Exception("Authorization code not found in the callback URL.")
-
-    # Step 4: Exchange the authorization code for access and refresh tokens
-    token_data = get_access_token(auth_code)
-    ACCESS_TOKEN = token_data['access_token']
-    REFRESH_TOKEN = token_data['refresh_token']
-
-    print(ACCESS_TOKEN)
-    print(REFRESH_TOKEN)
     try:
-        devices = get_device_id()
-        print(devices)
-        if not devices:
-            logging.error("No devices connected")
+        # Extract the authorization code from the callback URL
+        auth_code = extract_code_from_url(callback_url)
+        if not auth_code:
+            raise Exception("Authorization code not found in the callback URL.")
+
+        # Exchange the authorization code for access and refresh tokens
+        token_data = get_access_token(auth_code)
+        logging.info("Successfully got token data from Spotify")
+        
+        ACCESS_TOKEN = token_data['access_token']
+        REFRESH_TOKEN = token_data['refresh_token']
+        
+        if not REFRESH_TOKEN:
+            raise Exception("No refresh token received from Spotify")
+
+        logging.info("Saving tokens to auth file...")
+        # Save the tokens to auth file
+        save_auth_state(ACCESS_TOKEN, REFRESH_TOKEN)
+        logging.info("Tokens saved successfully")
+
+        try:
+            devices = get_device_id()
+            logging.info(f'Successfully connected to Spotify device')
+            if not devices:
+                logging.error("No devices connected")
+        except Exception as e:
+            logging.error(f'Error connecting to Spotify device {str(e)}:')
+            return generate_failure_response({ 'message': f'Error connecting to Spotify device: {e}' })
+        
+        return generate_success_response({ 'message': f'User authorized successfully' })
     except Exception as e:
-        logging.error(f"Error connecting to Spotify device {str(e)}:")
-        return generate_failure_response({ 'message': f'Error connecting to Spotify device: {e}' })
-    
-    return generate_success_response()
+        logging.error(f"Error in complete_auth_user: {str(e)}")
+        return generate_failure_response({ 'message': f'Authorization failed: {str(e)}' })
 
 def main():
     """ Main entry point for the Spotify G-Assist plugin.
@@ -118,6 +131,7 @@ def main():
     global CLIENT_SECRET
     global USERNAME
     global ACCESS_TOKEN
+    global REFRESH_TOKEN
     SUCCESS = 0
     FAILURE = 1
     TOOL_CALLS_PROPERTY = 'tool_calls'
@@ -138,65 +152,107 @@ def main():
     except Exception as e:
         logging.error(f'Error reading configuration file: {e}')
 
-    try:
-        AUTH_URL = get_auth_state(AUTH_FILE)
-        logging.info(f'AUTH_URL: {AUTH_URL}')
-        if AUTH_URL is not None:    
-            logging.info(f'Executing auth command')
-            execute_auth_command({"callback_url": AUTH_URL})
-            logging.info(f'ACCESS_TOKEN: {ACCESS_TOKEN}')
-    except Exception as e:
-        logging.error(f'Error getting auth state: {e}')
-
     # Generate command handler mapping
     commands = generate_command_handlers()
 
-    # For demo purposes, we need to manually enter the Client ID and Secret
+    logging.info('Starting plugin.')
+
+    # Try to load existing tokens first
     try:
-        logging.info('Starting plugin.')
+        ACCESS_TOKEN, REFRESH_TOKEN = get_auth_state(AUTH_FILE)
+        if ACCESS_TOKEN is not None and REFRESH_TOKEN is not None:
+            logging.info('Successfully loaded tokens from auth file')
+            # Verify tokens are still valid
+            try:
+                devices = get_device_id()
+                logging.info('Successfully verified tokens with Spotify')
+            except Exception as e:
+                logging.error(f'Error verifying tokens: {e}')
+                ACCESS_TOKEN = None
+                REFRESH_TOKEN = None
     except Exception as e:
-        sys.exit(FAILURE)
+        logging.error(f'Error loading auth state: {e}')
+        ACCESS_TOKEN = None
+        REFRESH_TOKEN = None
 
     while True:
-        FUNCTION_PROPERTY = 'func'
-        PARAMS_PROPERTY = 'params'
-
         function = ''
         response = None
         input = read_command()
         if input is None:
-            # Error reading command; continue
             continue
         logging.info(f'Command: "{input}"')
 
         if TOOL_CALLS_PROPERTY in input:
             tool_calls = input[TOOL_CALLS_PROPERTY]
             logging.info(f'tool_calls: "{tool_calls}"')
+            
+            # Store the original command for retry after auth
+            original_command = None
+            
             for tool_call in tool_calls:
                 if FUNCTION_PROPERTY in tool_call: 
                     cmd = tool_call[FUNCTION_PROPERTY]
                     logging.info(f'func: "{cmd}"')
-                    if(cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND):
+                    
+                    if cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND:
                         logging.info(f'cmd: "{cmd}"')
                         response = commands[cmd]()
-                    else: 
-                        try: 
-                            if ACCESS_TOKEN is None:
-                                logging.info(f'Authorizing Spotify')
-                                AUTH_URL = get_auth_state(AUTH_FILE)
-                                logging.info(f'AUTH_URL: {AUTH_URL}')
-                                if AUTH_URL is not None:
-                                    logging.info(f'Executing auth command')
-                                    execute_auth_command({"callback_url": AUTH_URL})
-                                else: 
-                                    execute_initialize_command()
-                                    continue
+                    else:
+                        # For all other commands, check if we need authorization
+                        if ACCESS_TOKEN is None or REFRESH_TOKEN is None:
+                            # Check if we have an auth_url in the file
+                            try:
+                                with open(AUTH_FILE, 'r') as file:
+                                    data = json.load(file)
+                                    if 'auth_url' in data:
+                                        logging.info('Found auth_url in file, processing...')
+                                        auth_response = execute_auth_command({"callback_url": data['auth_url']})
+                                        if auth_response['success']:
+                                            # Store the original command for retry
+                                            original_command = tool_call
+                                            # Break out of the loop to retry the command
+                                            break
+                            except Exception as e:
+                                logging.error(f'Error checking auth file: {e}')
+                            
+                            # If we get here, we need to start new authorization
+                            logging.info('Starting new authorization process')
+                            authorize_user()
+                            response = generate_success_response({
+                                "message": "Please follow these steps:\n"
+                                          "1. A browser window has opened - log in to Spotify and authorize the app\n"
+                                          "2. After authorizing, you'll be redirected to a URL\n"
+                                          "3. Copy the ENTIRE URL from your browser\n"
+                                          "4. Create or edit the file at this location:\n"
+                                          f"   `{AUTH_FILE}`\n"
+                                          "5. Add the URL to the file in this format:\n"
+                                          "   ```\n"
+                                          "   {\n"
+                                          "     \"auth_url\": \"YOUR_COPIED_URL\"\n"
+                                          "   }\n"
+                                          "    \n"
+                                          "6. Save the file and try your command again"
+                            })
+                            break
+                        
+                        # If we have valid tokens, execute the command
+                        try:
                             logging.info(f'Executing command: {cmd} {tool_call}')
                             response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {})
                         except Exception as e:
                             response = generate_failure_response({'message': f'Spotify Error: {e}'})
                 else:
                     response = generate_failure_response({ 'message': f'Unknown command "{cmd}"' })
+            
+            # If we have an original command to retry (after successful auth)
+            if original_command is not None:
+                cmd = original_command[FUNCTION_PROPERTY]
+                logging.info(f'Retrying original command after auth: {cmd}')
+                try:
+                    response = commands[cmd](original_command[PARAMS_PROPERTY] if PARAMS_PROPERTY in original_command else {})
+                except Exception as e:
+                    response = generate_failure_response({'message': f'Spotify Error: {e}'})
         else:
             response = generate_failure_response({ 'message': 'Malformed input' })
 
@@ -207,18 +263,66 @@ def main():
 
     sys.exit(SUCCESS)
 
-def get_auth_state(auth_file: str) -> str | None:
+def get_auth_state(auth_file: str) -> tuple[str | None, str | None]:
+    """Gets the access and refresh tokens from the auth file.
+    
+    Args:
+        auth_file (str): Path to the auth file
+        
+    Returns:
+        tuple[str | None, str | None]: Tuple of (access_token, refresh_token) or (None, None) if not found
+    """
     if os.path.exists(auth_file):
-        with open(auth_file, 'r') as file:
-            data = json.load(file)
-            if 'auth_state' in data:
-                return data['auth_state']
-            else:
-                logging.info(f'No auth state found in {auth_file}')
-                return None
+        try:
+            logging.info(f"Reading auth file: {auth_file}")
+            with open(auth_file, 'r') as file:
+                content = file.read().strip()
+                if not content:
+                    logging.error("Auth file is empty")
+                    return None, None
+                    
+                data = json.loads(content)
+                logging.info("Auth file contents loaded")
+                
+                # First check if we have a pending auth URL
+                if 'auth_url' in data:
+                    logging.info("Found auth_url in file, processing...")
+                    # Process the auth URL to get tokens
+                    try:
+                        complete_auth_user(data['auth_url'])
+                        # Remove the auth_url from the file since we've processed it
+                        data.pop('auth_url', None)
+                        with open(auth_file, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        logging.info("Successfully processed auth_url and saved tokens")
+                    except Exception as e:
+                        logging.error(f"Error processing auth URL: {e}")
+                        return None, None
+                
+                # Return the tokens if they exist
+                access_token = data.get('access_token')
+                refresh_token = data.get('refresh_token')
+                
+                if access_token and refresh_token:
+                    logging.info("Found both access and refresh tokens in auth file")
+                elif access_token:
+                    logging.error("Found access token but no refresh token")
+                    return None, None
+                elif refresh_token:
+                    logging.error("Found refresh token but no access token")
+                    return None, None
+                else:
+                    logging.error("No tokens found in auth file")
+                
+                return access_token, refresh_token
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON in auth file: {e}")
+            return None, None
+        except Exception as e:
+            logging.error(f"Error reading auth file: {e}")
     else:
-        logging.info(f'No auth file found in {auth_file}')
-        return None
+        logging.info(f"Auth file does not exist: {auth_file}")
+    return None, None
 
 
 def get_client_id(config_file: str) -> str | None:
@@ -404,21 +508,50 @@ def call_spotify_api(url: str, request_method: str, data) -> Response:
         Response: The HTTP response from the Spotify API
         
     Note:
-        Requires valid ACCESS_TOKEN to be set globally
+        Requires valid ACCESS_TOKEN to be set globally. Will attempt to refresh token if request fails with 401.
     """
+    if not ACCESS_TOKEN:
+        logging.error("No access token available for API call")
+        return Response()
+        
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
     full_url = f"{BASE_URL}{url}"
+    logging.info(f"Making {request_method} request to {full_url}")
 
-    if request_method == 'GET':
-        return requests.get(full_url, headers=headers)
-    elif request_method == 'POST':
-        return requests.post(full_url, headers=headers)      
-    elif request_method == 'PUT':
-        headers["Content-Type"] = "application/json"
-        if data != None:
-            return requests.put(full_url, headers=headers, json=data)
-        else: 
-            return requests.put(full_url, headers=headers)
+    def make_request():
+        if request_method == 'GET':
+            return requests.get(full_url, headers=headers)
+        elif request_method == 'POST':
+            return requests.post(full_url, headers=headers)      
+        elif request_method == 'PUT':
+            headers["Content-Type"] = "application/json"
+            if data != None:
+                return requests.put(full_url, headers=headers, json=data)
+            else: 
+                return requests.put(full_url, headers=headers)
+
+    # Make initial request
+    response = make_request()
+    logging.info(f"Initial request status code: {response.status_code}")
+    
+    # If we get a 401, try refreshing the token and retry once
+    if response.status_code == 401:
+        logging.info("Received 401, attempting to refresh token...")
+        if refresh_access_token():
+            # Update headers with new token
+            headers["Authorization"] = f"Bearer {ACCESS_TOKEN}"
+            logging.info("Token refreshed, retrying request...")
+            # Retry request with new token
+            response = make_request()
+            logging.info(f"Retry request status code: {response.status_code}")
+        else:
+            logging.error("Failed to refresh token")
+    
+    if response.status_code != 200 and response.status_code != 204:
+        logging.error(f"API request failed. Status code: {response.status_code}")
+        logging.error(f"Response: {response.text}")
+    
+    return response
 
 def get_user_id(): 
     ''' Retrieves a user's Spotify User ID from the users's Spotify username provided in the config file
@@ -587,12 +720,68 @@ def execute_initialize_command() -> dict:
     @return function response
     '''
     try:
-        authorize_user()
-        logging.info(f'Connected to Spotify for ID {CLIENT_ID}')
-        return generate_success_response({"message": "Grant permissions and paste the full URL you were redirected to here: "})
+        # Check if we have tokens in auth.json
+        auth_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
+        
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(auth_file), exist_ok=True)
+        
+        # Check if file exists and has valid content
+        needs_auth = True
+        if os.path.exists(auth_file):
+            try:
+                with open(auth_file, 'r') as file:
+                    content = file.read().strip()
+                    if content:  # Check if file is not empty
+                        auth_data = json.loads(content)
+                        if 'access_token' in auth_data and 'refresh_token' in auth_data:
+                            global ACCESS_TOKEN, REFRESH_TOKEN
+                            ACCESS_TOKEN = auth_data['access_token']
+                            REFRESH_TOKEN = auth_data['refresh_token']
+                            # Verify tokens are still valid
+                            try:
+                                devices = get_device_id()
+                                logging.info('Successfully loaded and verified tokens from auth.json')
+                                return generate_success_response({"message": "Successfully connected to Spotify using credentials from auth.json"})
+                            except Exception as e:
+                                logging.error(f'Error verifying tokens: {e}')
+                                # Clear invalid tokens
+                                ACCESS_TOKEN = None
+                                REFRESH_TOKEN = None
+                                # Clear the auth file
+                                with open(auth_file, 'w') as f:
+                                    json.dump({}, f)
+            except json.JSONDecodeError:
+                logging.error('Invalid JSON in auth.json, will start new authorization')
+                # Clear the invalid file
+                with open(auth_file, 'w') as f:
+                    json.dump({}, f)
+            except Exception as e:
+                logging.error(f'Error reading auth file: {e}')
+                needs_auth = True
+
+        if needs_auth:
+            # Start new authorization
+            authorize_user()
+            logging.info(f'Opened browser for Spotify authorization')
+            return generate_success_response({
+                "message": "Please follow these steps:\n"
+                          "1. A browser window has opened - log in to Spotify and authorize the app\n"
+                          "2. After authorizing, you'll be redirected to a URL\n"
+                          "3. Copy the ENTIRE URL from your browser\n"
+                          "4. Create or edit the file at this location:\n"
+                          f"   `{auth_file}`\n"
+                          "5. Add the URL to the file in this format:\n"
+                          "   ```\n"
+                          "   {\n"
+                          "     \"auth_url\": \"YOUR_COPIED_URL\"\n"
+                          "   }\n"
+                          "   \n"
+                          "6. Save the file and try your command again"
+            })
     except Exception as e:
-        logging.error(f'Error connecting to Spotify for ID {CLIENT_ID}')
-        return generate_failure_response({'message': f'Error connecting to Spotify. Could not find credentials. {e}'})
+        logging.error(f'Error in initialization: {e}')
+        return generate_failure_response({'message': f'Error connecting to Spotify: {e}'})
 
 
 def execute_shutdown_command() -> dict:
@@ -603,14 +792,37 @@ def execute_shutdown_command() -> dict:
     return generate_success_response()
 
 def execute_auth_command(params) -> dict:
-    ''' Command handler for shutdown function
-
-        @return function response
+    ''' Command handler for authorization function
+    
+    Args:
+        params (dict): Parameters containing:
+            - callback_url (str): The URL that Spotify redirected to after authorization
+            
+    Returns:
+        dict: Response indicating success or failure
     '''
-
-    complete_auth_user(params['callback_url'])
-
-    return generate_success_response({ 'message': f'User authorized' })
+    try:
+        if 'callback_url' not in params:
+            return generate_failure_response({
+                'message': 'Missing callback_url parameter. Please provide the URL you were redirected to after authorizing.'
+            })
+            
+        response = complete_auth_user(params['callback_url'])
+        if response['success']:
+            # Remove the auth_url from the file since we've processed it
+            try:
+                with open(os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json"), 'r') as file:
+                    data = json.load(file)
+                data.pop('auth_url', None)
+                with open(os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json"), 'w') as file:
+                    json.dump(data, file, indent=2)
+            except Exception as e:
+                logging.error(f"Error cleaning up auth file: {e}")
+        return response
+    except Exception as e:
+        return generate_failure_response({ 
+            'message': f'Authorization failed: {str(e)}. Please try the authorization process again.' 
+        })
     
 
 def execute_play_command(params: dict) -> dict:
@@ -658,7 +870,7 @@ def execute_play_command(params: dict) -> dict:
             response = call_spotify_api(url, request_method='PUT', data=None)
 
         if response is not None and (response.status_code == 204 or response.status_code == 200): 
-            return generate_success_response({ 'message': f'Playback successfully started.' })
+            return generate_success_response({ 'message': 'Playback successfully started.' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
     except Exception as e:
@@ -677,7 +889,7 @@ def execute_pause_command(params: dict) -> dict:
         response = call_spotify_api(url=url, request_method='PUT', data=None)    
 
         if response.status_code == 204 or response.status_code == 200: 
-            return generate_success_response({ 'message': f'Playback has paused.' })
+            return generate_success_response({ 'message': 'Playback has paused.' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
     except Exception as e:
@@ -696,7 +908,7 @@ def execute_next_track_command(params: dict) -> dict:
         response = call_spotify_api(url=url, request_method='POST', data=None)    
 
         if response.status_code == 204 or response.status_code == 200: 
-            return generate_success_response({ 'message': f'Track was skipped.' })
+            return generate_success_response({ 'message': 'Track was skipped.' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
     except Exception as e:
@@ -715,7 +927,7 @@ def execute_previous_track_command(params: dict) -> dict:
         response = call_spotify_api(url=url, request_method='POST', data=None)    
         
         if response.status_code == 204 or response.status_code == 200: 
-            return generate_success_response({ 'message': f'Track was skipped to the previous track.' })
+            return generate_success_response({ 'message': 'Track was skipped to the previous track.' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {response}' })
     except Exception as e:
@@ -766,7 +978,7 @@ def execute_volume_command(params: dict) -> dict:
             url = f"/me/player/volume?volume_percent={params['volume_level']}&device_id={device_id}"
             response = call_spotify_api(url=url, request_method='PUT', data=None)    
         else:
-            return generate_failure_response({ 'message': f'Volume Error: Device does not support volume control.' })
+            return generate_failure_response({ 'message': 'Volume Error: Device does not support volume control.' })
         
         if response.status_code == 204 or response.status_code == 200: 
             volume_text = ""
@@ -796,14 +1008,14 @@ def execute_currently_playing_command(params: dict) -> dict:
                 track_name = results['item']['name']
                 artist_name = results['item']['artists'][0]['name'] if results['item']['artists'][0]['name'] is not None else ''
                 artist_text = f" by {artist_name}" if artist_name else ''
-                return generate_success_response({'message': f"You're playing {track_name}{artist_text}"})
+                return generate_success_response({'message': f'You\'re playing "{track_name}"{artist_text}'})
             else:
                 track_name = results['item']['name']
                 artist_name = results['item']['artists'][0]['name'] if results['item']['artists'][0]['name'] is not None else ''
                 artist_text = f" by {artist_name}" if artist_name else ''
                 return generate_success_response({'message': f'The current track is "{track_name}"{artist_text}, but it\'s not currently playing.'})
         else: 
-            return generate_success_response({ 'message': f'There is no track currently playing.' })
+            return generate_success_response({ 'message': 'There is no track currently playing.' })
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
@@ -823,10 +1035,10 @@ def execute_queue_track_command(params:dict) -> dict:
             response = call_spotify_api(url=url, request_method='POST', data=None)    
 
             if response.status_code == 204 or response.status_code == 200: 
-                return generate_success_response({ 'message': f'Track was queued.' })
+                return generate_success_response({ 'message': 'Track was queued.' })
             else: 
                 return generate_failure_response({ 'message': f'Playback Error: {response}' })
-        return generate_failure_response({ 'message': f'No track was specified.' })
+        return generate_failure_response({ 'message': 'No track was specified.' })
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
@@ -857,11 +1069,78 @@ def execute_get_user_playlists_command(params: dict) -> dict:
         
         if playlists is not None: 
             playlist_text = '\n\t'.join(playlists)
-            return generate_success_response({ 'message': f'Top Playlists: \n{playlist_text}' })
+            return generate_success_response({ 'message': f'Top Playlists:\n\t{playlist_text}' })
         else: 
             return generate_failure_response({ 'message': f'Playback Error: {results}' })
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
+
+def refresh_access_token() -> bool:
+    """Refreshes the access token using the refresh token.
+    
+    Returns:
+        bool: True if refresh was successful, False otherwise
+    """
+    global ACCESS_TOKEN
+    global REFRESH_TOKEN
+    
+    try:
+        logging.info("Attempting to refresh access token...")
+        if not REFRESH_TOKEN:
+            logging.error("No refresh token available")
+            return False
+            
+        logging.info("Making refresh token request to Spotify...")
+        token_response = requests.post(
+            AUTH_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": REFRESH_TOKEN,
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code != 200:
+            logging.error(f"Error refreshing token. Status code: {token_response.status_code}")
+            logging.error(f"Response: {token_response.text}")
+            return False
+
+        token_data = token_response.json()
+        ACCESS_TOKEN = token_data['access_token']
+        logging.info("Successfully refreshed access token")
+        
+        # Save the new tokens to auth file
+        save_auth_state(ACCESS_TOKEN, REFRESH_TOKEN)
+        return True
+    except Exception as e:
+        logging.error(f"Exception in refresh_access_token: {str(e)}")
+        return False
+
+def save_auth_state(access_token: str, refresh_token: str) -> None:
+    """Saves the access and refresh tokens to the auth file.
+    
+    Args:
+        access_token (str): The access token to save
+        refresh_token (str): The refresh token to save
+    """
+    auth_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
+    try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(auth_file), exist_ok=True)
+        
+        data = {
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        }
+        logging.info(f"Saving tokens to {auth_file}")
+        with open(auth_file, 'w') as file:
+            json.dump(data, file, indent=2)
+        logging.info("Tokens saved successfully")
+    except Exception as e:
+        logging.error(f"Error saving auth state: {e}")
+        raise
 
 if __name__ == '__main__':
     main()

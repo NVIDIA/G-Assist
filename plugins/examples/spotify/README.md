@@ -87,21 +87,38 @@ Once installed, you can control Spotify through G-Assist. Try these commands:
 - Get current playback: `Hey Spotify, what song is playing?`
 - Get top playlists: `Hey Spotify, what are my top 5 playlists`
 
-### **Workaround for Authentication**
-1. Run a command to trigger Spotify: 
-   
-   `"Hey Spotify, what are my top playlists?`
-2. Log in to Spotify in the launched browser window
-3. Copy the new URL to a new file in `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify` called  `auth.json`
- 
-   ```json
-   {
-      "auth_state": "<URL HERE>"
-   }
-   ```
-4. Rerun the command 
-  
-   `"Hey Spotify, what are my top playlists?`
+### Authentication Flow
+The plugin uses OAuth 2.0 for authentication with Spotify. Here's how it works:
+
+1. **First-time Setup**
+   - Run any Spotify command (e.g., `Hey Spotify, what are my top playlists?`)
+   - A browser window will open automatically
+   - Log in to Spotify and authorize the app
+   - You'll be redirected to a URL - copy the ENTIRE URL from your browser
+   - Create or edit the file at `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
+   - Add the URL in this format:
+     ```json
+     {
+       "auth_url": "YOUR_COPIED_URL"
+     }
+     ```
+   - Save the file
+   - The plugin will automatically:
+     - Process the authorization URL
+     - Save your access and refresh tokens
+     - Retry your original command
+
+2. **Subsequent Uses**
+   - The plugin automatically uses your saved tokens
+   - If tokens expire, they are automatically refreshed
+   - No manual intervention needed after initial setup
+
+3. **Troubleshooting Authentication**
+   - If you see authentication errors, try deleting the `auth.json` file
+   - The plugin will prompt you to re-authenticate on next use
+   - Check the log file at `%USERPROFILE%\spotify-plugin.log` for detailed error messages
+
+💡 **Tip**: The plugin automatically handles token refresh and command retry, so you only need to authenticate once!
 
 ## Available Functions
 The plugin includes these main functions:
