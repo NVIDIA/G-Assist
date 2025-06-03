@@ -106,7 +106,6 @@ The plugin uses OAuth 2.0 for authentication with Spotify. Here's how it works:
    - The plugin will automatically:
      - Process the authorization URL
      - Save your access and refresh tokens
-     - Retry your original command
 
 2. **Subsequent Uses**
    - The plugin automatically uses your saved tokens
