@@ -4,15 +4,19 @@ setlocal
 
 :: Determine if we have 'python' or 'python3' in the path. On Windows, the
 :: Python executable is typically called 'python', so check that first.
-where /q python
-if ERRORLEVEL 1 goto python3
-set PYTHON=python
-goto build
+python --version >nul 2>nul
+if %errorlevel% == 0 (
+    set PYTHON=python
+    goto build
+)
 
-:python3
-where /q python3
-if ERRORLEVEL 1 goto nopython
-set PYTHON=python3
+python3 --version >nul 2>nul
+if %errorlevel% == 0 (
+    set PYTHON=python3
+    goto build
+)
+
+goto nopython
 
 :: Verify the setup script has been run
 :build
@@ -45,10 +49,20 @@ if exist %VENV% (
 		echo config.json copied successfully.
 	)
 	
-	echo ^<insert your API key here from https://aistudio.google.com/app/apikey^> > gemini.key
-	echo Created a blank gemini.key file. ACTION REQUIRED: Please populate it with your Gemini key.
-	copy /y gemini.key "%GEMINI_DIR%\gemini.key"
-	echo gemini.key copied successfully.
+	if exist gemini.key (
+		if not exist google.key (
+			echo Renaming gemini.key to google.key...
+			ren gemini.key google.key
+		)
+	)
+
+	if not exist google.key (
+		echo ^<insert your API key here from https://aistudio.google.com/app/apikey^> > google.key
+		echo Created a blank google.key file. ACTION REQUIRED: Please populate it with your Google API key.
+	)
+	
+	copy /y google.key "%GEMINI_DIR%\google.key"
+	echo google.key copied successfully.
 	
 	call %VENV%\Scripts\deactivate.bat
 	echo Executable can be found in the "%GEMINI_DIR%" directory

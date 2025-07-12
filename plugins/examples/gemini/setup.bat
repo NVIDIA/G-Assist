@@ -5,15 +5,19 @@ setlocal
 
 :: Determine if we have 'python' or 'python3' in the path. On Windows, the
 :: Python executable is typically called 'python', so check that first.
-where /q python
-if ERRORLEVEL 1 goto python3
-set PYTHON=python
-goto setup
+python --version >nul 2>nul
+if %errorlevel% == 0 (
+    set PYTHON=python
+    goto setup
+)
 
-:python3
-where /q python3
-if ERRORLEVEL 1 goto nopython
-set PYTHON=python3
+python3 --version >nul 2>nul
+if %errorlevel% == 0 (
+    set PYTHON=python3
+    goto setup
+)
+
+goto nopython
 
 :: Setup the virtual environment if it does not already exist.
 :setup
