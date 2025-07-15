@@ -1,0 +1,54 @@
+{
+  "manifestVersion": 1,
+  "executable": "./g-assist-plugin-python.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "plugin_py_func1",
+      "description": "Plugin's first function",
+      "tags": [
+        "tag1",
+        "tag2"
+      ],
+      "properties": {
+        "paramA": {
+          "type": "string",
+          "description": "the first parameter"
+        },
+        "paramB": {
+          "type": "integer",
+          "description": "the second parameter"
+        },
+        "paramC": {
+          "type": "string",
+          "description": "the third parameter"
+        }
+      }
+    },
+    {
+      "name": "plugin_py_func2",
+      "description": "Plugin's second function",
+      "tags": [
+        "tag2",
+        "tag3"
+      ],
+      "properties": {
+        "paramA": {
+          "type": "string",
+          "description": "the first parameter"
+        },
+        "paramB": {
+          "type": "integer",
+          "description": "the second parameter"
+        }
+      }
+    },
+    {
+      "name": "plugin_py_func3",
+      "description": "Plugin's third function",
+      "tags": [
+        "tag4"
+      ]
+    }
+  ]
+}
