@@ -49,6 +49,22 @@
       "tags": [
         "tag4"
       ]
+    },
+    {
+      "name": "calendar_tool",
+      "description": "Manages tracked tickers and retrieves their important calendar events (earnings, dividends, etc.) using yfinance.",
+      "tags": ["calendar", "events", "earnings", "dividends"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "Action to perform: add, remove, update, today, get_events"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Ticker symbol (required for add, remove, get_events)",
+          "optional": true
+        }
+      }
     }
   ]
 }

@@ -25,6 +25,31 @@ import os
 from ctypes import byref, windll, wintypes
 from typing import Optional
 
+# Add import for CalendarTool
+from src.tools.calendar_tool import CalendarTool
+
+# Instantiate the calendar tool globally
+calendar_tool_instance = CalendarTool()
+
+# Add the handler
+
+def execute_calendar_tool_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for `calendar_tool` function
+    Args:
+        params: Function parameters (expects 'action' and optionally 'symbol')
+    Returns:
+        The function return value(s)
+    '''
+    logging.info(f'Executing calendar_tool with params: {params}')
+    try:
+        action = params.get('action') if params else None
+        symbol = params.get('symbol') if params else None
+        result = calendar_tool_instance._run(action, symbol)
+        return {'success': True, 'result': result}
+    except Exception as e:
+        logging.error(f'Error in calendar_tool: {str(e)}')
+        return generate_failure_response(f'calendar_tool error: {str(e)}')
+
 
 # Data Types
 type Response = dict[bool,Optional[str]]
@@ -60,6 +85,7 @@ def main():
         'plugin_py_func1': execute_func1_command,
         'plugin_py_func2': execute_func2_command,
         'plugin_py_func3': execute_func3_command,
+        'calendar_tool': execute_calendar_tool_command,  # <-- new handler
     }
     cmd = ''
 
@@ -298,3 +324,6 @@ def execute_func3_command(params:dict=None, context:dict=None, system_info:dict=
 
 if __name__ == '__main__':
     main()
+
+# Optionally, add a help string for calendar commands
+CALENDAR_HELP = '''\nCalendar Tool Commands:\n- add [ticker] to calendar: action='add', symbol='TICKER'\n- remove [ticker] from calendar: action='remove', symbol='TICKER'\n- update calendar: action='update'\n- get today's events: action='today'\n- get events for [ticker]: action='get_events', symbol='TICKER'\n'''

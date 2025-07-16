@@ -1,5 +1,19 @@
 # Access Stock Tonic – G-Assist Plugin
 
+## How NVIDIA Project G-Assist Uses AI Natively
+
+NVIDIA's Project G-Assist leverages the power of GeForce RTX GPUs to run a Small Language Model (SLM) locally on the user's PC, enabling fast, private, and offline AI assistance. Key features include:
+
+- **Local AI Processing:** An 8B-parameter Llama-based SLM runs directly on RTX GPUs, processing natural language (voice or text) without cloud dependency.
+- **Context-Aware Assistance:** Integrates with NVIDIA's ecosystem, using computer vision and system telemetry to provide in-game tips, system diagnostics, and real-time recommendations tailored to the user's context.
+- **System Optimization:** Interprets hardware/software configurations, offering actionable advice, safe overclocking, and control of NVIDIA features and peripherals—all via local AI.
+- **Plugin Architecture:** Supports extensibility through custom plugins (JSON, Python), allowing community-driven enhancements and integrations, all processed locally.
+- **Low Performance Impact:** Designed as an overlay, it analyzes frames only when needed, ensuring minimal impact on gaming or system performance.
+
+By running AI natively on RTX GPUs, G-Assist delivers privacy, speed, and efficiency, making it a powerful tool for gamers and creators to optimize and enhance their experience—without relying on external servers.
+
+---
+
 **Access Stock Tonic** is an accessibility-focused G-Assist plugin that makes market news, sentiment, and predictions instantly accessible—especially for users with auditory or mobility handicaps—by changing your keyboard’s lighting in real time based on financial events and analysis. The plugin supports both audio (voice) and keyboard (text) input for maximum accessibility.
 
 ## What Can It Do?
@@ -219,6 +233,29 @@ Commands are sent as JSON with the following structure:
 - `get_data`: Returns latest data/news for a stock
 - `set_keyboard_color`: Manually set keyboard color
 - `auto_color_update`: Automatically update keyboard color based on event proximity
+
+### Calendar/Event Tracking & Testing
+
+#### CalendarTool Functionality
+- Track any number of stock tickers for important calendar events (earnings, dividends, etc.)
+- Uses yfinance to fetch and update event data for each ticker
+- Supports commands:
+  - `add [ticker] to calendar` (track a ticker)
+  - `remove [ticker] from calendar` (untrack a ticker)
+  - `update calendar` (refresh all tracked tickers' events)
+  - `get today's events` (list all events for today)
+  - `get events for [ticker]` (list all known events for a ticker)
+- Persists tracked tickers in a JSON file for continuity
+
+#### Testing
+- Comprehensive test suite in `tests/test_calendar_tool.py`
+- Tests cover: add/remove, persistence, event fetching, updating, today's events, and the tool's main interface
+- All yfinance calls are mocked for reliability and speed
+- To run tests:
+  ```bash
+  pytest plugins/access-stock-tonic/tests/test_calendar_tool.py --disable-warnings -v
+  ```
+- All tests must pass for a valid build
 
 ### Logging
 - All activity is logged to `%USERPROFILE%\access_stock_tonic.log`

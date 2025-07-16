@@ -455,7 +455,7 @@ def load_pipeline():
             clear_gpu_memory()
             print("Loading Chronos model...")
             pipeline = ChronosPipeline.from_pretrained(
-                "amazon/chronos-t5-large",
+                "amazon/chronos-t5-small",
                 device_map="cuda",  # Force CUDA device mapping
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True,

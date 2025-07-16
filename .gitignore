@@ -1,5 +1,7 @@
 .vs
-**/.cursor/**
+.cursor/
+**/.cursor/
+/plugins/access-stock-tonic/.cursor/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
