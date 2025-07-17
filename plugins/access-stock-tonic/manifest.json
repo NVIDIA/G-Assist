@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "executable": "./g-assist-plugin-python.exe",
+  "executable": "./access_stock_tonic.exe",
   "persistent": true,
   "functions": [
 
@@ -41,6 +41,100 @@
       "description": "Automatically update keyboard/device color based on event proximity in the calendar (uses color feedback configuration).",
       "tags": ["lighting", "keyboard", "rgb", "color", "feedback", "automation"],
       "properties": {}
+    },
+    {
+      "name": "predict_daily",
+      "description": "Run daily stock prediction with advanced features.",
+      "tags": ["prediction", "stock", "daily", "analysis"],
+      "properties": {
+        "symbol": {"type": "string", "description": "Stock symbol (e.g., AAPL)"},
+        "prediction_days": {"type": "integer", "description": "Days to predict", "optional": true},
+        "lookback_days": {"type": "integer", "description": "Historical lookback days", "optional": true},
+        "strategy": {"type": "string", "description": "Prediction strategy (chronos, technical)", "optional": true},
+        "use_ensemble": {"type": "boolean", "optional": true},
+        "use_regime_detection": {"type": "boolean", "optional": true},
+        "use_stress_testing": {"type": "boolean", "optional": true},
+        "risk_free_rate": {"type": "number", "optional": true},
+        "market_index": {"type": "string", "optional": true},
+        "chronos_weight": {"type": "number", "optional": true},
+        "technical_weight": {"type": "number", "optional": true},
+        "statistical_weight": {"type": "number", "optional": true},
+        "random_real_points": {"type": "integer", "optional": true},
+        "use_smoothing": {"type": "boolean", "optional": true},
+        "smoothing_type": {"type": "string", "optional": true},
+        "smoothing_window": {"type": "integer", "optional": true},
+        "smoothing_alpha": {"type": "number", "optional": true},
+        "use_covariates": {"type": "boolean", "optional": true},
+        "use_sentiment": {"type": "boolean", "optional": true}
+      }
+    },
+    {
+      "name": "predict_hourly",
+      "description": "Run hourly stock prediction with advanced features.",
+      "tags": ["prediction", "stock", "hourly", "analysis"],
+      "properties": {
+        "symbol": {"type": "string", "description": "Stock symbol (e.g., AAPL)"},
+        "prediction_days": {"type": "integer", "optional": true},
+        "lookback_days": {"type": "integer", "optional": true},
+        "strategy": {"type": "string", "optional": true},
+        "use_ensemble": {"type": "boolean", "optional": true},
+        "use_regime_detection": {"type": "boolean", "optional": true},
+        "use_stress_testing": {"type": "boolean", "optional": true},
+        "risk_free_rate": {"type": "number", "optional": true},
+        "market_index": {"type": "string", "optional": true},
+        "chronos_weight": {"type": "number", "optional": true},
+        "technical_weight": {"type": "number", "optional": true},
+        "statistical_weight": {"type": "number", "optional": true},
+        "random_real_points": {"type": "integer", "optional": true},
+        "use_smoothing": {"type": "boolean", "optional": true},
+        "smoothing_type": {"type": "string", "optional": true},
+        "smoothing_window": {"type": "integer", "optional": true},
+        "smoothing_alpha": {"type": "number", "optional": true},
+        "use_covariates": {"type": "boolean", "optional": true},
+        "use_sentiment": {"type": "boolean", "optional": true}
+      }
+    },
+    {
+      "name": "predict_min15",
+      "description": "Run 15-minute interval stock prediction with advanced features.",
+      "tags": ["prediction", "stock", "min15", "analysis"],
+      "properties": {
+        "symbol": {"type": "string", "description": "Stock symbol (e.g., AAPL)"},
+        "prediction_days": {"type": "integer", "optional": true},
+        "lookback_days": {"type": "integer", "optional": true},
+        "strategy": {"type": "string", "optional": true},
+        "use_ensemble": {"type": "boolean", "optional": true},
+        "use_regime_detection": {"type": "boolean", "optional": true},
+        "use_stress_testing": {"type": "boolean", "optional": true},
+        "risk_free_rate": {"type": "number", "optional": true},
+        "market_index": {"type": "string", "optional": true},
+        "chronos_weight": {"type": "number", "optional": true},
+        "technical_weight": {"type": "number", "optional": true},
+        "statistical_weight": {"type": "number", "optional": true},
+        "random_real_points": {"type": "integer", "optional": true},
+        "use_smoothing": {"type": "boolean", "optional": true},
+        "smoothing_type": {"type": "string", "optional": true},
+        "smoothing_window": {"type": "integer", "optional": true},
+        "smoothing_alpha": {"type": "number", "optional": true},
+        "use_covariates": {"type": "boolean", "optional": true},
+        "use_sentiment": {"type": "boolean", "optional": true}
+      }
+    },
+    {
+      "name": "calendar_tool",
+      "description": "Manages tracked tickers and retrieves their important calendar events (earnings, dividends, etc.) using yfinance.",
+      "tags": ["calendar", "events", "earnings", "dividends"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "Action to perform: add, remove, update, today, get_events"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Ticker symbol (required for add, remove, get_events)",
+          "optional": true
+        }
+      }
     }
   ]
 }
