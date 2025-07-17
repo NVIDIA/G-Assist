@@ -135,6 +135,32 @@
           "optional": true
         }
       }
+    },
+    {
+      "name": "stock_selection",
+      "description": "Intelligently selects and ranks stocks for structured products based on analysis data and user preferences. Takes stock analysis results and user preferences, returns selected stocks with scores and weights.",
+      "tags": ["stock", "selection", "analysis", "ai", "portfolio"],
+      "properties": {
+        "analysis_results": {
+          "type": "string",
+          "description": "JSON string of stock analysis results"
+        },
+        "user_preferences": {
+          "type": "string",
+          "description": "JSON string of user investment preferences",
+          "optional": true
+        },
+        "target_count": {
+          "type": "integer",
+          "description": "Target number of stocks to select",
+          "optional": true
+        },
+        "min_count": {
+          "type": "integer",
+          "description": "Minimum number of stocks to select",
+          "optional": true
+        }
+      }
     }
   ]
 }

@@ -33,9 +33,21 @@ from src.tools import predictions
 from src.tools import setcolors
 from openrgb import OpenRGBClient
 from openrgb.utils import RGBColor
+from src.tools.stock_selection_tool import StockSelectionTool
 
 # Instantiate the calendar tool globally
 calendar_tool_instance = CalendarTool()
+# Instantiate the stock selection tool globally
+stock_selection_tool_instance = StockSelectionTool(
+    openai_api_key=os.getenv('OPENAI_API_KEY', ''),
+    use_llm=os.getenv('USE_LLM', 'True').lower() == 'true',
+    llm_provider=os.getenv('LLM_PROVIDER', 'openai'),
+    anthropic_api_key=os.getenv('ANTHROPIC_API_KEY', None),
+    hf_api_key=os.getenv('HF_API_KEY', None),
+    openai_model=os.getenv('OPENAI_MODEL', 'gpt-4'),
+    anthropic_model=os.getenv('ANTHROPIC_MODEL', 'claude-3-opus-20240229'),
+    hf_model=os.getenv('HF_MODEL', 'HuggingFaceH4/zephyr-7b-beta')
+)
 
 # Add the handler
 
@@ -146,6 +158,25 @@ def execute_predict_min15_command(params:dict=None, context:dict=None, system_in
         logging.error(f'Error in predict_min15: {str(e)}')
         return generate_failure_response(f'predict_min15 error: {str(e)}')
 
+def execute_stock_selection_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for stock_selection tool '''
+    try:
+        args = params or {}
+        analysis_results = args.get('analysis_results', '[]')
+        user_preferences = args.get('user_preferences', '{}')
+        target_count = args.get('target_count', 15)
+        min_count = args.get('min_count', 5)
+        result = stock_selection_tool_instance._run(
+            analysis_results=analysis_results,
+            user_preferences=user_preferences,
+            target_count=target_count,
+            min_count=min_count
+        )
+        return {'success': True, 'result': result}
+    except Exception as e:
+        logging.error(f'Error in stock_selection: {str(e)}')
+        return generate_failure_response(f'stock_selection error: {str(e)}')
+
 
 # Data Types
 type Response = dict[bool,Optional[str]]
@@ -250,6 +281,7 @@ def main():
         'predict_daily': execute_predict_daily_command,
         'predict_hourly': execute_predict_hourly_command,
         'predict_min15': execute_predict_min15_command,
+        'stock_selection': execute_stock_selection_command,
         'set_keyboard_color': execute_set_keyboard_color_command,
         'list_supported_colors': execute_list_supported_colors_command,
         'configure_color_feedback': execute_configure_color_feedback_command,

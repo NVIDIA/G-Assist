@@ -144,16 +144,17 @@ No major news for your tracked tickers in the next 24 hours. Keyboard color set 
 
 ---
 
-## Advanced Stock Prediction Entrypoints
+## Advanced Stock Prediction and Selection Entrypoints
 
-Access Stock Tonic now provides advanced AI-powered stock prediction entrypoints for G-Assist, supporting daily, hourly, and 15-minute intervals. These entrypoints leverage the latest market data, technical indicators, and ensemble AI models for robust, actionable predictions.
+Access Stock Tonic now provides advanced AI-powered stock prediction and stock selection entrypoints for G-Assist, supporting daily, hourly, and 15-minute intervals, as well as intelligent stock selection for structured products. These entrypoints leverage the latest market data, technical indicators, and ensemble AI models for robust, actionable predictions and portfolio construction.
 
 ### Prediction Entrypoints
 - **predict_daily**: Get daily-level predictions and analysis for a stock.
 - **predict_hourly**: Get hourly-level predictions and analysis for a stock (market hours only).
 - **predict_min15**: Get 15-minute interval predictions and analysis for a stock (market hours only).
+- **stock_selection**: Intelligently select and rank stocks for structured products based on analysis data and user preferences.
 
-#### Parameters (all entrypoints)
+#### Parameters (prediction entrypoints)
 - `symbol` (str): Stock ticker symbol (e.g., "AAPL")
 - `prediction_days` (int): Number of days (or intervals) to predict
 - `lookback_days` (int): Historical lookback window
@@ -172,20 +173,26 @@ Access Stock Tonic now provides advanced AI-powered stock prediction entrypoints
 - `use_covariates` (bool): Use covariate data (default: True)
 - `use_sentiment` (bool): Use sentiment analysis (default: True)
 
+#### Parameters (stock_selection entrypoint)
+- `analysis_results` (str): JSON string of stock analysis results (required)
+- `user_preferences` (str): JSON string of user investment preferences (optional)
+- `target_count` (int): Target number of stocks to select (optional, default: 15)
+- `min_count` (int): Minimum number of stocks to select (optional, default: 5)
+
 #### Example G-Assist Command
-- "Get a daily prediction for AAPL"
-- "Show me hourly stock prediction for TSLA"
-- "Give me a 15-minute forecast for MSFT"
+- "Select the best stocks for a balanced portfolio using the latest analysis results"
+- "Run stock selection for these analysis results with my preferences"
 
 #### Example JSON Tool Call
 ```json
 {
   "tool_calls": [{
-    "func": "predict_daily",
+    "func": "stock_selection",
     "params": {
-      "symbol": "AAPL",
-      "prediction_days": 30,
-      "lookback_days": 365
+      "analysis_results": "[ ... JSON array of stock analysis ... ]",
+      "user_preferences": "{ ... JSON object of preferences ... }",
+      "target_count": 10,
+      "min_count": 5
     },
     "messages": [],
     "system_info": ""
@@ -194,15 +201,12 @@ Access Stock Tonic now provides advanced AI-powered stock prediction entrypoints
 ```
 
 #### Output
-Each prediction entrypoint returns a structured dictionary with:
-- Trading signals (RSI, MACD, Bollinger, SMA, overall)
-- Interactive plot (if supported)
-- Product metrics (market cap, sector, ratios, etc.)
-- Risk metrics (Sharpe, VaR, drawdown, etc.)
-- Sector metrics
-- Regime and stress test results
-- Ensemble and advanced signals
-- Historical and predicted data arrays
+The stock_selection entrypoint returns a structured JSON array of selected stocks, each with:
+- Symbol
+- Total score
+- Risk, growth, value, technical, and sector scores
+- Retention reason
+- Portfolio weight (normalized)
 
 ---
 
