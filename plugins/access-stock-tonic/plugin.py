@@ -34,6 +34,9 @@ from src.tools import setcolors
 from openrgb import OpenRGBClient
 from openrgb.utils import RGBColor
 from src.tools.stock_selection_tool import StockSelectionTool
+from src.workflow.state_machine import StockPickerWorkflow
+from src.workflow.state_machine import StockAnalyzerWorkflow
+from src.workflow.state_machine import StructuredEquityWorkflow
 
 # Instantiate the calendar tool globally
 calendar_tool_instance = CalendarTool()
@@ -177,6 +180,54 @@ def execute_stock_selection_command(params:dict=None, context:dict=None, system_
         logging.error(f'Error in stock_selection: {str(e)}')
         return generate_failure_response(f'stock_selection error: {str(e)}')
 
+def execute_stock_picker_workflow_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for StockPickerWorkflow '''
+    try:
+        user_query = params.get('user_query') if params else None
+        if not user_query:
+            return generate_failure_response('Missing user_query parameter.')
+        workflow = StockPickerWorkflow()
+        result = workflow.run(user_query)
+        if result.get('success'):
+            return {'success': True, 'result': result.get('discovered_stocks')}
+        else:
+            return generate_failure_response(result.get('error_message', 'Stock picker workflow failed.'))
+    except Exception as e:
+        logging.error(f'Error in stock_picker_workflow: {str(e)}')
+        return generate_failure_response(f'stock_picker_workflow error: {str(e)}')
+
+def execute_stock_analyzer_workflow_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for StockAnalyzerWorkflow '''
+    try:
+        user_query = params.get('user_query') if params else None
+        if not user_query:
+            return generate_failure_response('Missing user_query parameter.')
+        workflow = StockAnalyzerWorkflow()
+        result = workflow.run(user_query)
+        if result.get('success'):
+            return {'success': True, 'summary': result.get('summary'), 'plot': result.get('plot')}
+        else:
+            return generate_failure_response(result.get('error_message', 'Stock analyzer workflow failed.'))
+    except Exception as e:
+        logging.error(f'Error in stock_analyzer_workflow: {str(e)}')
+        return generate_failure_response(f'stock_analyzer_workflow error: {str(e)}')
+
+def execute_product_bundler_workflow_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for StructuredEquityWorkflow (product bundler workflow) '''
+    try:
+        user_query = params.get('user_query') if params else None
+        if not user_query:
+            return generate_failure_response('Missing user_query parameter.')
+        workflow = StructuredEquityWorkflow()
+        result = workflow.run(user_query)
+        if result.get('success'):
+            return {'success': True, 'product_bundle': result.get('product_bundle'), 'iterations': result.get('iterations'), 'workflow_status': result.get('workflow_status')}
+        else:
+            return generate_failure_response(result.get('error_message', 'Product bundler workflow failed.'))
+    except Exception as e:
+        logging.error(f'Error in product_bundler_workflow: {str(e)}')
+        return generate_failure_response(f'product_bundler_workflow error: {str(e)}')
+
 
 # Data Types
 type Response = dict[bool,Optional[str]]
@@ -286,6 +337,9 @@ def main():
         'list_supported_colors': execute_list_supported_colors_command,
         'configure_color_feedback': execute_configure_color_feedback_command,
         'auto_color_update': execute_auto_color_update_command,
+        'stock_picker_workflow': execute_stock_picker_workflow_command,
+        'stock_analyzer_workflow': execute_stock_analyzer_workflow_command,
+        'product_bundler_workflow': execute_product_bundler_workflow_command,
     }
     cmd = ''
 
@@ -483,57 +537,36 @@ def execute_shutdown_command() -> dict:
     return generate_success_response('shutdown success.')
 
 
-def execute_func1_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
-    ''' Command handler for `plugin_py_func1` function
-
-    Customize this function as needed.
-
-    Args:
-        params: Function parameters
-
-    Returns:
-        The function return value(s)
-    '''
-    logging.info(f'Executing func1 with params: {params}')
-    
-    # implement command handler body here
-    return generate_success_response('plugin_py_func1 success.')
-
-
-def execute_func2_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
-    ''' Command handler for `plugin_py_func2` function
-
-    Customize this function as needed.
-
-    Args:
-        params: Function parameters
-
-    Returns:
-        The function return value(s)
-    '''
-    logging.info(f'Executing func2 with params: {params}')
-    # implement command handler body here
-    return generate_success_response('plugin_py_func2 success.')
-
-
-def execute_func3_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
-    ''' Command handler for `plugin_py_func3` function
-
-    Customize this function as needed.
-
-    Args:
-        params: Function parameters
-
-    Returns:
-        The function return value(s)
-    '''
-    logging.info(f'Executing func3 with params: {params}')
-    # implement command handler body here
-    return generate_success_response('plugin_py_func3 success.')
-
-
 if __name__ == '__main__':
     main()
 
 # Optionally, add a help string for calendar commands
 CALENDAR_HELP = '''\nCalendar Tool Commands:\n- add [ticker] to calendar: action='add', symbol='TICKER'\n- remove [ticker] from calendar: action='remove', symbol='TICKER'\n- update calendar: action='update'\n- get today's events: action='today'\n- get events for [ticker]: action='get_events', symbol='TICKER'\n'''
+
+HELP_TEXTS = {
+    'calendar_tool': "calendar_tool: Manage tracked tickers and retrieve important calendar events. Params: action (add, remove, update, today, get_events), symbol (optional).",
+    'predict_daily': "predict_daily: Run daily stock prediction. Params: symbol (str), prediction_days (int), lookback_days (int), ...",
+    'predict_hourly': "predict_hourly: Run hourly stock prediction. Params: symbol (str), prediction_days (int), lookback_days (int), ...",
+    'predict_min15': "predict_min15: Run 15-minute stock prediction. Params: symbol (str), prediction_days (int), lookback_days (int), ...",
+    'stock_selection': "stock_selection: Select and rank stocks for structured products. Params: analysis_results (str), user_preferences (str), target_count (int), min_count (int)",
+    'set_keyboard_color': "set_keyboard_color: Set the color of the keyboard or RGB device. Params: color (str)",
+    'list_supported_colors': "list_supported_colors: List all supported color names for keyboard/device lighting. No params.",
+    'configure_color_feedback': "configure_color_feedback: Configure color feedback for event proximity. Params: mode (str), color (str)",
+    'auto_color_update': "auto_color_update: Automatically update keyboard/device color based on event proximity. No params.",
+    'stock_picker_workflow': "stock_picker_workflow: Discover stocks based on user query. Params: user_query (str)",
+    'stock_analyzer_workflow': "stock_analyzer_workflow: Analyze a stock and return a plot and summary. Params: user_query (str)",
+    'product_bundler_workflow': "product_bundler_workflow: Create a structured equity product bundle. Params: user_query (str)",
+}
+
+def execute_help_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' General help command: lists all available commands and their help commands '''
+    help_list = [f"{cmd}: help_{cmd}" for cmd in HELP_TEXTS.keys()]
+    return {'success': True, 'help': 'Available commands:\n' + '\n'.join(help_list)}
+
+# Dynamically create help handlers for each command
+for cmd, text in HELP_TEXTS.items():
+    def make_help_func(help_text):
+        def help_func(params=None, context=None, system_info=None):
+            return {'success': True, 'help': help_text}
+        return help_func
+    globals()[f'execute_help_{cmd}_command'] = make_help_func(text)

@@ -212,6 +212,51 @@ Check out what others have built:
 - [Python Bindings](./api/bindings/python/)
 - [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
 
+## Available Workflows and Plugin Commands (Access Stock Tonic)
+
+Project Access Stock Tonic provides several advanced, fully on-device workflows powered by the local GAssistLLM. These workflows are available as plugin commands and can be invoked via G-Assist or directly through the plugin interface.
+
+### 1. Stock Picker Workflow
+- **Command:** `stock_picker_workflow`
+- **Description:** Processes a user query to discover and return a list of relevant stocks based on investment criteria.
+- **Input:** `{ "user_query": "Find large cap tech stocks with good dividends" }`
+- **Output:** List of discovered stocks matching the criteria.
+- **Workflow:**
+  1. Query Processor Agent extracts structured criteria from the user query.
+  2. Stock Picker Agent discovers stocks using yfinance and LLM-enhanced filtering.
+  3. Returns a list of stocks.
+
+### 2. Stock Analyzer Workflow
+- **Command:** `stock_analyzer_workflow`
+- **Description:** Processes a user query, analyzes a single stock, and returns a plot and a professional summary.
+- **Input:** `{ "user_query": "Analyze AAPL" }`
+- **Output:**
+  - `summary`: Professional, LLM-generated summary of the stock's outlook.
+  - `plot`: Visualization of the stock's analysis (e.g., price prediction, signals).
+- **Workflow:**
+  1. Query Processor Agent extracts the stock symbol from the user query.
+  2. Analyzer Agent performs a comprehensive local analysis using predictions.py.
+  3. Summarizer Agent generates a professional summary using GAssistLLM.
+  4. Returns both the plot and summary.
+- **Intelligent Prediction Window:** The workflow uses the CalendarTool to check for upcoming events (earnings, dividends, etc.) for the stock. If an event is today or within 1 day, it uses 15-minute predictions; if within 3 days, it uses hourly predictions; otherwise, it uses daily predictions. This ensures the analysis is as timely and relevant as possible.
+
+### 3. Product Bundler Workflow
+- **Command:** `product_bundler_workflow`
+- **Description:** Processes a user query and creates a structured equity product bundle tailored to the user's investment criteria.
+- **Input:** `{ "user_query": "Create a conservative tech basket for $50,000" }`
+- **Output:**
+  - `product_bundle`: Structured product details, including components, risk profile, and compliance info.
+  - `iterations`: Number of workflow iterations performed.
+  - `workflow_status`: Final status of the workflow.
+- **Workflow:**
+  1. Query Processor Agent structures the user query.
+  2. Stock Picker Agent discovers candidate stocks.
+  3. Analyzer Agent analyzes the candidates.
+  4. Product Bundler Agent creates a compliant product bundle.
+  5. Returns the product bundle and workflow status.
+
+**All workflows are fully local and use the NVIDIA GAssistLLM for all LLM-powered steps. No cloud APIs are required.**
+
 ## Need Help?
 - Report issues on [GitHub](https://github.com/nvidia/g-assist)
 

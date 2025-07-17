@@ -20,8 +20,10 @@ from ..agents.query_processor_agent import QueryProcessorAgent
 from ..agents.stock_picker_agent import StockPickerAgent
 from ..agents.analyzer_agent import AnalyzerAgent
 from ..agents.product_bundler_agent import ProductBundlerAgent
+from ..agents.summarizer_agent import SummarizerAgent
 from ..tools.stock_selection_tool import StockSelectionTool
 from .config import WorkflowConfig, DEFAULT_CONFIG
+from ..agents.gassist_llm import GAssistLLM
 
 class WorkflowState(TypedDict):
     """State definition for the workflow."""
@@ -55,11 +57,7 @@ class StructuredEquityWorkflow:
     LangGraph-based state machine for structured equity product creation.
     """
     
-    def __init__(self, openai_api_key: str, config: Optional[WorkflowConfig] = None, use_llm: bool = False, 
-                 llm_provider: str = "openai", anthropic_api_key: Optional[str] = None, hf_api_key: Optional[str] = None,
-                 openai_model: str = "gpt-4", anthropic_model: str = "claude-3-opus-20240229", 
-                 hf_model: str = "HuggingFaceH4/zephyr-7b-beta", mcp_server_url: Optional[str] = None,
-                 use_mcp: bool = False):
+    def __init__(self, config: Optional[WorkflowConfig] = None):
         """
         Initialize the structured equity workflow.
         
@@ -78,43 +76,29 @@ class StructuredEquityWorkflow:
         """
         self.logger = logging.getLogger(__name__)
         self.config = config or WorkflowConfig()
-        self.openai_api_key = openai_api_key
-        self.use_llm = use_llm
-        self.llm_provider = llm_provider
-        self.anthropic_api_key = anthropic_api_key
-        self.hf_api_key = hf_api_key
-        self.mcp_server_url = mcp_server_url
-        self.use_mcp = use_mcp
-        
-        # Initialize agents with LLM support and model parameters
-        self.query_processor = QueryProcessorAgent(
-            openai_api_key, use_llm, llm_provider, anthropic_api_key, hf_api_key,
-            openai_model, anthropic_model, hf_model
-        )
-        self.stock_picker = StockPickerAgent(
-            openai_api_key, use_llm, llm_provider, anthropic_api_key, hf_api_key,
-            openai_model, anthropic_model, hf_model
-        )
+        self.llm = GAssistLLM()
+        self.query_processor = QueryProcessorAgent(llm=self.llm)
+        self.stock_picker = StockPickerAgent(llm=self.llm)
         self.analyzer = AnalyzerAgent(
-            mcp_url=mcp_server_url or "https://tonic-stock-predictions.hf.space/mcp/sse",
-            openai_api_key=openai_api_key, use_llm=use_llm, llm_provider=llm_provider, 
-            anthropic_api_key=anthropic_api_key, hf_api_key=hf_api_key,
-            openai_model=openai_model, anthropic_model=anthropic_model, hf_model=hf_model
+            mcp_url="https://tonic-stock-predictions.hf.space/mcp/sse",
+            openai_api_key="", use_llm=False, llm_provider="", 
+            anthropic_api_key="", hf_api_key="",
+            openai_model="", anthropic_model="", hf_model=""
         )
         self.product_bundler = ProductBundlerAgent(
-            openai_api_key=openai_api_key, 
-            use_llm=use_llm, 
-            llm_provider=llm_provider, 
-            anthropic_api_key=anthropic_api_key, 
-            hf_api_key=hf_api_key,
-            openai_model=openai_model, 
-            anthropic_model=anthropic_model, 
-            hf_model=hf_model,
+            openai_api_key="", 
+            use_llm=False, 
+            llm_provider="", 
+            anthropic_api_key="", 
+            hf_api_key="",
+            openai_model="", 
+            anthropic_model="", 
+            hf_model="",
             use_summarizer=True  # Enable summarizer by default
         )
         self.stock_selector = StockSelectionTool(
-            openai_api_key, use_llm, llm_provider, anthropic_api_key, hf_api_key,
-            openai_model, anthropic_model, hf_model
+            openai_api_key="", use_llm=False, llm_provider="", anthropic_api_key="", hf_api_key="",
+            openai_model="", anthropic_model="", hf_model=""
         )
         
         # Create the state machine
@@ -790,4 +774,248 @@ class StructuredEquityWorkflow:
                 "success": False,
                 "error": str(e),
                 "workflow_status": WorkflowStatus.ERROR.value
+            } 
+
+class StockPickerWorkflow:
+    """
+    Simple LangGraph-based state machine for stock picking.
+    """
+    class StockPickerState(TypedDict):
+        user_query: str
+        processed_query: Optional[Dict[str, Any]]
+        stock_picker_query: Optional[str]
+        discovered_stocks: Optional[List[Dict[str, Any]]]
+        error_message: Optional[str]
+        workflow_status: str
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.llm = GAssistLLM()
+        self.query_processor = QueryProcessorAgent(llm=self.llm)
+        self.stock_picker = StockPickerAgent(llm=self.llm)
+        self.workflow = self._create_workflow()
+
+    def _create_workflow(self) -> StateGraph:
+        workflow = StateGraph(self.StockPickerState)
+        workflow.add_node("process_query", self._process_query_node)
+        workflow.add_node("pick_stocks", self._pick_stocks_node)
+        workflow.add_node("handle_error", self._handle_error_node)
+        workflow.set_entry_point("process_query")
+        workflow.add_edge("process_query", "pick_stocks")
+        workflow.add_edge("pick_stocks", END)
+        workflow.add_edge("handle_error", END)
+        return workflow.compile()
+
+    def _process_query_node(self, state: dict) -> dict:
+        try:
+            self.logger.info("Processing user query for stock picking...")
+            processed_query = self.query_processor.process_query(state["user_query"])
+            stock_picker_query = self.query_processor.to_stock_picker_query(processed_query)
+            state.update({
+                "processed_query": processed_query.__dict__,
+                "stock_picker_query": stock_picker_query,
+                "workflow_status": "query_processed",
+                "error_message": None
+            })
+            return state
+        except Exception as e:
+            self.logger.error(f"Error processing query: {e}")
+            state.update({
+                "error_message": f"Error processing query: {str(e)}",
+                "workflow_status": "error"
+            })
+            return state
+
+    def _pick_stocks_node(self, state: dict) -> dict:
+        try:
+            self.logger.info("Picking stocks based on processed query...")
+            stock_picker_query = state.get("stock_picker_query")
+            processed_query = state.get("processed_query")
+            if not stock_picker_query:
+                raise ValueError("No stock picker query available")
+            limit = processed_query.get('limit', self.config.base_stock_limit) if processed_query else self.config.base_stock_limit
+            discovered_stocks = self.stock_picker.pick_stocks(
+                stock_picker_query,
+                limit=limit,
+                processed_query=processed_query
+            )
+            state.update({
+                "discovered_stocks": discovered_stocks,
+                "workflow_status": "stocks_picked",
+                "error_message": None
+            })
+            return state
+        except Exception as e:
+            self.logger.error(f"Error picking stocks: {e}")
+            state.update({
+                "error_message": f"Error picking stocks: {str(e)}",
+                "workflow_status": "error"
+            })
+            return state
+
+    def _handle_error_node(self, state: dict) -> dict:
+        self.logger.error(f"Workflow error: {state.get('error_message')}")
+        state["workflow_status"] = "error"
+        return state
+
+    def run(self, user_query: str) -> Dict[str, Any]:
+        try:
+            initial_state = self.StockPickerState(
+                user_query=user_query,
+                processed_query=None,
+                stock_picker_query=None,
+                discovered_stocks=None,
+                error_message=None,
+                workflow_status="initialized"
+            )
+            self.logger.info("Starting stock picker workflow...")
+            final_state = self.workflow.invoke(initial_state)
+            result = {
+                "success": final_state.get("workflow_status") == "stocks_picked",
+                "final_state": final_state,
+                "discovered_stocks": final_state.get("discovered_stocks"),
+                "error_message": final_state.get("error_message"),
+                "workflow_status": final_state.get("workflow_status")
+            }
+            self.logger.info(f"Workflow completed with status: {final_state.get('workflow_status')}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error running workflow: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "workflow_status": "error"
+            } 
+
+class StockAnalyzerWorkflow:
+    """
+    Simple workflow: user query -> query processor -> analyzer -> summarizer -> return plot and summary.
+    """
+    class State(TypedDict):
+        user_query: str
+        processed_query: Optional[Dict[str, Any]]
+        stock_symbol: Optional[str]
+        analysis_result: Optional[Dict[str, Any]]
+        summary: Optional[str]
+        plot: Optional[Any]
+        error_message: Optional[str]
+        workflow_status: str
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.llm = GAssistLLM()
+        self.query_processor = QueryProcessorAgent(llm=self.llm)
+        self.analyzer = AnalyzerAgent(llm=self.llm)
+        self.summarizer = SummarizerAgent(llm=self.llm)
+        self.workflow = self._create_workflow()
+
+    def _create_workflow(self) -> StateGraph:
+        workflow = StateGraph(self.State)
+        workflow.add_node("process_query", self._process_query_node)
+        workflow.add_node("analyze_stock", self._analyze_stock_node)
+        workflow.add_node("summarize", self._summarize_node)
+        workflow.add_node("handle_error", self._handle_error_node)
+        workflow.set_entry_point("process_query")
+        workflow.add_edge("process_query", "analyze_stock")
+        workflow.add_edge("analyze_stock", "summarize")
+        workflow.add_edge("summarize", END)
+        workflow.add_edge("handle_error", END)
+        return workflow.compile()
+
+    def _process_query_node(self, state: dict) -> dict:
+        try:
+            processed_query = self.query_processor.process_query(state["user_query"])
+            # For single stock, expect a symbol in processed_query or user_query
+            symbol = processed_query.sector or processed_query.original_query  # fallback to original query if no symbol
+            state.update({
+                "processed_query": processed_query.__dict__,
+                "stock_symbol": symbol,
+                "workflow_status": "query_processed",
+                "error_message": None
+            })
+            return state
+        except Exception as e:
+            self.logger.error(f"Error processing query: {e}")
+            state.update({
+                "error_message": f"Error processing query: {str(e)}",
+                "workflow_status": "error"
+            })
+            return state
+
+    def _analyze_stock_node(self, state: dict) -> dict:
+        try:
+            symbol = state.get("stock_symbol")
+            if not symbol:
+                raise ValueError("No stock symbol found in state.")
+            analysis_result = self.analyzer.analyze_single_ticker(symbol, processed_query=state.get("processed_query"))
+            plot = None
+            if analysis_result and "analysis" in analysis_result and "plot" in analysis_result["analysis"]:
+                plot = analysis_result["analysis"]["plot"]
+            state.update({
+                "analysis_result": analysis_result,
+                "plot": plot,
+                "workflow_status": "analyzed",
+                "error_message": None
+            })
+            return state
+        except Exception as e:
+            self.logger.error(f"Error analyzing stock: {e}")
+            state.update({
+                "error_message": f"Error analyzing stock: {str(e)}",
+                "workflow_status": "error"
+            })
+            return state
+
+    def _summarize_node(self, state: dict) -> dict:
+        try:
+            summary = self.summarizer.generate_stock_summary(state["analysis_result"])
+            state.update({
+                "summary": summary,
+                "workflow_status": "summarized",
+                "error_message": None
+            })
+            return state
+        except Exception as e:
+            self.logger.error(f"Error summarizing: {e}")
+            state.update({
+                "error_message": f"Error summarizing: {str(e)}",
+                "workflow_status": "error"
+            })
+            return state
+
+    def _handle_error_node(self, state: dict) -> dict:
+        self.logger.error(f"Workflow error: {state.get('error_message')}")
+        state["workflow_status"] = "error"
+        return state
+
+    def run(self, user_query: str) -> Dict[str, Any]:
+        try:
+            initial_state = self.State(
+                user_query=user_query,
+                processed_query=None,
+                stock_symbol=None,
+                analysis_result=None,
+                summary=None,
+                plot=None,
+                error_message=None,
+                workflow_status="initialized"
+            )
+            self.logger.info("Starting stock analyzer workflow...")
+            final_state = self.workflow.invoke(initial_state)
+            result = {
+                "success": final_state.get("workflow_status") == "summarized",
+                "final_state": final_state,
+                "summary": final_state.get("summary"),
+                "plot": final_state.get("plot"),
+                "error_message": final_state.get("error_message"),
+                "workflow_status": final_state.get("workflow_status")
+            }
+            self.logger.info(f"Workflow completed with status: {final_state.get('workflow_status')}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error running workflow: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "workflow_status": "error"
             } 

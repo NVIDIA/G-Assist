@@ -5,15 +5,8 @@ Stock Picker Agent - Discovers stocks using yfinance and returns a list of ticke
 import logging
 from typing import List, Dict, Any, Optional
 from ..tools.yfinance_tool import YFinanceWrapper
+from langchain.prompts import ChatPromptTemplate
 
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
-    from langchain_community.chat_models import ChatHuggingFace
-    from langchain.prompts import ChatPromptTemplate
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
 
 from ..prompts.stock_picker_prompts import (
     STOCK_PICKER_SYSTEM_PROMPT,
@@ -21,53 +14,21 @@ from ..prompts.stock_picker_prompts import (
     STOCK_PICKER_EXAMPLES
 )
 
+from .gassist_llm import GAssistLLM
+
 class StockPickerAgent:
     """
     Stock Picker Agent that discovers stocks using yfinance and returns a list of tickers and company names.
     """
-    def __init__(self, openai_api_key: Optional[str] = None, use_llm: bool = False, llm_provider: str = "openai", 
-                 anthropic_api_key: Optional[str] = None, hf_api_key: Optional[str] = None,
-                 openai_model: str = "gpt-4", anthropic_model: str = "claude-3-opus-20240229", 
-                 hf_model: str = "HuggingFaceH4/zephyr-7b-beta"):
+    def __init__(self, llm=None, *args, **kwargs):
         self.logger = logging.getLogger(__name__)
         self.yf = YFinanceWrapper()
-        self.use_llm = use_llm and LLM_AVAILABLE and (openai_api_key or anthropic_api_key or hf_api_key)
-        self.llm_provider = llm_provider
-        
-        if self.use_llm:
-            if llm_provider == "openai":
-                self.llm = ChatOpenAI(
-                    model=openai_model,
-                    temperature=0.1,
-                    openai_api_key=openai_api_key
-                )
-            elif llm_provider == "anthropic":
-                try:
-                    self.llm = ChatAnthropic(
-                        model=anthropic_model,
-                        temperature=0.1,
-                        anthropic_api_key=anthropic_api_key
-                    )
-                except AttributeError as e:
-                    if "count_tokens" in str(e):
-                        self.logger.warning("Anthropic client version issue detected, falling back to basic discovery")
-                        self.use_llm = False
-                    else:
-                        raise e
-            elif llm_provider == "huggingface":
-                self.llm = ChatHuggingFace(
-                    model=hf_model,
-                    temperature=0.1,
-                    huggingfacehub_api_token=hf_api_key
-                )
-            else:
-                raise ValueError(f"Unsupported LLM provider: {llm_provider}")
-            
-            if self.use_llm:
-                self.prompt_template = ChatPromptTemplate.from_messages([
-                    ("system", STOCK_PICKER_SYSTEM_PROMPT),
-                    ("human", STOCK_PICKER_DISCOVERY_PROMPT)
-                ])
+        self.llm = llm or GAssistLLM()
+        # Remove all cloud LLM logic and API key handling
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", STOCK_PICKER_SYSTEM_PROMPT),
+            ("human", STOCK_PICKER_DISCOVERY_PROMPT)
+        ])
 
     def pick_stocks(self, user_query: str, limit: Optional[int] = None, 
                    processed_query: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -95,7 +56,7 @@ class StockPickerAgent:
         criteria['limit'] = limit
         
         # Use LLM for enhanced discovery if available
-        if self.use_llm and processed_query:
+        if processed_query:
             enhanced_criteria = self._enhance_criteria_with_llm(criteria, processed_query)
             criteria.update(enhanced_criteria)
         

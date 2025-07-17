@@ -7,16 +7,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
-    from langchain.prompts import ChatPromptTemplate
-    from langchain.schema import HumanMessage, SystemMessage
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    print("Warning: LangChain not available. Summarizer agent will use fallback methods.")
 
+from .gassist_llm import GAssistLLM
 from ..prompts.summarizer_prompts import (
     STOCK_SUMMARY_PROMPT,
     PORTFOLIO_SUMMARY_PROMPT,
@@ -27,81 +19,12 @@ from ..prompts.summarizer_prompts import (
 
 class SummarizerAgent:
     """
-    Summarizer Agent that uses LangChain chat clients to generate enhanced summaries
-    from analyzer assessments and product bundle data.
+    Summarizer Agent that uses the local GAssistLLM to generate enhanced summaries from analyzer assessments.
     """
-    
-    def __init__(self, 
-                 openai_api_key: Optional[str] = None,
-                 anthropic_api_key: Optional[str] = None,
-                 use_llm: bool = True,
-                 llm_provider: str = "openai",
-                 openai_model: str = "gpt-4",
-                 anthropic_model: str = "claude-3-opus-20240229",
-                 temperature: float = 0.3):
-        """
-        Initialize the Summarizer Agent.
-        
-        Args:
-            openai_api_key: OpenAI API key
-            anthropic_api_key: Anthropic API key
-            use_llm: Whether to use LLM for summarization
-            llm_provider: LLM provider ("openai" or "anthropic")
-            openai_model: OpenAI model name
-            anthropic_model: Anthropic model name
-            temperature: Temperature for LLM generation
-        """
+    def __init__(self, llm=None):
         self.logger = logging.getLogger(__name__)
-        self.use_llm = use_llm and LLM_AVAILABLE and (openai_api_key or anthropic_api_key)
-        self.llm_provider = llm_provider
-        self.temperature = temperature
-        
-        # Initialize LLM client
-        self.llm_client = None
-        if self.use_llm:
-            self._initialize_llm_client(
-                openai_api_key, anthropic_api_key, 
-                openai_model, anthropic_model
-            )
-        
-        self.logger.info(f"SummarizerAgent initialized with LLM: {self.use_llm}")
-    
-    def _initialize_llm_client(self, openai_api_key: str, anthropic_api_key: str,
-                              openai_model: str, anthropic_model: str):
-        """Initialize the LLM client based on provider."""
-        try:
-            if self.llm_provider == "openai" and openai_api_key:
-                self.llm_client = ChatOpenAI(
-                    openai_api_key=openai_api_key,
-                    model_name=openai_model,
-                    temperature=self.temperature
-                )
-                self.logger.info(f"Initialized OpenAI client with model: {openai_model}")
-            
-            elif self.llm_provider == "anthropic" and anthropic_api_key:
-                try:
-                    self.llm_client = ChatAnthropic(
-                        anthropic_api_key=anthropic_api_key,
-                        model=anthropic_model,
-                        temperature=self.temperature
-                    )
-                    self.logger.info(f"Initialized Anthropic client with model: {anthropic_model}")
-                except AttributeError as e:
-                    if "count_tokens" in str(e):
-                        self.logger.warning("Anthropic client version issue detected, falling back to template-based summarization")
-                        self.use_llm = False
-                        return
-                    else:
-                        raise e
-            
-            else:
-                self.logger.warning("No valid API key provided, falling back to template-based summarization")
-                self.use_llm = False
-                
-        except Exception as e:
-            self.logger.error(f"Failed to initialize LLM client: {e}")
-            self.use_llm = False
-    
+        self.llm = llm or GAssistLLM()
+
     def generate_stock_summary(self, stock_data: Dict[str, Any]) -> str:
         """
         Generate an enhanced summary for a single stock.
@@ -113,55 +36,24 @@ class SummarizerAgent:
             Enhanced stock summary
         """
         try:
-            print(f"[SUMMARIZER DEBUG] Starting generate_stock_summary")
-            print(f"[SUMMARIZER DEBUG] Stock data keys: {list(stock_data.keys())}")
-            print(f"[SUMMARIZER DEBUG] Stock data has 'symbol': {'symbol' in stock_data}")
-            print(f"[SUMMARIZER DEBUG] Stock data has 'assessment': {'assessment' in stock_data}")
-            print(f"[SUMMARIZER DEBUG] Stock data has 'analysis': {'analysis' in stock_data}")
-            print(f"[SUMMARIZER DEBUG] Stock data has 'price_data': {'price_data' in stock_data}")
-            
             symbol = stock_data.get('symbol', 'Unknown')
             print(f"[SUMMARIZER DEBUG] Processing symbol: {symbol}")
             
             assessment = stock_data.get('assessment', {})
             analysis = stock_data.get('analysis', {})
             price_data = stock_data.get('price_data', {})
-            
-            print(f"[SUMMARIZER DEBUG] Assessment keys: {list(assessment.keys()) if assessment else 'None'}")
-            print(f"[SUMMARIZER DEBUG] Analysis keys: {list(analysis.keys()) if analysis else 'None'}")
-            print(f"[SUMMARIZER DEBUG] Price data keys: {list(price_data.keys()) if price_data else 'None'}")
-            
-            # Extract key information
             recommendation = assessment.get('investment_recommendation', {})
             risk = assessment.get('risk_assessment', {})
             confidence = assessment.get('confidence_score', {})
             suitability = assessment.get('suitability_score', {})
             insights = assessment.get('insights', {})
             text_assessment = assessment.get('text_assessment', '')
-            
-            print(f"[SUMMARIZER DEBUG] Recommendation: {recommendation}")
-            print(f"[SUMMARIZER DEBUG] Risk: {risk}")
-            print(f"[SUMMARIZER DEBUG] Confidence: {confidence}")
-            print(f"[SUMMARIZER DEBUG] Suitability: {suitability}")
-            print(f"[SUMMARIZER DEBUG] Text assessment length: {len(text_assessment) if text_assessment else 0}")
-            
-            # Extract price information and handle None values
             current_price = price_data.get('current_price')
             predicted_price = price_data.get('predicted_price')
             current_date = price_data.get('current_date')
             predicted_date = price_data.get('predicted_date')
             price_change = price_data.get('price_change')
             price_change_pct = price_data.get('price_change_pct')
-            
-            print(f"[SUMMARIZER DEBUG] Price data extracted:")
-            print(f"[SUMMARIZER DEBUG]   current_price: {current_price}")
-            print(f"[SUMMARIZER DEBUG]   predicted_price: {predicted_price}")
-            print(f"[SUMMARIZER DEBUG]   current_date: {current_date}")
-            print(f"[SUMMARIZER DEBUG]   predicted_date: {predicted_date}")
-            print(f"[SUMMARIZER DEBUG]   price_change: {price_change}")
-            print(f"[SUMMARIZER DEBUG]   price_change_pct: {price_change_pct}")
-            
-            # Prepare context for LLM with safe formatting
             context = {
                 'symbol': symbol,
                 'recommendation': recommendation.get('recommendation', 'HOLD'),
@@ -200,14 +92,9 @@ class SummarizerAgent:
                 print(f"[SUMMARIZER DEBUG] No valid price data available")
             
             context['price_analysis_section'] = price_analysis
-            
-            if self.use_llm and self.llm_client:
-                print(f"[SUMMARIZER DEBUG] Using LLM for summary generation")
-                return self._generate_llm_summary(STOCK_SUMMARY_PROMPT, context)
-            else:
-                print(f"[SUMMARIZER DEBUG] Using template for summary generation")
-                return self._generate_template_summary(context)
-                
+            prompt = STOCK_SUMMARY_PROMPT.format(**context)
+            summary = self.llm.invoke(prompt)
+            return summary
         except Exception as e:
             print(f"[SUMMARIZER DEBUG] Error in generate_stock_summary: {e}")
             import traceback
@@ -266,12 +153,9 @@ class SummarizerAgent:
             print(f"[SUMMARIZER DEBUG] Risk distribution: {context['risk_distribution']}")
             print(f"[SUMMARIZER DEBUG] Recommendation distribution: {context['recommendation_distribution']}")
             
-            if self.use_llm and self.llm_client:
-                print(f"[SUMMARIZER DEBUG] Using LLM for portfolio summary generation")
-                return self._generate_llm_summary(PORTFOLIO_SUMMARY_PROMPT, context)
-            else:
-                print(f"[SUMMARIZER DEBUG] Using template for portfolio summary generation")
-                return self._generate_template_portfolio_summary(context)
+            prompt = PORTFOLIO_SUMMARY_PROMPT.format(**context)
+            summary = self.llm.invoke(prompt)
+            return summary
                 
         except Exception as e:
             print(f"[SUMMARIZER DEBUG] Error in generate_portfolio_summary: {e}")
@@ -320,12 +204,9 @@ class SummarizerAgent:
             print(f"[SUMMARIZER DEBUG] Risk distribution: {context['risk_distribution']}")
             print(f"[SUMMARIZER DEBUG] Recommendation distribution: {context['recommendation_distribution']}")
             
-            if self.use_llm and self.llm_client:
-                print(f"[SUMMARIZER DEBUG] Using LLM for executive summary generation")
-                return self._generate_llm_summary(EXECUTIVE_SUMMARY_PROMPT, context)
-            else:
-                print(f"[SUMMARIZER DEBUG] Using template for executive summary generation")
-                return self._generate_template_executive_summary(context)
+            prompt = EXECUTIVE_SUMMARY_PROMPT.format(**context)
+            summary = self.llm.invoke(prompt)
+            return summary
                 
         except Exception as e:
             print(f"[SUMMARIZER DEBUG] Error in generate_executive_summary: {e}")
@@ -374,12 +255,9 @@ class SummarizerAgent:
             print(f"[SUMMARIZER DEBUG] Context prepared with keys: {list(context.keys())}")
             print(f"[SUMMARIZER DEBUG] Risk distribution: {context['risk_distribution']}")
             
-            if self.use_llm and self.llm_client:
-                print(f"[SUMMARIZER DEBUG] Using LLM for risk summary generation")
-                return self._generate_llm_summary(RISK_SUMMARY_PROMPT, context)
-            else:
-                print(f"[SUMMARIZER DEBUG] Using template for risk summary generation")
-                return self._generate_template_risk_summary(context)
+            prompt = RISK_SUMMARY_PROMPT.format(**context)
+            summary = self.llm.invoke(prompt)
+            return summary
                 
         except Exception as e:
             print(f"[SUMMARIZER DEBUG] Error in generate_risk_summary: {e}")
@@ -430,12 +308,9 @@ class SummarizerAgent:
             print(f"[SUMMARIZER DEBUG] Context prepared with keys: {list(context.keys())}")
             print(f"[SUMMARIZER DEBUG] Recommendation distribution: {context['recommendation_distribution']}")
             
-            if self.use_llm and self.llm_client:
-                print(f"[SUMMARIZER DEBUG] Using LLM for recommendation summary generation")
-                return self._generate_llm_summary(RECOMMENDATION_SUMMARY_PROMPT, context)
-            else:
-                print(f"[SUMMARIZER DEBUG] Using template for recommendation summary generation")
-                return self._generate_template_recommendation_summary(context)
+            prompt = RECOMMENDATION_SUMMARY_PROMPT.format(**context)
+            summary = self.llm.invoke(prompt)
+            return summary
                 
         except Exception as e:
             print(f"[SUMMARIZER DEBUG] Error in generate_recommendation_summary: {e}")
@@ -457,8 +332,8 @@ class SummarizerAgent:
             ]
             
             # Generate response
-            response = self.llm_client.invoke(messages)
-            return response.content.strip()
+            response = self.llm.invoke(formatted_prompt)
+            return response.strip()
             
         except Exception as e:
             self.logger.error(f"LLM summary generation failed: {e}")

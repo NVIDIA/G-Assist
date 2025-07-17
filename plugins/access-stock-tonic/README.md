@@ -1,3 +1,21 @@
+# Simple Single Stock Analysis Workflow
+
+## Overview
+This application is designed to take a user input (such as a stock symbol or company name), process it through a sequence of agents, and produce a simple analysis of a single stock. The workflow is intentionally minimal and does **not** include product bundling, multi-stock selection, or user feedback loops.
+
+## Workflow Steps
+1. **User Input**: The user provides a query (e.g., "Analyze AAPL" or "Tell me about Apple").
+2. **Query Processing**: The system extracts the relevant stock symbol or name from the input.
+3. **Stock Analysis**: The analysis agent performs a comprehensive analysis of the single stock.
+4. **Output**: The result is a simple, clear analysis of the requested stock.
+
+## Key Points
+- Only single stock analysis is supported.
+- No product creation, bundling, or multi-stock workflows.
+- The workflow is linear: input → process → analyze → output.
+
+---
+
 # Access Stock Tonic – G-Assist Plugin
 
 ## How NVIDIA Project G-Assist Uses AI Natively

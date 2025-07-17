@@ -161,6 +161,39 @@
           "optional": true
         }
       }
+    },
+    {
+      "name": "stock_picker_workflow",
+      "description": "Run a simple workflow to process a user query and return a list of discovered stocks using the query processor and stock picker agents.",
+      "tags": ["stock", "picker", "workflow", "ai", "discovery"],
+      "properties": {
+        "user_query": {
+          "type": "string",
+          "description": "The user's query or investment criteria for stock discovery."
+        }
+      }
+    },
+    {
+      "name": "stock_analyzer_workflow",
+      "description": "Run a workflow to process a user query, analyze a stock, and return a plot and summary using the query processor, analyzer, and summarizer agents.",
+      "tags": ["stock", "analyzer", "workflow", "ai", "summary", "plot"],
+      "properties": {
+        "user_query": {
+          "type": "string",
+          "description": "The user's query or investment criteria for stock analysis."
+        }
+      }
+    },
+    {
+      "name": "product_bundler_workflow",
+      "description": "Run a workflow to process a user query and create a structured equity product bundle using the product bundler workflow.",
+      "tags": ["product", "bundler", "workflow", "equity", "ai", "bundle"],
+      "properties": {
+        "user_query": {
+          "type": "string",
+          "description": "The user's query or investment criteria for product bundling."
+        }
+      }
     }
   ]
 }
