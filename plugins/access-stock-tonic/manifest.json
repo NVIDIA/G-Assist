@@ -3,68 +3,44 @@
   "executable": "./g-assist-plugin-python.exe",
   "persistent": true,
   "functions": [
+
     {
-      "name": "plugin_py_func1",
-      "description": "Plugin's first function",
-      "tags": [
-        "tag1",
-        "tag2"
-      ],
+      "name": "set_keyboard_color",
+      "description": "Set the color of the keyboard or RGB device using OpenRGB.",
+      "tags": ["lighting", "keyboard", "rgb", "color"],
       "properties": {
-        "paramA": {
+        "color": {
           "type": "string",
-          "description": "the first parameter"
-        },
-        "paramB": {
-          "type": "integer",
-          "description": "the second parameter"
-        },
-        "paramC": {
-          "type": "string",
-          "description": "the third parameter"
+          "description": "The color to set (e.g., red, green, blue, etc.)"
         }
       }
     },
     {
-      "name": "plugin_py_func2",
-      "description": "Plugin's second function",
-      "tags": [
-        "tag2",
-        "tag3"
-      ],
+      "name": "list_supported_colors",
+      "description": "List all supported color names for keyboard/device lighting.",
+      "tags": ["lighting", "keyboard", "rgb", "color", "discovery"],
+      "properties": {}
+    },
+    {
+      "name": "configure_color_feedback",
+      "description": "Configure color feedback for event proximity (e.g., none, near, imminent) and assign a color to each mode.",
+      "tags": ["lighting", "keyboard", "rgb", "color", "feedback"],
       "properties": {
-        "paramA": {
+        "mode": {
           "type": "string",
-          "description": "the first parameter"
+          "description": "The feedback mode to configure (none, near, imminent)"
         },
-        "paramB": {
-          "type": "integer",
-          "description": "the second parameter"
+        "color": {
+          "type": "string",
+          "description": "The color to assign to this mode (must be a supported color)"
         }
       }
     },
     {
-      "name": "plugin_py_func3",
-      "description": "Plugin's third function",
-      "tags": [
-        "tag4"
-      ]
-    },
-    {
-      "name": "calendar_tool",
-      "description": "Manages tracked tickers and retrieves their important calendar events (earnings, dividends, etc.) using yfinance.",
-      "tags": ["calendar", "events", "earnings", "dividends"],
-      "properties": {
-        "action": {
-          "type": "string",
-          "description": "Action to perform: add, remove, update, today, get_events"
-        },
-        "symbol": {
-          "type": "string",
-          "description": "Ticker symbol (required for add, remove, get_events)",
-          "optional": true
-        }
-      }
+      "name": "auto_color_update",
+      "description": "Automatically update keyboard/device color based on event proximity in the calendar (uses color feedback configuration).",
+      "tags": ["lighting", "keyboard", "rgb", "color", "feedback", "automation"],
+      "properties": {}
     }
   ]
 }

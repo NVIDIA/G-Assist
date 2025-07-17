@@ -22,12 +22,17 @@ manager. Communication between the plugin and the manager are done via pipes.
 import json
 import logging
 import os
+import subprocess
+import sys
 from ctypes import byref, windll, wintypes
 from typing import Optional
 
 # Add import for CalendarTool
 from src.tools.calendar_tool import CalendarTool
 from src.tools import predictions
+from src.tools import setcolors
+from openrgb import OpenRGBClient
+from openrgb.utils import RGBColor
 
 # Instantiate the calendar tool globally
 calendar_tool_instance = CalendarTool()
@@ -145,8 +150,75 @@ def execute_predict_min15_command(params:dict=None, context:dict=None, system_in
 # Data Types
 type Response = dict[bool,Optional[str]]
 
-LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'python_plugin.log')
+LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'access_stock_tonic.log')
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+COLOR_MAP = {
+    'red': (255, 0, 0),
+    'green': (0, 255, 0),
+    'blue': (0, 0, 255),
+    'yellow': (255, 255, 0),
+    'purple': (128, 0, 128),
+    'violet': (128, 0, 128),
+    'orange': (255, 165, 0),
+    'pink': (255, 192, 203),
+    'white': (255, 255, 255),
+    'black': (0, 0, 0),
+    'grey': (128, 128, 128),
+    'gray': (128, 128, 128)
+}
+COLOR_ALIASES = {
+    'grey': 'gray',
+    'violet': 'purple'
+}
+
+openrgb_client = None
+
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'color_feedback_config.json')
+def load_color_feedback_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {"none": "blue", "near": "yellow", "imminent": "red"}
+def save_color_feedback_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f)
+
+def execute_list_supported_colors_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    try:
+        colors = setcolors.list_supported_colors()
+        return generate_success_response({"supported_colors": colors})
+    except Exception as e:
+        return generate_failure_response(str(e))
+
+def execute_set_keyboard_color_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    try:
+        color = params.get('color') if params else None
+        if not color:
+            return generate_failure_response('Missing color parameter.')
+        color_name = setcolors.set_keyboard_color(color)
+        return generate_success_response(f'Keyboard/device color set to {color_name}.')
+    except Exception as e:
+        return generate_failure_response(str(e))
+
+def execute_configure_color_feedback_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    try:
+        mode = params.get('mode') if params else None
+        color = params.get('color') if params else None
+        if not mode or not color:
+            return generate_failure_response('Missing mode or color parameter.')
+        mode, color_name = setcolors.configure_color_feedback(mode, color)
+        return generate_success_response(f'Color feedback for mode "{mode}" set to {color_name}.')
+    except Exception as e:
+        return generate_failure_response(str(e))
+
+def execute_auto_color_update_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    try:
+        mode, color = setcolors.auto_color_update()
+        return generate_success_response(f'Auto color update: mode={mode}, color={color}')
+    except Exception as e:
+        return generate_failure_response(str(e))
+
 
 def main():
     ''' Main entry point.
@@ -173,17 +245,29 @@ def main():
     commands = {
         'initialize': execute_initialize_command,
         'shutdown': execute_shutdown_command,
-        'plugin_py_func1': execute_func1_command,
-        'plugin_py_func2': execute_func2_command,
-        'plugin_py_func3': execute_func3_command,
+
         'calendar_tool': execute_calendar_tool_command,
         'predict_daily': execute_predict_daily_command,
         'predict_hourly': execute_predict_hourly_command,
         'predict_min15': execute_predict_min15_command,
+        'set_keyboard_color': execute_set_keyboard_color_command,
+        'list_supported_colors': execute_list_supported_colors_command,
+        'configure_color_feedback': execute_configure_color_feedback_command,
+        'auto_color_update': execute_auto_color_update_command,
     }
     cmd = ''
 
     logging.info('Plugin started')
+    # Launch auto_color_update_loop.py as a background process unless disabled
+    try:
+        if not os.environ.get('DISABLE_AUTO_COLOR_UPDATE'):
+            script_path = os.path.join(os.path.dirname(__file__), 'auto_color_update_loop.py')
+            if os.path.exists(script_path):
+                subprocess.Popen([sys.executable, script_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logging.info('Started auto_color_update_loop.py as background process')
+    except Exception as e:
+        logging.error(f'Failed to launch auto_color_update_loop.py: {str(e)}')
+
     while cmd != SHUTDOWN_COMMAND:
         response = None
         input = read_command()

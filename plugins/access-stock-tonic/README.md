@@ -361,3 +361,141 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
+
+## Keyboard Color Control (OpenRGB)
+
+You can now control your keyboard or any OpenRGB-compatible device's color using the `set_keyboard_color` tool call. This works with any device supported by OpenRGB running on your system.
+
+### Supported Colors
+- red
+- green
+- blue
+- yellow
+- purple
+- orange
+- pink
+- white
+- black
+
+### Example Usage
+- "Change my keyboard color to blue"
+- "/set_keyboard_color color=red"
+- "Set my RGB devices to green"
+
+### JSON Tool Call Example
+```json
+{
+  "tool_calls": [{
+    "func": "set_keyboard_color",
+    "params": {
+      "color": "blue"
+    },
+    "messages": [],
+    "system_info": ""
+  }]
+}
+```
+
+### Troubleshooting
+- **No color change?** Ensure OpenRGB is running and your devices are detected.
+- **Unknown color error?** Only the colors listed above are supported.
+- **No devices found?** Check your OpenRGB setup and device compatibility.
+
+### Developer Notes
+- The color map and tool handler are implemented in `plugin.py` using the OpenRGB Python API.
+- You can extend the color map or add per-device support as needed.
+
+## How to Use Keyboard Color Control
+
+You can control your keyboard or any OpenRGB-compatible device's color using natural language, slash commands, or JSON tool calls. Example commands:
+
+- "Change my keyboard color to blue"
+- "Set my RGB devices to green"
+- "/set_keyboard_color color=red"
+- "Configure color feedback for imminent events to orange"
+- "/configure_color_feedback mode=imminent color=orange"
+
+### Supported Colors
+
+To see all supported colors, use the tool call:
+
+- "/list_supported_colors"
+
+Or programmatically:
+```json
+{
+  "tool_calls": [{
+    "func": "list_supported_colors",
+    "params": {}
+  }]
+}
+```
+
+### Configuring Color Feedback
+
+You can assign specific colors to feedback modes (e.g., for event proximity):
+
+- **none**: Default/idle state
+- **near**: Approaching event
+- **imminent**: Event is imminent
+
+Example tool call:
+```json
+{
+  "tool_calls": [{
+    "func": "configure_color_feedback",
+    "params": {
+      "mode": "imminent",
+      "color": "orange"
+    }
+  }]
+}
+```
+
+### Example JSON Tool Call to Set Color
+```json
+{
+  "tool_calls": [{
+    "func": "set_keyboard_color",
+    "params": {
+      "color": "blue"
+    }
+  }]
+}
+```
+
+### Troubleshooting
+- **No color change?** Ensure OpenRGB is running and your devices are detected.
+- **Unknown color error?** Only the colors listed above are supported. Use /list_supported_colors to see them.
+- **No devices found?** Check your OpenRGB setup and device compatibility.
+- **Where are logs?** All actions and errors are logged to `%USERPROFILE%\access_stock_tonic.log`.
+
+### Developer Notes
+- To add new colors, update the `COLOR_MAP` and (optionally) `COLOR_ALIASES` in `plugin.py`.
+- To add new feedback modes, update the config logic in `plugin.py` and document them here.
+- All color changes and configuration actions are logged for debugging and auditing.
+
+## Persistent Automatic Keyboard Color Feedback
+
+To ensure your keyboard color always reflects the latest event proximity—**with zero user input required**—the plugin includes an automatic background updater:
+
+- When you install and run the Access Stock Tonic plugin, the `auto_color_update_loop.py` script is started automatically in the background.
+- This script calls the plugin's `auto_color_update` tool every 60 seconds (by default), keeping your keyboard color in sync with your calendar and feedback configuration.
+- No manual action is required after installation—color feedback is always up to date.
+
+### How It Works
+- The script is launched as a background process when the plugin starts.
+- It logs all actions and errors to `auto_color_update_loop.log` in the plugin directory.
+- If you want to change the update interval, edit the script and adjust the `DEFAULT_INTERVAL` value or pass `--interval` as a command-line argument.
+
+### Checking Status
+- To verify the updater is running, check for the `auto_color_update_loop.log` file and look for recent log entries.
+- You can also check running processes for `python auto_color_update_loop.py`.
+
+### Disabling Automatic Updates
+- If you wish to disable persistent color feedback, simply stop or remove the `auto_color_update_loop.py` process.
+- You can also comment out or remove the script launch from the plugin's startup logic (see below).
+
+### Developer Notes
+- The plugin is designed to launch the updater script automatically for a frictionless experience.
+- If you are packaging or deploying the plugin, ensure Python is available and the script is executable.
