@@ -27,6 +27,7 @@ from typing import Optional
 
 # Add import for CalendarTool
 from src.tools.calendar_tool import CalendarTool
+from src.tools import predictions
 
 # Instantiate the calendar tool globally
 calendar_tool_instance = CalendarTool()
@@ -49,6 +50,96 @@ def execute_calendar_tool_command(params:dict=None, context:dict=None, system_in
     except Exception as e:
         logging.error(f'Error in calendar_tool: {str(e)}')
         return generate_failure_response(f'calendar_tool error: {str(e)}')
+
+def execute_predict_daily_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for daily stock prediction '''
+    try:
+        args = params or {}
+        result = predictions.predict_daily(
+            symbol=args.get('symbol'),
+            prediction_days=args.get('prediction_days', 30),
+            lookback_days=args.get('lookback_days', 365),
+            strategy=args.get('strategy', 'chronos'),
+            use_ensemble=args.get('use_ensemble', True),
+            use_regime_detection=args.get('use_regime_detection', True),
+            use_stress_testing=args.get('use_stress_testing', True),
+            risk_free_rate=args.get('risk_free_rate', 0.02),
+            market_index=args.get('market_index', '^GSPC'),
+            chronos_weight=args.get('chronos_weight', 0.6),
+            technical_weight=args.get('technical_weight', 0.2),
+            statistical_weight=args.get('statistical_weight', 0.2),
+            random_real_points=args.get('random_real_points', 4),
+            use_smoothing=args.get('use_smoothing', True),
+            smoothing_type=args.get('smoothing_type', 'exponential'),
+            smoothing_window=args.get('smoothing_window', 5),
+            smoothing_alpha=args.get('smoothing_alpha', 0.3),
+            use_covariates=args.get('use_covariates', True),
+            use_sentiment=args.get('use_sentiment', True)
+        )
+        return {'success': True, 'result': result}
+    except Exception as e:
+        logging.error(f'Error in predict_daily: {str(e)}')
+        return generate_failure_response(f'predict_daily error: {str(e)}')
+
+def execute_predict_hourly_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for hourly stock prediction '''
+    try:
+        args = params or {}
+        result = predictions.predict_hourly(
+            symbol=args.get('symbol'),
+            prediction_days=args.get('prediction_days', 3),
+            lookback_days=args.get('lookback_days', 14),
+            strategy=args.get('strategy', 'chronos'),
+            use_ensemble=args.get('use_ensemble', True),
+            use_regime_detection=args.get('use_regime_detection', True),
+            use_stress_testing=args.get('use_stress_testing', True),
+            risk_free_rate=args.get('risk_free_rate', 0.02),
+            market_index=args.get('market_index', '^GSPC'),
+            chronos_weight=args.get('chronos_weight', 0.6),
+            technical_weight=args.get('technical_weight', 0.2),
+            statistical_weight=args.get('statistical_weight', 0.2),
+            random_real_points=args.get('random_real_points', 4),
+            use_smoothing=args.get('use_smoothing', True),
+            smoothing_type=args.get('smoothing_type', 'exponential'),
+            smoothing_window=args.get('smoothing_window', 5),
+            smoothing_alpha=args.get('smoothing_alpha', 0.3),
+            use_covariates=args.get('use_covariates', True),
+            use_sentiment=args.get('use_sentiment', True)
+        )
+        return {'success': True, 'result': result}
+    except Exception as e:
+        logging.error(f'Error in predict_hourly: {str(e)}')
+        return generate_failure_response(f'predict_hourly error: {str(e)}')
+
+def execute_predict_min15_command(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+    ''' Command handler for 15-minute stock prediction '''
+    try:
+        args = params or {}
+        result = predictions.predict_min15(
+            symbol=args.get('symbol'),
+            prediction_days=args.get('prediction_days', 1),
+            lookback_days=args.get('lookback_days', 3),
+            strategy=args.get('strategy', 'chronos'),
+            use_ensemble=args.get('use_ensemble', True),
+            use_regime_detection=args.get('use_regime_detection', True),
+            use_stress_testing=args.get('use_stress_testing', True),
+            risk_free_rate=args.get('risk_free_rate', 0.02),
+            market_index=args.get('market_index', '^GSPC'),
+            chronos_weight=args.get('chronos_weight', 0.6),
+            technical_weight=args.get('technical_weight', 0.2),
+            statistical_weight=args.get('statistical_weight', 0.2),
+            random_real_points=args.get('random_real_points', 4),
+            use_smoothing=args.get('use_smoothing', True),
+            smoothing_type=args.get('smoothing_type', 'exponential'),
+            smoothing_window=args.get('smoothing_window', 5),
+            smoothing_alpha=args.get('smoothing_alpha', 0.3),
+            use_covariates=args.get('use_covariates', True),
+            use_sentiment=args.get('use_sentiment', True)
+        )
+        return {'success': True, 'result': result}
+    except Exception as e:
+        logging.error(f'Error in predict_min15: {str(e)}')
+        return generate_failure_response(f'predict_min15 error: {str(e)}')
 
 
 # Data Types
@@ -85,7 +176,10 @@ def main():
         'plugin_py_func1': execute_func1_command,
         'plugin_py_func2': execute_func2_command,
         'plugin_py_func3': execute_func3_command,
-        'calendar_tool': execute_calendar_tool_command,  # <-- new handler
+        'calendar_tool': execute_calendar_tool_command,
+        'predict_daily': execute_predict_daily_command,
+        'predict_hourly': execute_predict_hourly_command,
+        'predict_min15': execute_predict_min15_command,
     }
     cmd = ''
 

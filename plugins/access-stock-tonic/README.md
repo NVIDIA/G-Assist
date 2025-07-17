@@ -144,6 +144,68 @@ No major news for your tracked tickers in the next 24 hours. Keyboard color set 
 
 ---
 
+## Advanced Stock Prediction Entrypoints
+
+Access Stock Tonic now provides advanced AI-powered stock prediction entrypoints for G-Assist, supporting daily, hourly, and 15-minute intervals. These entrypoints leverage the latest market data, technical indicators, and ensemble AI models for robust, actionable predictions.
+
+### Prediction Entrypoints
+- **predict_daily**: Get daily-level predictions and analysis for a stock.
+- **predict_hourly**: Get hourly-level predictions and analysis for a stock (market hours only).
+- **predict_min15**: Get 15-minute interval predictions and analysis for a stock (market hours only).
+
+#### Parameters (all entrypoints)
+- `symbol` (str): Stock ticker symbol (e.g., "AAPL")
+- `prediction_days` (int): Number of days (or intervals) to predict
+- `lookback_days` (int): Historical lookback window
+- `strategy` (str): Prediction strategy ("chronos" or "technical")
+- `use_ensemble` (bool): Use ensemble models (default: True)
+- `use_regime_detection` (bool): Use market regime detection (default: True)
+- `use_stress_testing` (bool): Run stress test scenarios (default: True)
+- `risk_free_rate` (float): Annual risk-free rate (default: 0.02)
+- `market_index` (str): Market index for correlation (default: "^GSPC")
+- `chronos_weight`, `technical_weight`, `statistical_weight` (float): Ensemble weights
+- `random_real_points` (int): Number of random real points for context
+- `use_smoothing` (bool): Apply smoothing to predictions
+- `smoothing_type` (str): Smoothing algorithm ("exponential", etc.)
+- `smoothing_window` (int): Smoothing window size
+- `smoothing_alpha` (float): Smoothing alpha
+- `use_covariates` (bool): Use covariate data (default: True)
+- `use_sentiment` (bool): Use sentiment analysis (default: True)
+
+#### Example G-Assist Command
+- "Get a daily prediction for AAPL"
+- "Show me hourly stock prediction for TSLA"
+- "Give me a 15-minute forecast for MSFT"
+
+#### Example JSON Tool Call
+```json
+{
+  "tool_calls": [{
+    "func": "predict_daily",
+    "params": {
+      "symbol": "AAPL",
+      "prediction_days": 30,
+      "lookback_days": 365
+    },
+    "messages": [],
+    "system_info": ""
+  }]
+}
+```
+
+#### Output
+Each prediction entrypoint returns a structured dictionary with:
+- Trading signals (RSI, MACD, Bollinger, SMA, overall)
+- Interactive plot (if supported)
+- Product metrics (market cap, sector, ratios, etc.)
+- Risk metrics (Sharpe, VaR, drawdown, etc.)
+- Sector metrics
+- Regime and stress test results
+- Ensemble and advanced signals
+- Historical and predicted data arrays
+
+---
+
 ## Project Structure and Technical Overview
 
 The Access Stock Tonic plugin is built to integrate seamlessly with the G-Assist plugin architecture. Here’s how the project is organized and how the system works under the hood:
@@ -233,6 +295,9 @@ Commands are sent as JSON with the following structure:
 - `get_data`: Returns latest data/news for a stock
 - `set_keyboard_color`: Manually set keyboard color
 - `auto_color_update`: Automatically update keyboard color based on event proximity
+- `predict_daily`: Advanced daily stock prediction and analysis
+- `predict_hourly`: Advanced hourly stock prediction and analysis
+- `predict_min15`: Advanced 15-minute interval stock prediction and analysis
 
 ### Calendar/Event Tracking & Testing
 
@@ -262,6 +327,9 @@ Commands are sent as JSON with the following structure:
 - Logs include command processing, event detection, color changes, and errors
 
 ---
+
+### Extending Prediction Entrypoints
+The prediction entrypoints are implemented in `src/tools/predictions.py` and registered in `plugin.py`. To add new prediction types or customize the analysis, extend these functions and update the command handler and manifest as needed. All entrypoints support robust error handling and parameterization for advanced use cases.
 
 ### Adding New Features
 To add new features:
