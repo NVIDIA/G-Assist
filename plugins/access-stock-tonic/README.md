@@ -101,6 +101,18 @@ python -m pip install -r requirements.txt
 ### Step 3: Configure the Plugin
 1. Edit `config.json` (if present) to set your preferences and API keys.
 2. (Optional) Set up a `.env` file for environment variables (API keys, etc).
+3. (Optional) **Set the `CHRONOS_MODEL` environment variable** to specify a custom Chronos model from Hugging Face. By default, the plugin uses `amazon/chronos-t5-small`. To use a different model, set the environment variable before launching the plugin:
+   - On Windows (Command Prompt):
+     ```cmd
+     set CHRONOS_MODEL=your-hf-username/your-chronos-model
+     python your_script.py
+     ```
+   - On Linux/macOS (bash):
+     ```bash
+     export CHRONOS_MODEL=your-hf-username/your-chronos-model
+     python your_script.py
+     ```
+   - Or add to a `.env` file if your environment supports it.
 
 ### Step 4: Build the Plugin (if required)
 If a build step is needed (e.g., for C++/binary components), follow the instructions in the repo. For pure Python, you can skip this step.
@@ -171,6 +183,12 @@ Access Stock Tonic now provides advanced AI-powered stock prediction and stock s
 - **predict_hourly**: Get hourly-level predictions and analysis for a stock (market hours only).
 - **predict_min15**: Get 15-minute interval predictions and analysis for a stock (market hours only).
 - **stock_selection**: Intelligently select and rank stocks for structured products based on analysis data and user preferences.
+
+#### Model Selection (Advanced)
+- By default, the Chronos model used is `amazon/chronos-t5-small`.
+- To use a different Chronos-compatible model from Hugging Face, set the `CHRONOS_MODEL` environment variable as described above.
+- Example: `CHRONOS_MODEL=your-hf-username/your-chronos-model`
+- This allows you to experiment with custom or fine-tuned Chronos models for advanced use cases.
 
 #### Parameters (prediction entrypoints)
 - `symbol` (str): Stock ticker symbol (e.g., "AAPL")
