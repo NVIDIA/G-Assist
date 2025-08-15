@@ -102,22 +102,22 @@ Check this file for detailed error messages and debugging information.
 1. **Create the Manifest File** (`manifest.json`)
     ```json
     {
-    "manifestVersion": 1,
-    "executable": "g-assist-plugin-twitch.exe",
-    "persistent": false,
-    "functions": [
-        {
-        "name": "check_twitch_live_status",
-        "description": "Checks if a Twitch user is live and retrieves stream details.",
-        "tags": ["twitch", "live_status"],
-        "properties": {
-            "username": {
-            "type": "string",
-            "description": "The Twitch username to check."
+        "manifestVersion": 1,
+        "executable": "g-assist-plugin-twitch.exe",
+        "persistent": false,
+        "functions": [
+            {
+            "name": "check_twitch_live_status",
+            "description": "Checks if a Twitch user is live and retrieves stream details.",
+            "tags": ["twitch", "live_status"],
+            "properties": {
+                "username": {
+                "type": "string",
+                "description": "The Twitch username to check."
+                }
             }
-        }
-        }
-    ]
+            }
+        ]
     }
     ```
 

@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-twitch.exe",
+  "persistent": false,
+  "passthrough": false,
+  "functions": [
+    {
+      "name": "check_twitch_live_status",
+      "description": "Checks if a Twitch user is live and retrieves stream details.",
+      "tags": [
+        "twitch",
+        "live_status"
+      ],
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "The Twitch username to check."
+        }
+      }
+    }
+  ]
+}

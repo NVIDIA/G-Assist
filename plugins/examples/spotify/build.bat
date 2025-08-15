@@ -18,14 +18,15 @@ set PYTHON=python3
 :build
 set VENV=.venv
 set DIST_DIR=dist
-set SPOTIFY_DIR=%DIST_DIR%\spotify
+set PLUGIN_NAME=spotify
+set SPOTIFY_DIR=%DIST_DIR%\%PLUGIN_NAME%
 if exist %VENV% (
 	call %VENV%\Scripts\activate.bat
 
 	:: Ensure spotify subfolder exists
 	if not exist "%SPOTIFY_DIR%" mkdir "%SPOTIFY_DIR%"
 
-	pyinstaller --onefile --name g-assist-plugin-spotify --distpath "%SPOTIFY_DIR%" plugin.py
+	pyinstaller --onefile --name g-assist-plugin-%PLUGIN_NAME% --distpath "%SPOTIFY_DIR%" plugin.py
 	if exist manifest.json (
 		copy /y manifest.json "%SPOTIFY_DIR%\manifest.json"
 		echo manifest.json copied successfully.
@@ -44,6 +45,16 @@ if exist %VENV% (
 		echo Created a blank config.json file. ACTION REQUIRED: Please populate the file with the required Spotify information `client_id`, `client_secret`, `username`.
 		copy /y config.json "%SPOTIFY_DIR%\config.json"
 		echo config.json copied successfully.
+	)
+
+	if exist auth.json (
+		copy /y auth.json "%SPOTIFY_DIR%\auth.json"
+		echo auth.json copied successfully.
+	) else (
+		echo {} > auth.json
+		echo Created a blank auth.json file. ACTION REQUIRED: Please populate the file with Spotify authentication tokens.
+		copy /y auth.json "%SPOTIFY_DIR%\auth.json"
+		echo auth.json copied successfully.
 	)
 
 	call %VENV%\Scripts\deactivate.bat

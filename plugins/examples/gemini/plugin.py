@@ -32,8 +32,8 @@ from google.genai.types import (ModelContent, Part, UserContent, GoogleSearch, T
 Response = dict[str, bool | Optional[str]]
 
 # Get the directory where the script is running from
-API_KEY_FILE = os.path.join(f'{os.environ.get("PROGRAMDATA", ".")}{r'\NVIDIA Corporation\nvtopps\rise\plugins\google'}', 'google.key')
-CONFIG_FILE = os.path.join(f'{os.environ.get("PROGRAMDATA", ".")}{r'\NVIDIA Corporation\nvtopps\rise\plugins\google'}', 'config.json')
+API_KEY_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), 'NVIDIA Corporation', 'nvtopps', 'rise', 'plugins', 'google', 'google.key')
+CONFIG_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), 'NVIDIA Corporation', 'nvtopps', 'rise', 'plugins', 'google', 'config.json')
 
 LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'gemini.log')
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

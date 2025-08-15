@@ -1,6 +1,5 @@
 .venv
 build
-config.json
-dist
-
 *.spec
+installer.py
+build_installer.bat

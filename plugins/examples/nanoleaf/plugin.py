@@ -34,8 +34,8 @@ LOG_FILE = os.path.join(os.environ.get('USERPROFILE', '.'), 'nanoleaf.log')
 
 
 # Data Types
-type Response = dict[bool,Optional[str]]
-type Color = tuple[int, int, int]
+Response = dict[str, bool | Optional[str]]
+Color = tuple[int, int, int]
 
 
 # Globals

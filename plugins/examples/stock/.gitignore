@@ -1,4 +1,3 @@
-dist/
 build/
 *.spec
 *.pyc
@@ -6,3 +5,5 @@ build/
 *.pyd
 *.pyw
 .venv/
+build_installer.bat
+installer.py

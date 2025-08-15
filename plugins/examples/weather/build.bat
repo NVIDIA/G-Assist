@@ -18,26 +18,27 @@ set PYTHON=python3
 :build
 set VENV=.venv
 set DIST_DIR=dist
-set WEATHER_DIR=%DIST_DIR%\weather
+set PLUGIN_NAME=weather
+set PLUGIN_DIR=%DIST_DIR%\%PLUGIN_NAME%
 if exist %VENV% (
 	call %VENV%\Scripts\activate.bat
 
 	:: Ensure weather subfolder exists
-	if not exist "%WEATHER_DIR%" mkdir "%WEATHER_DIR%"
+	if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
 
-	pyinstaller --onefile --name weather-plugin --distpath "%WEATHER_DIR%" plugin.py
+	pyinstaller --onefile --name g-assist-plugin-%PLUGIN_NAME% --distpath "%PLUGIN_DIR%" plugin.py
 	if exist manifest.json (
-		copy /y manifest.json "%WEATHER_DIR%\manifest.json"
+		copy /y manifest.json "%PLUGIN_DIR%\manifest.json"
 		echo manifest.json copied successfully.
 	) else (
 		echo {} > manifest.json
 		echo Created a blank manifest.json file.	
-		copy /y manifest.json "%WEATHER_DIR%\manifest.json"
+		copy /y manifest.json "%PLUGIN_DIR%\manifest.json"
 		echo manifest.json copied successfully.
 	)
 
 	call %VENV%\Scripts\deactivate.bat
-	echo Plugin can be found in the "%WEATHER_DIR%" directory
+	echo Plugin can be found in the "%PLUGIN_DIR%" directory
 	exit /b 0
 ) else (
 	echo Please run setup.bat before attempting to build

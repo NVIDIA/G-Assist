@@ -402,3 +402,6 @@ FodyWeavers.xsd
 # 3rd Party Components
 iCUESDK/
 json/
+build_installer.bat
+installer.py
+g-assist.afcce4c6/  

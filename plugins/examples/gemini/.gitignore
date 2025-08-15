@@ -10,7 +10,6 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -25,6 +24,8 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+build_installer.bat
+installer.py
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -174,4 +175,7 @@ cython_debug/
 .pypirc
 
 #Gemini Key
-*.key
+# *.key
+Release/
+build_installer.bat
+installer.py

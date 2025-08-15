@@ -18,17 +18,17 @@ set PYTHON=python3
 :build
 set VENV=.venv
 set DIST_DIR=dist
-:: Replace 'plugin' with the name of your plugin
-set PLUGIN_DIR=%DIST_DIR%\ifttt
+set PLUGIN_NAME=ifttt
+set PLUGIN_DIR=%DIST_DIR%\%PLUGIN_NAME%
 
 if exist %VENV% (
 	call %VENV%\Scripts\activate.bat
 
-	:: Ensure spotify subfolder exists
+	:: Ensure ifttt subfolder exists
 	if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
 
 	:: Replace 'g-assist-plugin' with the name of your plugin
-	pyinstaller --onefile --name g-assist-plugin-ifttt --distpath "%PLUGIN_DIR%" plugin.py
+	pyinstaller --onefile --name g-assist-plugin-%PLUGIN_NAME% --distpath "%PLUGIN_DIR%" plugin.py
 	if exist manifest.json (
 		copy /y manifest.json "%PLUGIN_DIR%\manifest.json"
 		echo manifest.json copied successfully.

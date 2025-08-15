@@ -18,8 +18,10 @@ set PYTHON=python3
 :build
 set VENV=.venv
 set DIST_DIR=dist
+set PLUGIN_NAME=openrgb
+set PLUGIN_DIR=%DIST_DIR%\%PLUGIN_NAME%
+
 :: Replace 'plugin' with the name of your plugin
-set PLUGIN_DIR=%DIST_DIR%\openrgb
 
 if exist %VENV% (
 	call %VENV%\Scripts\activate.bat
@@ -28,7 +30,7 @@ if exist %VENV% (
 	if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
 
 	:: Replace 'g-assist-plugin' with the name of your plugin
-	pyinstaller --onefile --name g-assist-plugin-openrgb --distpath "%PLUGIN_DIR%" plugin.py
+	pyinstaller --onefile --name g-assist-plugin-%PLUGIN_NAME% --distpath "%PLUGIN_DIR%" plugin.py
 	if exist manifest.json (
 		copy /y manifest.json "%PLUGIN_DIR%\manifest.json"
 		echo manifest.json copied successfully.
