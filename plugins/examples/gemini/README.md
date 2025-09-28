@@ -20,22 +20,28 @@ Make sure you have:
 ## Installation Guide
 
 ### Step 1: Get the Files
-```bash
-git clone <repo link>
-cd gemini-plugin
-```
+1. Clone the main G-Assist repository:
+   ```bash
+   git clone https://github.com/NVIDIA/G-Assist.git
+   ```
+2. Navigate to the gemini plugin directory:
+   ```bash
+   cd G-Assist/plugins/examples/gemini
+   ```
 
-### Step 2: Set Up Python Packages
+### Step 2: Set Up The Environment
+Run the setup script to create a virtual environment and install all necessary packages.
 ```bash
-python -m pip install -r requirements.txt
+setup.bat
 ```
 
 ### Step 3: Configure Your API Key
-1. Create a file named `gemini.key` in the root directory
-2. Add your API key to the file:
-```gemini.key
+1. In the current directory (`G-Assist/plugins/examples/gemini/`), create a file named `google.key`.
+2. Add your API key to this file:
+```google.key
 your_api_key_here
 ```
+💡 **Note**: The plugin executable requires the API key file to be named `google.key`. For backward compatibility, if you have an older `gemini.key` file, the build script will automatically rename it for you.
 
 ### Step 4: Configure the Model (Optional)
 Adjust `config.json` to your needs:
@@ -49,21 +55,22 @@ Adjust `config.json` to your needs:
 ```bash
 build.bat
 ```
-This will create a `dist\google` folder containing all the required files for the plugin.
+This will create a `Release` folder containing all the required files for the plugin.
 
 
 ### Step 6: Install the Plugin
 1. Create a new folder here (if it doesn't exist):
    ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini
+   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\google
    ```
    💡 **Tip**: Copy and paste this path into File Explorer's address bar!
 
-2. Copy these files to the folder you just created:
-   - `gemini-plugin.exe` (from the `dist` folder)
+2. Copy the contents of the `Release` folder to the folder you just created. It should contain:
+   - `g-assist-plugin-gemini.exe`
    - `manifest.json`
    - `config.json`
-   - `gemini.key`
+   - `google.key`
+
 
 ## How to Use
 Once installed, you can use Gemini through G-Assist! Try these examples:
@@ -90,7 +97,7 @@ The plugin logs all activity to:
 Check this file for detailed error messages and debugging information.
 
 ## Troubleshooting Tips
-- **API Key Not Working?** Verify your API key is correctly copied to `gemini.key`
+- **API Key Not Working?** Verify your API key is correctly copied to `google.key` inside the plugin installation directory (`%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\google`).
 - **Commands Not Working?** Ensure all files are in the correct plugin directory
 - **Unexpected Responses?** Check the configuration in `config.json`
 - **Logs**: Check `%USERPROFILE%\gemini.log` for detailed logs
