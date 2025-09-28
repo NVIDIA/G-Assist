@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 1,
+  "executable": "g-assist-plugin-asus.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "asus_change_fan_mode",
+      "description": "Changes the fan mode of ASUS motherboard fans",
+      "tags": [ "fanmode", "fan", "CPU fan", "ASUS", "fanXpert", "fan speed", "Cooling", "FanMode", "ThermalControl"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "the fan mode"
+        }
+      }
+    },
+	{
+      "name": "asus_get_model_name",
+      "description": "Get the model name of this ASUS motherboard",
+      "tags": [ "motherboard", "model name", "name", "model", "specification", "asus", "HardwareInfo", "Identification", "BIOS"],
+      "properties": {
+      }
+    },
+	{
+      "name": "asus_get_BIOS_version",
+      "description": "Get the BIOS version of this ASUS motherboard",
+      "tags": [ "motherboard", "BIOS version", "version", "BIOS", "bios", "asus", "Firmware"],
+      "properties": {
+      }
+    },
+	{
+      "name": "asus_get_driverhub_link",
+      "description": "Get the driver download link of this ASUS motherboard",
+      "tags": [ "motherboard", "driver", "hub", "LAN driver", "audio driver", "wifi driver", "chipset driver", "asus", "Download", "Updates"],
+      "properties": {
+      }
+    }
+  ]
+}
