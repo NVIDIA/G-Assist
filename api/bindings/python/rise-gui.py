@@ -27,14 +27,14 @@ def send_message():
     """API endpoint to send messages to RISE"""
     data = request.json
     message = data.get('message', '')
-    adapter = data.get('adapter', '')
-    system_prompt = data.get('system_prompt', '')
+    assistant_identifier = data.get('assistant_identifier', '')
+    custom_system_prompt = data.get('custom_system_prompt', '')
     if not message:
         return jsonify({'error': 'Empty message'}), 400
     
     try:
-        # Send message to RISE
-        response = rise.send_rise_command(message, adapter, system_prompt)
+        # Send message to RISE with client_config
+        response = rise.send_rise_command(message, assistant_identifier, custom_system_prompt)
         #response = f"RISE module is commented out. Your message was: {message}"
         return jsonify({'response': response})
     except Exception as e:
@@ -178,7 +178,9 @@ function App() {
 
     try {
       const response = await axios.post('http://localhost:5000/api/send-message', {
-        message: input.trim()
+        message: input.trim(),
+        assistant_identifier: '',
+        custom_system_prompt: ''
       });
       
       setMessages(prev => [...prev, { type: 'assistant', text: response.data.response }]);
@@ -1163,12 +1165,12 @@ textarea {
           <h3>Settings</h3>
           <hr/>
           <div class="settings-container">
-            <h5>Adapter</h5>
-            <input type="text" id="adapterInput" placeholder="Adapter (optional)" class="adapter-input" >
+            <h5>Assistant Identifier</h5>
+            <input type="text" id="assistantIdentifierInput" placeholder="Assistant Identifier (optional)" class="adapter-input" >
            </div>
            <div class="settings-container">
-            <h5>System Prompt</h5>
-            <textarea id="systemPromptInput" placeholder="System Prompt (optional)" class="system-prompt-input"></textarea>
+            <h5>Custom System Prompt</h5>
+            <textarea id="customSystemPromptInput" placeholder="Custom System Prompt (optional)" class="system-prompt-input"></textarea>
            </div>
       </div>
     </div>
@@ -1177,8 +1179,8 @@ textarea {
         document.addEventListener('DOMContentLoaded', function() {
             const messageForm = document.getElementById('messageForm');
             const messageInput = document.getElementById('messageInput');
-            const adapterInput = document.getElementById('adapterInput');
-            const systemPromptInput = document.getElementById('systemPromptInput');
+            const assistantIdentifierInput = document.getElementById('assistantIdentifierInput');
+            const customSystemPromptInput = document.getElementById('customSystemPromptInput');
             const messagesContainer = document.getElementById('messages');
             const statusText = document.getElementById('status');
             const statusDot = document.getElementById('statusDot');
@@ -1187,8 +1189,8 @@ textarea {
             messageForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const message = messageInput.value.trim();
-                const adapter = adapterInput.value.trim().toLowerCase();
-                const system_prompt = systemPromptInput.value.trim().toLowerCase();
+                const assistant_identifier = assistantIdentifierInput.value.trim();
+                const custom_system_prompt = customSystemPromptInput.value.trim();
                 if (!message) return;
                 
                 // Add user message
@@ -1202,7 +1204,7 @@ textarea {
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ message, adapter, system_prompt })
+                        body: JSON.stringify({ message, assistant_identifier, custom_system_prompt })
                     });
                     
                     const data = await response.json();

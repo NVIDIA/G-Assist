@@ -204,15 +204,17 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') -> Optional[dict]:
+def send_rise_command(command: str, assistant_identifier: str = '', custom_system_prompt: str = '') -> Optional[dict]:
     """
     Send a command to RISE and wait for the response.
 
-    Formats the command as a JSON object with a prompt and context,
+    Formats the command as a JSON object with a prompt, context, and client_config,
     sends it to RISE, and waits for the complete response.
 
     Args:
         command: The text command to send to RISE
+        assistant_identifier: Optional assistant identifier for client_config
+        custom_system_prompt: Optional custom system prompt for client_config
 
     Returns:
         Optional[dict]: The response from RISE, or None if an error occurs
@@ -225,14 +227,15 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
     try:
         command_obj = {
             'prompt': command,
-            'context_assist': {}
+            'context_assist': {},
+            'client_config': {}
         }
 
-        if (adapter != ''): 
-            command_obj['adapter'] = adapter
+        if (assistant_identifier != ''): 
+            command_obj['client_config']['assistant_identifier'] = assistant_identifier
 
-        if(system_prompt != ''):
-            command_obj['context_assist']['officialAdapterSystemPrompt'] = system_prompt
+        if(custom_system_prompt != ''):
+            command_obj['client_config']['custom_system_prompt'] = custom_system_prompt
 
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = json.dumps(command_obj).encode('utf-8')
