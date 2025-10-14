@@ -128,9 +128,26 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
            return
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
-        response += data.content.decode('utf-8')
+        chunk = data.content.decode('utf-8')
+        response += chunk
+        print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
+    
+    elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR:
+        chunk = data.content.decode('utf-8')
+        response += chunk
+        print(f"[Callback] Received CUSTOM_BEHAVIOR chunk: '{chunk}' (completed={data.completed})", flush=True)
+        if data.completed == 1:
+            response_done = True
+    
+    elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR_RESULT:
+        chunk = data.content.decode('utf-8')
+        response += chunk
+        print(f"[Callback] Received CUSTOM_BEHAVIOR_RESULT chunk: '{chunk}' (completed={data.completed})", flush=True)
+        if data.completed == 1:
+            response_done = True
+    
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_GRAPH:
         chart += data.content.decode('utf-8')
 

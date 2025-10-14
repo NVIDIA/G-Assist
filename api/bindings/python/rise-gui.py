@@ -6,7 +6,7 @@ import threading
 import shutil
 import time
 import tempfile
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from rise import rise
 
@@ -14,17 +14,73 @@ from rise import rise
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Initialize RISE client
+# Initialize G-Assist client
 try:
     rise.register_rise_client()
-    print("RISE client initialization commented out")
+    print("G-Assist client initialized successfully")
 except Exception as e:
-    print(f"Error initializing RISE client: {str(e)}")
+    print(f"Error initializing G-Assist client: {str(e)}")
     sys.exit(1)
+
+@app.route('/')
+def index():
+    """Serve the main HTML page"""
+    return get_html_content()
+
+def get_html_content():
+    """Generate and return the HTML content from the start_electron_app function"""
+    # Read the HTML from the start_electron_app function's template
+    # This is a temporary implementation - we'll populate the full HTML shortly
+    import inspect
+    import re
+    source = inspect.getsource(start_electron_app)
+    # Extract the HTML between f.write(''' and ''')
+    # Look for the HTML file writing section
+    match = re.search(r"with open\(os\.path\.join\(electron_dir, 'public', 'index\.html'\), 'w'\) as f:\s+f\.write\('''(.+?)'''\)", source, re.DOTALL)
+    if match:
+        html_content = match.group(1)
+        return html_content
+    else:
+        # Fallback: return a basic HTML page
+        return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-Assist</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0a0a0f;
+            color: #e8e8e8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+        }
+        h1 {
+            color: #76b900;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>G-Assist</h1>
+        <p>Loading interface...</p>
+        <p><a href="/api/send-message" style="color: #76b900;">API Endpoint</a></p>
+    </div>
+</body>
+</html>
+'''
 
 @app.route('/api/send-message', methods=['POST'])
 def send_message():
-    """API endpoint to send messages to RISE"""
+    """API endpoint to send messages to G-Assist (legacy non-streaming)"""
     data = request.json
     message = data.get('message', '')
     assistant_identifier = data.get('assistant_identifier', '')
@@ -35,10 +91,134 @@ def send_message():
     try:
         # Send message to RISE with client_config
         response = rise.send_rise_command(message, assistant_identifier, custom_system_prompt)
-        #response = f"RISE module is commented out. Your message was: {message}"
         return jsonify({'response': response})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/send-message-stream', methods=['POST'])
+def send_message_stream():
+    """API endpoint for streaming messages from G-Assist"""
+    data = request.json
+    message = data.get('message', '')
+    assistant_identifier = data.get('assistant_identifier', '')
+    custom_system_prompt = data.get('custom_system_prompt', '')
+    
+    if not message:
+        return jsonify({'error': 'Empty message'}), 400
+    
+    def generate():
+        """Generator function for Server-Sent Events"""
+        try:
+            # Reset the global response before starting
+            rise.response = ''
+            rise.response_done = False
+            
+            # Track previous response length to send only new chunks
+            prev_length = 0
+            
+            # Start the RISE command in a separate thread
+            import threading
+            result = {'response': None, 'error': None}
+            
+            def run_command():
+                try:
+                    # send_rise_command returns a dict with 'completed_response' and 'completed_chart'
+                    result['response'] = rise.send_rise_command(message, assistant_identifier, custom_system_prompt)
+                except Exception as e:
+                    result['error'] = str(e)
+            
+            thread = threading.Thread(target=run_command)
+            thread.start()
+            
+            # Poll for streaming updates
+            is_likely_tool_call = False
+            while not rise.response_done:
+                current_response = rise.response
+                if len(current_response) > prev_length:
+                    # On first chunk, determine if this looks like JSON/tool call
+                    if prev_length == 0:
+                        stripped = current_response.strip()
+                        if stripped.startswith('{') or stripped.startswith('['):
+                            is_likely_tool_call = True
+                            print(f"[SSE] Detected potential JSON/tool call, buffering...", flush=True)
+                    
+                    # If it's not a tool call, stream chunks normally
+                    if not is_likely_tool_call:
+                        chunk = current_response[prev_length:]
+                        print(f"[SSE] Sending text chunk: '{chunk}'", flush=True)
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                        prev_length = len(current_response)
+                    # If it is a tool call, we buffer until complete (do nothing here)
+                    
+                time.sleep(0.01)  # Poll every 10ms for faster updates
+            
+            # Wait for thread to complete
+            thread.join(timeout=1.0)
+            
+            # Send completion signal
+            if result['error']:
+                yield f"data: {json.dumps({'error': result['error']})}\n\n"
+            else:
+                # Get the response from the result dict
+                response_dict = result.get('response', {})
+                print(f"[SSE DEBUG] result object: {result}", flush=True)
+                print(f"[SSE DEBUG] response_dict: {response_dict}", flush=True)
+                print(f"[SSE DEBUG] response_dict type: {type(response_dict)}", flush=True)
+                
+                if response_dict:
+                    final_response = response_dict.get('completed_response', '')
+                    final_chart = response_dict.get('completed_chart', '')
+                    
+                    print(f"[SSE] Final response: '{final_response}'", flush=True)
+                    print(f"[SSE] Final response length: {len(final_response)}", flush=True)
+                    print(f"[SSE] Final response type: {type(final_response)}", flush=True)
+                    print(f"[SSE] Final chart: '{final_chart}'", flush=True)
+                    print(f"[SSE] is_likely_tool_call: {is_likely_tool_call}, prev_length: {prev_length}", flush=True)
+                    
+                    # Helper function to check if string is valid JSON
+                    def is_valid_json(text):
+                        try:
+                            json.loads(text)
+                            return True
+                        except:
+                            return False
+                    
+                    # Check if final_response is valid JSON (tool call)
+                    is_json = is_valid_json(final_response.strip()) if final_response else False
+                    print(f"[SSE] is_valid_json: {is_json}", flush=True)
+                    
+                    # If the final response is valid JSON, always send as tool_call
+                    if is_json and len(final_response) > 0:
+                        print(f"[SSE] Sending as tool_call (valid JSON detected)", flush=True)
+                        yield f"data: {json.dumps({'tool_call': final_response})}\n\n"
+                    # If we buffered a tool call during streaming
+                    elif is_likely_tool_call and len(final_response) > 0:
+                        print(f"[SSE] Sending buffered tool call", flush=True)
+                        yield f"data: {json.dumps({'tool_call': final_response})}\n\n"
+                    # If there's remaining text content that wasn't sent during streaming
+                    elif len(final_response) > prev_length:
+                        remaining = final_response[prev_length:]
+                        print(f"[SSE] Sending remaining text: '{remaining}'", flush=True)
+                        yield f"data: {json.dumps({'chunk': remaining})}\n\n"
+                    # If nothing was sent during streaming and it's not JSON
+                    elif prev_length == 0 and len(final_response) > 0:
+                        print(f"[SSE] Response came all at once (non-JSON text)", flush=True)
+                        yield f"data: {json.dumps({'chunk': final_response})}\n\n"
+                    
+                    # Send chart data if available
+                    if final_chart:
+                        print(f"[SSE] Sending chart data", flush=True)
+                        yield f"data: {json.dumps({'chart': final_chart})}\n\n"
+                
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    response = Response(stream_with_context(generate()), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
 
 def start_electron_app():
     """Start the Electron app"""
@@ -159,7 +339,7 @@ function App() {
   useEffect(() => {
     // Add welcome message
     setMessages([
-      { type: 'system', text: 'Welcome to the RISE. How can I assist you today?' }
+      { type: 'system', text: 'Welcome to G-Assist. How can I assist you today?' }
     ]);
     
     // Focus the input field on load
@@ -171,25 +351,91 @@ function App() {
     if (!input.trim()) return;
 
     const userMessage = { type: 'user', text: input };
-    setMessages([...messages, userMessage]);
+    const userInput = input.trim();
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
-    setStatus('Processing');
     setIsTyping(true);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/send-message', {
-        message: input.trim(),
-        assistant_identifier: '',
-        custom_system_prompt: ''
+      // Use fetch API to initiate streaming request
+      const response = await fetch('http://localhost:5000/api/send-message-stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userInput,
+          assistant_identifier: '',
+          custom_system_prompt: ''
+        })
       });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = '';
+      let messageAdded = false;
+
+      // Read the stream
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6));
+              
+              if (data.chunk) {
+                // Hide typing indicator on first chunk
+                if (!messageAdded) {
+                  setIsTyping(false);
+                  messageAdded = true;
+                }
+                
+                // Append chunk to assistant text
+                assistantText += data.chunk;
+                
+                // Update or create assistant message
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  // Find the last assistant message or create new one
+                  const lastIndex = newMessages.length - 1;
+                  if (lastIndex >= 0 && newMessages[lastIndex].type === 'assistant' && messageAdded) {
+                    // Update existing assistant message
+                    newMessages[lastIndex] = { type: 'assistant', text: assistantText };
+                  } else {
+                    // Create new assistant message
+                    newMessages.push({ type: 'assistant', text: assistantText });
+                  }
+                  return newMessages;
+                });
+              } else if (data.done) {
+                setStatus('Ready');
+                setIsTyping(false);
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+            }
+          }
+        }
+      }
       
-      setMessages(prev => [...prev, { type: 'assistant', text: response.data.response }]);
       setStatus('Ready');
     } catch (error) {
       console.error('Error sending message:', error);
+      setIsTyping(false);
       setMessages(prev => [...prev, { 
         type: 'system', 
-        text: `Error communicating with RISE: ${error.response?.data?.error || error.message}` 
+        text: `Error communicating with G-Assist: ${error.message}` 
       }]);
       setStatus('Error: Communication failed');
     } finally {
@@ -208,7 +454,7 @@ function App() {
     <div className="App">
       <header className="App-header">
         <div className="drag-region">
-          <h1>RISE</h1>
+          <h1>G-Assist</h1>
         </div>
         <div className="window-controls">
           <button className="minimize">_</button>
@@ -223,7 +469,7 @@ function App() {
               <div className={`message-content ${msg.type}`}>
                 <div className="message-header">
                   <span className="sender">
-                    {msg.type === 'user' ? 'You ' : msg.type === 'assistant' ? 'RISE ' : 'System '}
+                    {msg.type === 'user' ? 'You ' : msg.type === 'assistant' ? 'G-Assist ' : 'System '}
                   </span>
                 </div>
                 <div className="text">{msg.text}</div>
@@ -235,7 +481,7 @@ function App() {
             <div className="message assistant typing">
               <div className="message-content">
                 <div className="message-header">
-                  <span className="sender">RISE</span>
+                  <span className="sender">G-Assist</span>
                 </div>
                 <div className="typing-indicator">
                   <span></span>
@@ -851,15 +1097,19 @@ textarea {
             display: flex;
             flex-direction: row;
             gap: 1rem;
-            height: 100%
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
         }
         .settings-pane {
             flex: 1;
+            min-height: 0;
             border-left: 1px solid var(--border-color);
             display: flex;
             flex-direction: column; 
             gap: 1rem;
             padding: 2rem 1rem;
+            overflow-y: auto;
         }
         .settings-container {
           display: flex;
@@ -871,6 +1121,7 @@ textarea {
             display: flex;
             flex-direction: column;
             flex: 2;
+            min-height: 0;
             padding: 24px;
             background-color: var(--bg-primary);
             overflow: hidden;
@@ -890,15 +1141,17 @@ textarea {
         
         .messages {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             margin-bottom: 24px;
             padding: 12px;
             display: flex;
             flex-direction: column;
             gap: 20px;
             scrollbar-width: thin;
-            scrollbar-color: var(--accent-primary) var (--bg-secondary);
-            mask-image: linear-gradient(to bottom, transparent, black 10px, black 90%, transparent);
+            scrollbar-color: var(--accent-primary) var(--bg-secondary);
+            scroll-behavior: smooth;
         }
         
         .messages::-webkit-scrollbar {
@@ -937,13 +1190,21 @@ textarea {
             backdrop-filter: blur(10px);
             animation: fadeIn 0.3s ease;
             position: relative; /* Added for timestamp positioning */
-            background-color: var(--msg-bg); /* Same background for all messages */
-            width: 100%; /* Full width for all messages */
-            max-width: 100%; /* Full width for all messages */
-            text-align: right; /* right align text for all messages */
-            font-style: italic; /* Italic text for all messages */
-            opacity: 0.9; /* Slightly transparent for all messages */
-            border: 1px dashed var(--border-color); /* Dashed border for all messages */
+            background-color: var(--msg-bg);
+            width: 100%;
+            max-width: 100%;
+            text-align: left; /* Default left align */
+        }
+        
+        /* User messages - right aligned */
+        .message.user .message-content {
+            text-align: right;
+        }
+        
+        /* Assistant and system messages - left aligned */
+        .message.assistant .message-content,
+        .message.system .message-content {
+            text-align: left;
         }
         
         @keyframes fadeIn {
@@ -983,6 +1244,49 @@ textarea {
             white-space: pre-wrap;
         }
         
+        .code-block {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: #d4d4d4;
+            text-align: left !important; /* Always left-align code blocks */
+            font-style: normal; /* Remove italic from code */
+        }
+        
+        .code-block pre {
+            margin: 0;
+            white-space: pre;
+            text-align: left;
+        }
+        
+        /* JSON Syntax Highlighting */
+        .json-key {
+            color: #9cdcfe; /* Light blue for keys */
+            font-weight: 500;
+        }
+        
+        .json-string {
+            color: #ce9178; /* Orange-brown for string values */
+        }
+        
+        .json-number {
+            color: #b5cea8; /* Light green for numbers */
+        }
+        
+        .json-boolean {
+            color: #569cd6; /* Blue for booleans */
+        }
+        
+        .json-null {
+            color: #569cd6; /* Blue for null */
+        }
+        
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -993,7 +1297,7 @@ textarea {
         .typing-indicator span {
             width: 8px;
             height: 8px;
-            background-color: var (--accent-primary);
+            background-color: var(--accent-primary);
             border-radius: 50%;
             display: inline-block;
             animation: bounce 1.5s infinite ease-in-out;
@@ -1018,6 +1322,7 @@ textarea {
         
         .input-area {
             display: flex;
+            flex-shrink: 0;
             margin-bottom: 10px;
             background-color: var(--input-bg);
             border-radius: var(--border-radius);
@@ -1123,14 +1428,58 @@ textarea {
             stroke-linecap: round;
             stroke-linejoin: round;
         }
-        .assistant {
-          text-align: left !important;                        
+        
+        /* Settings button */
+        .settings-button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: var(--transition);
+            margin-left: auto;
+        }
+        
+        .settings-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--accent-primary);
+            transform: rotate(90deg);
+        }
+        
+        .settings-button svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        /* Settings panel toggle */
+        .settings-pane {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            transform: translateX(0);
+            opacity: 1;
+        }
+        
+        .settings-pane.hidden {
+            transform: translateX(100%);
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+            right: -100%;
         }
     </style>
 </head>
 <body>
     <header>
-        <h1>RISE</h1>
+        <h1>G-Assist</h1>
+        <button class="settings-button" id="settingsToggle" title="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m-1 1l-4.2 4.2M23 12h-6m-6 0H1m18.2 5.2l-4.2-4.2m-1-1l-4.2-4.2"></path>
+            </svg>
+        </button>
     </header>
     <div class="chat-page">
       <div class="chat-container">
@@ -1140,7 +1489,7 @@ textarea {
                       <div class="message-header">
                           <span class="sender">System</span>
                       </div>
-                      <div class="text">Welcome to RISE. How can I assist you today?</div>
+                      <div class="text">Welcome to G-Assist. How can I assist you today?</div>
                       <span class="timestamp"></span>
                   </div>
               </div>
@@ -1154,12 +1503,7 @@ textarea {
                   </svg>
               </button>
           </form>
-          <div class="status-bar">
-              <div class="status-indicator">
-                  <span class="status-dot online" id="statusDot"></span>
-                  <span id="status">Ready</span>
-              </div>
-          </div>
+          <!-- Status bar removed - using in-chat typing indicator -->
       </div>
       <div class="settings-pane">
           <h3>Settings</h3>
@@ -1185,6 +1529,102 @@ textarea {
             const statusText = document.getElementById('status');
             const statusDot = document.getElementById('statusDot');
             const statusBar = document.getElementById('status');
+            const settingsToggle = document.getElementById('settingsToggle');
+            const settingsPane = document.querySelector('.settings-pane');
+            
+            // Settings panel toggle functionality
+            settingsPane.classList.add('hidden'); // Start hidden
+            settingsToggle.addEventListener('click', function() {
+                settingsPane.classList.toggle('hidden');
+            });
+            
+            function isJSON(str) {
+                try {
+                    JSON.parse(str);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+            
+            function syntaxHighlightJSON(json) {
+                // Syntax highlight JSON string
+                json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+            }
+            
+            function formatContent(text) {
+                // Check if the text is JSON
+                if (isJSON(text)) {
+                    try {
+                        const parsed = JSON.parse(text);
+                        const formatted = JSON.stringify(parsed, null, 2);
+                        const codeBlock = document.createElement('div');
+                        codeBlock.className = 'code-block';
+                        const pre = document.createElement('pre');
+                        pre.innerHTML = syntaxHighlightJSON(formatted);
+                        codeBlock.appendChild(pre);
+                        return codeBlock;
+                    } catch (e) {
+                        // If parsing fails, return as text
+                        return text;
+                    }
+                }
+                return text;
+            }
+            
+            function showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'message assistant typing';
+                typingDiv.id = 'typing-indicator';
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'message-header';
+                
+                const sender = document.createElement('span');
+                sender.className = 'sender';
+                sender.textContent = 'G-Assist';
+                headerDiv.appendChild(sender);
+                
+                const indicatorDiv = document.createElement('div');
+                indicatorDiv.className = 'typing-indicator';
+                
+                for (let i = 0; i < 3; i++) {
+                    const dot = document.createElement('span');
+                    indicatorDiv.appendChild(dot);
+                }
+                
+                contentDiv.appendChild(headerDiv);
+                contentDiv.appendChild(indicatorDiv);
+                typingDiv.appendChild(contentDiv);
+                
+                messagesContainer.appendChild(typingDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            function hideTypingIndicator() {
+                const typingIndicator = document.getElementById('typing-indicator');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+            }
             
             messageForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
@@ -1196,10 +1636,13 @@ textarea {
                 // Add user message
                 addMessage('user', message);
                 messageInput.value = '';
-                statusBar.textContent = 'RISE is thinking...';
+                
+                // Show typing indicator
+                showTypingIndicator();
                 
                 try {
-                    const response = await fetch('http://localhost:5000/api/send-message', {
+                    // Use streaming endpoint
+                    const response = await fetch('http://localhost:5000/api/send-message-stream', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -1207,17 +1650,104 @@ textarea {
                         body: JSON.stringify({ message, assistant_identifier, custom_system_prompt })
                     });
                     
-                    const data = await response.json();
-                    if (response.ok) {
-                        addMessage('assistant', data.response.completed_response, data.response.completed_chart);
-                    } else {
-                        addMessage('system', `Error: ${data.error}`);
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let assistantText = '';
+                    let assistantMessageAdded = false;
+                    
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        
+                        const chunk = decoder.decode(value, { stream: true });
+                        // Split by actual newline character (char code 10)
+                        const lines = chunk.split(/\n/);
+                        
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            if (trimmedLine && trimmedLine.startsWith('data: ')) {
+                                const jsonStr = trimmedLine.substring(6).trim();
+                                if (!jsonStr) continue;
+                                try {
+                                    const data = JSON.parse(jsonStr);
+                                    
+                                    if (data.chunk) {
+                                        // Hide typing indicator on first chunk
+                                        if (!assistantMessageAdded) {
+                                            hideTypingIndicator();
+                                            assistantMessageAdded = true;
+                                            addMessage('assistant', '');
+                                        }
+                                        
+                                        // Append chunk
+                                        assistantText += data.chunk;
+                                        
+                                        // Update the last assistant message
+                                        const messages = messagesContainer.querySelectorAll('.message.assistant:not(.typing)');
+                                        const lastMessage = messages[messages.length - 1];
+                                        if (lastMessage) {
+                                            const textSpan = lastMessage.querySelector('.text');
+                                            if (textSpan) {
+                                                textSpan.textContent = assistantText;
+                                            }
+                                        }
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                    } else if (data.tool_call) {
+                                        // Handle tool call response
+                                        console.log('Received tool_call:', data.tool_call);
+                                        hideTypingIndicator();
+                                        
+                                        // Always add a new message for tool calls
+                                        const formatted = formatContent(data.tool_call);
+                                        
+                                        // Create message manually to ensure it's added
+                                        const messageDiv = document.createElement('div');
+                                        messageDiv.className = 'message assistant';
+                                        
+                                        const contentDiv = document.createElement('div');
+                                        contentDiv.className = 'message-content assistant';
+                                        
+                                        const sender = document.createElement('span');
+                                        sender.className = 'sender';
+                                        sender.textContent = 'G-Assist: ';
+                                        contentDiv.appendChild(sender);
+                                        
+                                        const textSpan = document.createElement('span');
+                                        textSpan.className = 'text';
+                                        if (typeof formatted === 'string') {
+                                            textSpan.textContent = formatted;
+                                        } else {
+                                            textSpan.appendChild(formatted);
+                                        }
+                                        contentDiv.appendChild(textSpan);
+                                        
+                                        const timestamp = document.createElement('span');
+                                        timestamp.className = 'timestamp';
+                                        timestamp.textContent = new Date().toLocaleTimeString();
+                                        contentDiv.appendChild(timestamp);
+                                        
+                                        messageDiv.appendChild(contentDiv);
+                                        messagesContainer.appendChild(messageDiv);
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                        
+                                        assistantMessageAdded = true;
+                                    } else if (data.done) {
+                                        hideTypingIndicator();
+                                    } else if (data.error) {
+                                        console.error('Server error:', data.error);
+                                        hideTypingIndicator();
+                                        addMessage('system', 'Error: ' + data.error);
+                                    }
+                                } catch (parseError) {
+                                    // Silently ignore parse errors for incomplete chunks
+                                }
+                            }
+                        }
                     }
-                    statusBar.textContent = 'Ready';
                 } catch (error) {
                     console.error('Error:', error);
-                    addMessage('system', `Error communicating with RISE: ${error.message}`);
-                    statusBar.textContent = 'Error: Communication failed';
+                    hideTypingIndicator();
+                    addMessage('system', 'Error communicating with G-Assist: ' + error.message);
                 }
             });
             function getScalesForData(chunkData) {
@@ -1225,15 +1755,15 @@ textarea {
 
                 if (chunkData?.length > 0) {
                     chunkData.forEach((chartData, index) => {
-                        const xAxisName = `x${(index !== 0) ? index : ''}`;
-                        const yAxisName = `y${(index !== 0) ? index : ''}`;
+                        const xAxisName = 'x' + ((index !== 0) ? index : '');
+                        const yAxisName = 'y' + ((index !== 0) ? index : '');
                         if (index === 0) {
                             axes = {
                                 ...axes,
                                 x: {
                                     title: {
                                         display: true,
-                                        text: (chartData.xUnit !== '%') ? `${chartData.xUnit}` : ''
+                                        text: (chartData.xUnit !== '%') ? chartData.xUnit : ''
                                     },
                                     callback: function (value) {
                                         if (chartData.xUnit === '%') {
@@ -1247,7 +1777,7 @@ textarea {
                                     position: 'left',
                                     title: {
                                         display: true,
-                                        text: (chartData.yUnit !== '%') ? `${chartData.yUnit}` : ''
+                                        text: (chartData.yUnit !== '%') ? chartData.yUnit : ''
                                     },
                                     ticks: {
                                         callback: function (value) {
@@ -1275,7 +1805,7 @@ textarea {
                                         position: 'top',
                                         title: {
                                             display: true,
-                                            text: (chartData.xUnit !== '%') ? `${chartData.xUnit}` : ''
+                                            text: (chartData.xUnit !== '%') ? chartData.xUnit : ''
                                         },
                                         callback: function (value) {
                                             if (chartData.xUnit === '%') {
@@ -1296,7 +1826,7 @@ textarea {
                                         position: 'right',
                                         title: {
                                             display: true,
-                                            text: (chartData.yUnit !== '%') ? `${chartData.yUnit}` : ''
+                                            text: (chartData.yUnit !== '%') ? chartData.yUnit : ''
                                         },
                                         ticks: {
                                             callback: function (value) {
@@ -1330,29 +1860,35 @@ textarea {
                 let chartId = '';
                 // Create the outer message container
                 const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${type}`;
+                messageDiv.className = 'message ' + type;
                 
                 // Create the inner container with bounding box styling
                 const contentDiv = document.createElement('div');
-                contentDiv.className = `message-content ${type}`;
+                contentDiv.className = 'message-content ' + type;
                 
                 // Create and append the sender element
                 const sender = document.createElement('span');
                 sender.className = 'sender';
-                sender.textContent = type === 'user' ? 'You: ' : type === 'assistant' ? 'RISE: ' : 'System: ';
+                sender.textContent = type === 'user' ? 'You: ' : type === 'assistant' ? 'G-Assist: ' : 'System: ';
                 contentDiv.appendChild(sender);
                 
                 // Create and append the text element
                 const textSpan = document.createElement('span');
                 textSpan.className = 'text';
-                textSpan.textContent = text;
+                // Format content (JSON as code block, text as-is)
+                const formatted = formatContent(text);
+                if (typeof formatted === 'string') {
+                    textSpan.textContent = formatted;
+                } else {
+                    textSpan.appendChild(formatted);
+                }
                 contentDiv.appendChild(textSpan);
                         
                 // Create and append the chart element
                 if(chart !== '') {
                     const chartDiv = document.createElement('div');
                     const chartCanvas = document.createElement('canvas');
-                    chartId = `chart-${Math.floor(Math.random() * 1000000)}`;
+                    chartId = 'chart-' + Math.floor(Math.random() * 1000000);
                     chartCanvas.setAttribute('id', chartId);
                     chartDiv.appendChild(chartCanvas);
                     contentDiv.appendChild(chartDiv);
@@ -1383,8 +1919,8 @@ textarea {
                             return {
                                 label: chartInfo.chartTitle,
                                 data: chartInfo.data.map((item) => item.y),
-                                xAxisID: (index !== 0 && chartInfo.xUnit !== chartData[0].xUnit) ? `x${index}` : 'x',
-                                yAxisID: (index !== 0 && chartInfo.yUnit !== chartData[0].yUnit) ? `y${index}` : 'y',
+                                xAxisID: (index !== 0 && chartInfo.xUnit !== chartData[0].xUnit) ? ('x' + index) : 'x',
+                                yAxisID: (index !== 0 && chartInfo.yUnit !== chartData[0].yUnit) ? ('y' + index) : 'y',
                             }
                         })
                     },
@@ -1405,7 +1941,7 @@ textarea {
                                           }
                                           if (context.parsed.y !== null) {
                                               label += context.parsed.y;
-                                              label += ` ${chartData[context.datasetIndex].yUnit}`;
+                                              label += ' ' + chartData[context.datasetIndex].yUnit;
                                           }
                                           return label;
                                       }
@@ -1437,8 +1973,13 @@ textarea {
             print(f"Please open {os.path.join(electron_dir, 'public', 'index.html')} in your browser")
 
 def main():
-    # Start the Electron app in a separate thread
-    threading.Thread(target=start_electron_app, daemon=True).start()
+    # Print instructions
+    print("\n" + "="*60)
+    print("G-Assist Web Interface")
+    print("="*60)
+    print("\nPlease open your browser and navigate to:")
+    print("\n    http://127.0.0.1:5000\n")
+    print("="*60 + "\n")
     
     # Start the Flask server
     app.run(host='127.0.0.1', port=5000)
