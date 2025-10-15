@@ -6,9 +6,20 @@ import threading
 import shutil
 import time
 import tempfile
+import webbrowser
+import logging
+import warnings
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
+from waitress import serve
 from rise import rise
+
+# Suppress Python warnings for JavaScript code in HTML strings
+warnings.filterwarnings('ignore', category=SyntaxWarning)
+
+# Suppress Flask development server warnings
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 # Create a Flask server to handle API requests from the Electron app
 app = Flask(__name__)
@@ -1021,6 +1032,12 @@ textarea {
           padding: 0;
         }
         
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+        
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
@@ -1034,6 +1051,17 @@ textarea {
             font-size: 16px;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Hide scrollbars on body/html only */
+        body::-webkit-scrollbar,
+        html::-webkit-scrollbar {
+            display: none;
+        }
+        
+        html {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
         
         header {
@@ -1073,21 +1101,53 @@ textarea {
         .chat-page {
             display: flex;
             flex-direction: row;
-            gap: 1rem;
             flex: 1;
             overflow: hidden;
             min-height: 0;
+            position: relative;
         }
+        
         .settings-pane {
-            flex: 1;
-            min-height: 0;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 85%;
+            max-width: 400px;
+            background-color: var(--bg-secondary);
             border-left: 1px solid var(--border-color);
             display: flex;
             flex-direction: column; 
             gap: 1rem;
             padding: 2rem 1rem;
             overflow-y: auto;
+            z-index: 1000;
+            box-shadow: -4px 0 16px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
+        
+        .settings-pane.hidden {
+            transform: translateX(100%);
+        }
+        
+        /* Settings backdrop overlay */
+        .settings-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+        
+        .settings-backdrop.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
         .settings-container {
           display: flex;
           flex-direction: column;
@@ -1097,7 +1157,8 @@ textarea {
         .chat-container {
             display: flex;
             flex-direction: column;
-            flex: 2;
+            flex: 1;
+            width: 100%;
             min-height: 0;
             padding: 24px;
             background-color: var(--bg-primary);
@@ -1565,7 +1626,10 @@ textarea {
           </form>
           <!-- Status bar removed - using in-chat typing indicator -->
       </div>
-      <div class="settings-pane">
+      <!-- Settings backdrop overlay -->
+      <div class="settings-backdrop hidden" id="settingsBackdrop"></div>
+      <!-- Settings panel -->
+      <div class="settings-pane hidden">
           <h3>Settings</h3>
           <hr/>
           <div class="settings-container">
@@ -1591,20 +1655,27 @@ textarea {
             const statusBar = document.getElementById('status');
             const settingsToggle = document.getElementById('settingsToggle');
             const settingsPane = document.querySelector('.settings-pane');
+            const settingsBackdrop = document.getElementById('settingsBackdrop');
             const thinkingToggle = document.getElementById('thinkingToggle');
             
-            // Thinking toggle state
-            let thinkingEnabled = false;
+            // Thinking toggle state (enabled by default)
+            let thinkingEnabled = true;
+            thinkingToggle.classList.add('active'); // Start with button active
             thinkingToggle.addEventListener('click', function() {
                 thinkingEnabled = !thinkingEnabled;
                 thinkingToggle.classList.toggle('active', thinkingEnabled);
             });
             
             // Settings panel toggle functionality
-            settingsPane.classList.add('hidden'); // Start hidden
-            settingsToggle.addEventListener('click', function() {
+            function toggleSettings() {
                 settingsPane.classList.toggle('hidden');
-            });
+                settingsBackdrop.classList.toggle('hidden');
+            }
+            
+            settingsToggle.addEventListener('click', toggleSettings);
+            
+            // Close settings when clicking backdrop
+            settingsBackdrop.addEventListener('click', toggleSettings);
             
             function isJSON(str) {
                 try {
@@ -1618,7 +1689,7 @@ textarea {
             function syntaxHighlightJSON(json) {
                 // Syntax highlight JSON string
                 json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
                     let cls = 'json-number';
                     if (/^"/.test(match)) {
                         if (/:$/.test(match)) {
@@ -2135,17 +2206,88 @@ textarea {
         except:
             print(f"Please open {os.path.join(electron_dir, 'public', 'index.html')} in your browser")
 
+def open_browser():
+    """Open the default web browser after a short delay to ensure Flask is ready"""
+    time.sleep(1.5)  # Wait for Flask to start
+    webbrowser.open('http://127.0.0.1:5000')
+
+def start_desktop_mode():
+    """Start in desktop mode with native window (requires pywebview)"""
+    try:
+        import webview
+    except ImportError:
+        print("\nError: pywebview not installed")
+        print("Install with: pip install pywebview")
+        print("For Windows CEF support: pip install pywebview[cef]")
+        print("\nFalling back to browser mode...")
+        return False
+    
+    print("\nStarting desktop mode...")
+    
+    # Start Flask with waitress in background thread
+    flask_thread = threading.Thread(
+        target=lambda: serve(app, host='127.0.0.1', port=5000, threads=4, _quiet=True),
+        daemon=True
+    )
+    flask_thread.start()
+    
+    # Wait for Flask to start
+    time.sleep(2)
+    
+    # Create native window (phone-like dimensions, borderless)
+    print("Creating native window...")
+    window = webview.create_window(
+        'G-Assist',
+        'http://127.0.0.1:5000',
+        width=473,
+        height=932,
+        resizable=True,
+        frameless=True,
+        min_size=(375, 667),
+        background_color='#0a0a0f'
+    )
+    
+    print("=" * 60)
+    print("G-Assist Desktop is running!")
+    print("=" * 60 + "\n")
+    
+    # Start the webview (blocking)
+    webview.start(debug=False)
+    return True
+
 def main():
+    """Main entry point - supports both browser and desktop modes"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='G-Assist GUI')
+    parser.add_argument('--desktop', action='store_true', 
+                       help='Run in desktop mode with native window (requires pywebview)')
+    parser.add_argument('--browser', action='store_true',
+                       help='Run in browser mode (default)')
+    args = parser.parse_args()
+    
     # Print instructions
     print("\n" + "="*60)
-    print("G-Assist Web Interface")
+    print("G-Assist Interface")
     print("="*60)
-    print("\nPlease open your browser and navigate to:")
+    
+    # Try desktop mode if requested
+    if args.desktop:
+        if start_desktop_mode():
+            return  # Desktop mode successful
+        # If desktop mode fails, fall through to browser mode
+    
+    # Browser mode (default)
+    print("\nStarting server and opening browser...")
     print("\n    http://127.0.0.1:5000\n")
     print("="*60 + "\n")
     
-    # Start the Flask server
-    app.run(host='127.0.0.1', port=5000)
+    # Open browser in a separate thread
+    threading.Thread(target=open_browser, daemon=True).start()
+    
+    # Start the Flask server with waitress
+    print("Server running on http://127.0.0.1:5000")
+    serve(app, host='127.0.0.1', port=5000, threads=4)
 
 if __name__ == "__main__":
     main()

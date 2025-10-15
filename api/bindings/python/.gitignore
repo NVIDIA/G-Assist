@@ -2,9 +2,11 @@
 .vscode/
 build/
 dist/
+dist_desktop/
 x64/
 x86/
 python_binding
 gassist/
 *.h
 *.lib
+*.spec
