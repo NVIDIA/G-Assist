@@ -221,7 +221,7 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str, assistant_identifier: str = '', custom_system_prompt: str = '') -> Optional[dict]:
+def send_rise_command(command: str, assistant_identifier: str = '', custom_system_prompt: str = '', thinking_enabled: bool = False) -> Optional[dict]:
     """
     Send a command to RISE and wait for the response.
 
@@ -232,6 +232,7 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
         command: The text command to send to RISE
         assistant_identifier: Optional assistant identifier for client_config
         custom_system_prompt: Optional custom system prompt for client_config
+        thinking_enabled: Optional flag to enable thinking mode (adds <think> tags)
 
     Returns:
         Optional[dict]: The response from RISE, or None if an error occurs
@@ -253,6 +254,9 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
 
         if(custom_system_prompt != ''):
             command_obj['client_config']['custom_system_prompt'] = custom_system_prompt
+        
+        # Add thinking_enabled to client_config
+        command_obj['client_config']['thinking_enabled'] = thinking_enabled
 
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = json.dumps(command_obj).encode('utf-8')

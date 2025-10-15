@@ -29,51 +29,27 @@ def index():
 
 def get_html_content():
     """Generate and return the HTML content from the start_electron_app function"""
-    # Read the HTML from the start_electron_app function's template
-    # This is a temporary implementation - we'll populate the full HTML shortly
+    # Extract the HTML from the start_electron_app function's template
     import inspect
     import re
     source = inspect.getsource(start_electron_app)
     # Extract the HTML between f.write(''' and ''')
-    # Look for the HTML file writing section
     match = re.search(r"with open\(os\.path\.join\(electron_dir, 'public', 'index\.html'\), 'w'\) as f:\s+f\.write\('''(.+?)'''\)", source, re.DOTALL)
     if match:
         html_content = match.group(1)
         return html_content
     else:
-        # Fallback: return a basic HTML page
+        # Fallback: return error message
         return '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>G-Assist</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #0a0a0f;
-            color: #e8e8e8;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            text-align: center;
-        }
-        h1 {
-            color: #76b900;
-        }
-    </style>
+    <title>G-Assist - Error</title>
 </head>
 <body>
-    <div class="container">
-        <h1>G-Assist</h1>
-        <p>Loading interface...</p>
-        <p><a href="/api/send-message" style="color: #76b900;">API Endpoint</a></p>
-    </div>
+    <h1>Error: Could not load interface</h1>
+    <p>Please restart the server.</p>
 </body>
 </html>
 '''
@@ -102,6 +78,7 @@ def send_message_stream():
     message = data.get('message', '')
     assistant_identifier = data.get('assistant_identifier', '')
     custom_system_prompt = data.get('custom_system_prompt', '')
+    thinking_enabled = data.get('thinking_enabled', False)
     
     if not message:
         return jsonify({'error': 'Empty message'}), 400
@@ -123,7 +100,7 @@ def send_message_stream():
             def run_command():
                 try:
                     # send_rise_command returns a dict with 'completed_response' and 'completed_chart'
-                    result['response'] = rise.send_rise_command(message, assistant_identifier, custom_system_prompt)
+                    result['response'] = rise.send_rise_command(message, assistant_identifier, custom_system_prompt, thinking_enabled)
                 except Exception as e:
                     result['error'] = str(e)
             
@@ -1287,6 +1264,44 @@ textarea {
             color: #569cd6; /* Blue for null */
         }
         
+        /* Thinking Block Styling */
+        .thinking-block {
+            background-color: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-left: 3px solid #666;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #888;
+            font-style: italic;
+            text-align: left !important;
+        }
+        
+        .thinking-block::before {
+            content: "💭 Thinking...";
+            display: block;
+            font-weight: 600;
+            font-style: normal;
+            margin-bottom: 8px;
+            color: #999;
+            font-size: 0.8rem;
+            font-family: Arial, sans-serif;
+        }
+        
+        .thinking-block pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            text-align: left;
+            font-family: inherit;
+            font-style: inherit;
+            color: inherit;
+        }
+        
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -1469,6 +1484,43 @@ textarea {
             position: absolute;
             right: -100%;
         }
+        
+        /* Thinking toggle button */
+        .thinking-toggle {
+            background: none;
+            border: 2px solid var(--text-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: var(--transition);
+            font-size: 14px;
+            font-weight: 500;
+            margin-right: 8px;
+            min-width: 100px;
+            white-space: nowrap;
+        }
+        
+        .thinking-toggle:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            transform: translateY(-1px);
+        }
+        
+        .thinking-toggle.active {
+            background-color: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: #0a0a0f;
+        }
+        
+        .thinking-toggle svg {
+            width: 16px;
+            height: 16px;
+            margin-right: 6px;
+        }
     </style>
 </head>
 <body>
@@ -1495,6 +1547,14 @@ textarea {
               </div>
           </div>
           <form class="input-area" id="messageForm">
+              <button type="button" class="thinking-toggle" id="thinkingToggle" title="Toggle thinking mode">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  Think
+              </button>
               <input type="text" id="messageInput" placeholder="Type your message here..." autofocus class="message-input">
               <button type="submit" id="sendButton">
                   <svg class="send-icon" viewBox="0 0 24 24">
@@ -1531,6 +1591,14 @@ textarea {
             const statusBar = document.getElementById('status');
             const settingsToggle = document.getElementById('settingsToggle');
             const settingsPane = document.querySelector('.settings-pane');
+            const thinkingToggle = document.getElementById('thinkingToggle');
+            
+            // Thinking toggle state
+            let thinkingEnabled = false;
+            thinkingToggle.addEventListener('click', function() {
+                thinkingEnabled = !thinkingEnabled;
+                thinkingToggle.classList.toggle('active', thinkingEnabled);
+            });
             
             // Settings panel toggle functionality
             settingsPane.classList.add('hidden'); // Start hidden
@@ -1568,7 +1636,94 @@ textarea {
             }
             
             function formatContent(text) {
-                // Check if the text is JSON
+                // Check for complete <think>...</think> pairs
+                const completeThinkRegex = /<think>([\s\S]*?)<\/think>/g;
+                const hasCompleteThinkTags = completeThinkRegex.test(text);
+                
+                // Check for incomplete <think> (no closing tag yet - streaming in progress)
+                const openThinkPos = text.indexOf('<think>');
+                const closeThinkPos = text.indexOf('</think>');
+                const hasIncompleteThink = openThinkPos !== -1 && (closeThinkPos === -1 || closeThinkPos < openThinkPos);
+                
+                if (hasCompleteThinkTags || hasIncompleteThink) {
+                    // Create a container for mixed content
+                    const container = document.createElement('div');
+                    
+                    // Process complete thinking blocks first
+                    completeThinkRegex.lastIndex = 0;
+                    let lastIndex = 0;
+                    let match;
+                    
+                    while ((match = completeThinkRegex.exec(text)) !== null) {
+                        // Add text before the thinking block
+                        const beforeText = text.substring(lastIndex, match.index);
+                        if (beforeText.trim()) {
+                            const textSpan = document.createElement('span');
+                            textSpan.textContent = beforeText;
+                            container.appendChild(textSpan);
+                        }
+                        
+                        // Add the complete thinking block
+                        const thinkingBlock = document.createElement('div');
+                        thinkingBlock.className = 'thinking-block';
+                        const pre = document.createElement('pre');
+                        pre.textContent = match[1].trim();
+                        thinkingBlock.appendChild(pre);
+                        container.appendChild(thinkingBlock);
+                        
+                        lastIndex = match.index + match[0].length;
+                    }
+                    
+                    // Handle remaining text (might contain incomplete <think>)
+                    const afterText = text.substring(lastIndex);
+                    
+                    // Check if remaining text has incomplete <think> tag
+                    const incompleteThinkPos = afterText.indexOf('<think>');
+                    if (incompleteThinkPos !== -1) {
+                        // Add text before <think>
+                        const beforeThink = afterText.substring(0, incompleteThinkPos);
+                        if (beforeThink.trim()) {
+                            const textSpan = document.createElement('span');
+                            textSpan.textContent = beforeThink;
+                            container.appendChild(textSpan);
+                        }
+                        
+                        // Add incomplete thinking block (streaming in progress)
+                        const incompleteContent = afterText.substring(incompleteThinkPos + 7); // Skip '<think>'
+                        const thinkingBlock = document.createElement('div');
+                        thinkingBlock.className = 'thinking-block';
+                        const pre = document.createElement('pre');
+                        pre.textContent = incompleteContent.trim() || '...'; // Show ellipsis if empty
+                        thinkingBlock.appendChild(pre);
+                        container.appendChild(thinkingBlock);
+                    } else if (afterText.trim()) {
+                        // No incomplete think tag, check if it's JSON or plain text
+                        if (isJSON(afterText.trim())) {
+                            try {
+                                const parsed = JSON.parse(afterText.trim());
+                                const formatted = JSON.stringify(parsed, null, 2);
+                                const codeBlock = document.createElement('div');
+                                codeBlock.className = 'code-block';
+                                const pre = document.createElement('pre');
+                                pre.innerHTML = syntaxHighlightJSON(formatted);
+                                codeBlock.appendChild(pre);
+                                container.appendChild(codeBlock);
+                            } catch (e) {
+                                const textSpan = document.createElement('span');
+                                textSpan.textContent = afterText;
+                                container.appendChild(textSpan);
+                            }
+                        } else {
+                            const textSpan = document.createElement('span');
+                            textSpan.textContent = afterText;
+                            container.appendChild(textSpan);
+                        }
+                    }
+                    
+                    return container;
+                }
+                
+                // Check if the text is JSON (no thinking blocks)
                 if (isJSON(text)) {
                     try {
                         const parsed = JSON.parse(text);
@@ -1647,7 +1802,7 @@ textarea {
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ message, assistant_identifier, custom_system_prompt })
+                        body: JSON.stringify({ message, assistant_identifier, custom_system_prompt, thinking_enabled: thinkingEnabled })
                     });
                     
                     const reader = response.body.getReader();
@@ -1682,13 +1837,21 @@ textarea {
                                         // Append chunk
                                         assistantText += data.chunk;
                                         
-                                        // Update the last assistant message
+                                        // Update the last assistant message with formatted content
                                         const messages = messagesContainer.querySelectorAll('.message.assistant:not(.typing)');
                                         const lastMessage = messages[messages.length - 1];
                                         if (lastMessage) {
                                             const textSpan = lastMessage.querySelector('.text');
                                             if (textSpan) {
-                                                textSpan.textContent = assistantText;
+                                                // Clear existing content
+                                                textSpan.innerHTML = '';
+                                                // Format content (handles thinking blocks, JSON, etc.)
+                                                const formatted = formatContent(assistantText);
+                                                if (typeof formatted === 'string') {
+                                                    textSpan.textContent = formatted;
+                                                } else {
+                                                    textSpan.appendChild(formatted);
+                                                }
                                             }
                                         }
                                         messagesContainer.scrollTop = messagesContainer.scrollHeight;
