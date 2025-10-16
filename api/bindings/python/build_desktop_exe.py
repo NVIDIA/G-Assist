@@ -22,7 +22,7 @@ def main():
     
     # Install dependencies
     print("\nInstalling dependencies...")
-    dependencies = ["pywebview", "waitress"]
+    dependencies = ["pywebview", "waitress", "psutil"]
     for dep in dependencies:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
@@ -91,6 +91,9 @@ def main():
         "--hidden-import=importlib.util",
         "--hidden-import=logging",
         "--hidden-import=warnings",
+        "--hidden-import=psutil",
+        "--hidden-import=tempfile",
+        "--hidden-import=atexit",
         "--collect-all=flask",
         "--collect-all=flask_cors",
         "--collect-all=webview",

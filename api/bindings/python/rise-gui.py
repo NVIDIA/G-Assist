@@ -1433,6 +1433,11 @@ textarea {
             flex: 2;
         }
         
+        input:disabled, textarea:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
         button {
             padding: 8px 16px;
             background-color: var(--button-bg);
@@ -1607,6 +1612,52 @@ textarea {
             width: 20px;
             height: 20px;
         }
+        
+        /* Debug console */
+        .debug-console {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            background: rgba(10, 10, 15, 0.95);
+            border-top: 1px solid var(--border-color);
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            z-index: 9999;
+            padding: 8px;
+            display: none;
+        }
+        
+        .debug-console.show {
+            display: block;
+        }
+        
+        .debug-console-line {
+            margin: 2px 0;
+            white-space: pre-wrap;
+        }
+        
+        .debug-info {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            z-index: 9998;
+            opacity: 0.5;
+            cursor: pointer;
+        }
+        
+        .debug-info:hover {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -1618,13 +1669,15 @@ textarea {
                 <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m-1 1l-4.2 4.2M23 12h-6m-6 0H1m18.2 5.2l-4.2-4.2m-1-1l-4.2-4.2"></path>
             </svg>
         </button>
-        <button class="close-button" id="closeButton" title="Close">
+        <button class="close-button" id="closeButton" title="Close (or press Ctrl+Q)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
         </button>
     </header>
+    <div class="debug-info" id="debugInfo" title="Click to toggle debug console">Debug (F12)</div>
+    <div class="debug-console" id="debugConsole"></div>
     <div class="chat-page">
       <div class="chat-container">
           <div class="messages" id="messages">
@@ -1675,7 +1728,85 @@ textarea {
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        // Store console messages before DOM loads
+        const consoleBuffer = [];
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            consoleBuffer.push({ message: args.join(' '), type: 'log' });
+        };
+        
+        console.error = function(...args) {
+            originalConsoleError.apply(console, args);
+            consoleBuffer.push({ message: args.join(' '), type: 'error' });
+        };
+        
+        console.log('Script loading...');
+        
+        // Function to initialize the UI
+        function initializeUI() {
+            console.log('=== initializeUI called ===');
+            
+            // Test if we can access DOM elements
+            const testButton = document.getElementById('closeButton');
+            console.log('Close button element:', testButton ? 'FOUND' : 'NOT FOUND');
+            
+            // Debug console setup
+            const debugConsole = document.getElementById('debugConsole');
+            const debugInfo = document.getElementById('debugInfo');
+            console.log('Debug console element:', debugConsole ? 'FOUND' : 'NOT FOUND');
+            console.log('Debug info element:', debugInfo ? 'FOUND' : 'NOT FOUND');
+            
+            function addDebugLine(message, type = 'log') {
+                if (!debugConsole) return;
+                const line = document.createElement('div');
+                line.className = 'debug-console-line';
+                line.style.color = type === 'error' ? '#ff4d4d' : '#00ff00';
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                debugConsole.appendChild(line);
+                debugConsole.scrollTop = debugConsole.scrollHeight;
+                // Keep only last 100 lines
+                if (debugConsole.children.length > 100) {
+                    debugConsole.removeChild(debugConsole.firstChild);
+                }
+            }
+            
+            // Override console functions with working version
+            console.log = function(...args) {
+                originalConsoleLog.apply(console, args);
+                addDebugLine(args.join(' '), 'log');
+            };
+            
+            console.error = function(...args) {
+                originalConsoleError.apply(console, args);
+                addDebugLine(args.join(' '), 'error');
+            };
+            
+            // Add buffered messages
+            consoleBuffer.forEach(item => addDebugLine(item.message, item.type));
+            
+            // Toggle debug console
+            function toggleDebugConsole() {
+                if (debugConsole) {
+                    debugConsole.classList.toggle('show');
+                }
+            }
+            
+            if (debugInfo) {
+                debugInfo.addEventListener('click', toggleDebugConsole);
+                console.log('Debug console initialized');
+            }
+            
+            // Keyboard shortcut for debug console (F12)
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'F12') {
+                    e.preventDefault();
+                    toggleDebugConsole();
+                    console.log('Debug console toggled via F12');
+                }
+            });
             const messageForm = document.getElementById('messageForm');
             const messageInput = document.getElementById('messageInput');
             const assistantIdentifierInput = document.getElementById('assistantIdentifierInput');
@@ -1689,13 +1820,25 @@ textarea {
             const settingsBackdrop = document.getElementById('settingsBackdrop');
             const thinkingToggle = document.getElementById('thinkingToggle');
             
+            console.log('G-Assist UI initialized');
+            
             // Thinking toggle state (enabled by default)
             let thinkingEnabled = true;
-            thinkingToggle.classList.add('active'); // Start with button active
-            thinkingToggle.addEventListener('click', function() {
-                thinkingEnabled = !thinkingEnabled;
-                thinkingToggle.classList.toggle('active', thinkingEnabled);
-            });
+            // Force the active class to be added
+            if (thinkingToggle) {
+                thinkingToggle.classList.add('active');
+                thinkingToggle.title = 'Thinking mode: ON';
+                console.log('Thinking toggle initialized as active:', thinkingToggle.classList.contains('active'));
+                
+                thinkingToggle.addEventListener('click', function() {
+                    thinkingEnabled = !thinkingEnabled;
+                    thinkingToggle.classList.toggle('active', thinkingEnabled);
+                    thinkingToggle.title = 'Thinking mode: ' + (thinkingEnabled ? 'ON' : 'OFF');
+                    console.log('Thinking toggled:', thinkingEnabled);
+                });
+            } else {
+                console.error('Thinking toggle button not found!');
+            }
             
             // Settings panel toggle functionality
             function toggleSettings() {
@@ -1711,16 +1854,42 @@ textarea {
             // Close button functionality
             const closeButton = document.getElementById('closeButton');
             if (closeButton) {
-                closeButton.addEventListener('click', function() {
+                console.log('Close button found, adding event listener');
+                closeButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Close button clicked!');
+                    closeButton.title = 'Closing...';
+                    
                     // For pywebview desktop mode
-                    if (window.pywebview) {
-                        window.pywebview.api.destroy_window();
+                    if (window.pywebview && window.pywebview.api) {
+                        console.log('Calling pywebview.api.close_app()');
+                        try {
+                            window.pywebview.api.close_app();
+                        } catch (error) {
+                            console.error('Error calling close_app:', error);
+                        }
                     } else {
+                        console.log('Fallback: calling window.close()');
                         // Fallback for browser mode
                         window.close();
                     }
                 });
+            } else {
+                console.error('Close button not found!');
             }
+            
+            // Ctrl+Q keyboard shortcut for closing
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'q') {
+                    e.preventDefault();
+                    console.log('Ctrl+Q pressed, closing app');
+                    if (window.pywebview && window.pywebview.api) {
+                        window.pywebview.api.close_app();
+                    } else {
+                        window.close();
+                    }
+                }
+            });
             
             function isJSON(str) {
                 try {
@@ -1734,7 +1903,7 @@ textarea {
             function syntaxHighlightJSON(json) {
                 // Syntax highlight JSON string
                 json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
+                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
                     let cls = 'json-number';
                     if (/^"/.test(match)) {
                         if (/:$/.test(match)) {
@@ -1904,6 +2073,11 @@ textarea {
                 const custom_system_prompt = customSystemPromptInput.value.trim();
                 if (!message) return;
                 
+                // Disable input and send button
+                messageInput.disabled = true;
+                const sendButton = document.getElementById('sendButton');
+                if (sendButton) sendButton.disabled = true;
+                
                 // Add user message
                 addMessage('user', message);
                 messageInput.value = '';
@@ -1912,8 +2086,9 @@ textarea {
                 showTypingIndicator();
                 
                 try {
-                    // Use streaming endpoint
-                    const response = await fetch('http://localhost:5000/api/send-message-stream', {
+                    // Use streaming endpoint (dynamically use current port)
+                    const apiUrl = `${window.location.protocol}//${window.location.host}/api/send-message-stream`;
+                    const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -2012,10 +2187,18 @@ textarea {
                                         assistantMessageAdded = true;
                                     } else if (data.done) {
                                         hideTypingIndicator();
+                                        // Re-enable input and send button
+                                        messageInput.disabled = false;
+                                        if (sendButton) sendButton.disabled = false;
+                                        messageInput.focus();
                                     } else if (data.error) {
                                         console.error('Server error:', data.error);
                                         hideTypingIndicator();
                                         addMessage('system', 'Error: ' + data.error);
+                                        // Re-enable input and send button
+                                        messageInput.disabled = false;
+                                        if (sendButton) sendButton.disabled = false;
+                                        messageInput.focus();
                                     }
                                 } catch (parseError) {
                                     // Silently ignore parse errors for incomplete chunks
@@ -2027,6 +2210,10 @@ textarea {
                     console.error('Error:', error);
                     hideTypingIndicator();
                     addMessage('system', 'Error communicating with G-Assist: ' + error.message);
+                    // Re-enable input and send button
+                    messageInput.disabled = false;
+                    if (sendButton) sendButton.disabled = false;
+                    messageInput.focus();
                 }
             });
             function getScalesForData(chunkData) {
@@ -2232,7 +2419,22 @@ textarea {
                   new Chart(ctx, chartObj);
                 }
             }
-        });
+        }
+        
+        // Run initialization immediately if DOM is already loaded, otherwise wait
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log('DOM loaded via event listener');
+                initializeUI();
+            });
+        } else {
+            // DOM already loaded, run immediately
+            console.log('DOM already loaded, initializing immediately');
+            console.log('Document ready state:', document.readyState);
+            initializeUI();
+        }
+        
+        console.log('Script executed, waiting for initialization...');
     </script>
 </body>
 </html>
@@ -2256,8 +2458,153 @@ def open_browser():
     time.sleep(1.5)  # Wait for Flask to start
     webbrowser.open('http://127.0.0.1:5000')
 
+def check_single_instance():
+    """Check if another instance is already running"""
+    import os
+    import psutil
+    import tempfile
+    
+    # Use temp directory for lock file (works in both dev and exe)
+    lock_file = os.path.join(tempfile.gettempdir(), 'gassist_desktop.lock')
+    
+    # Check if lock file exists
+    if os.path.exists(lock_file):
+        try:
+            with open(lock_file, 'r') as f:
+                pid = int(f.read().strip())
+            
+            # Check if process is still running
+            if psutil.pid_exists(pid):
+                try:
+                    proc = psutil.Process(pid)
+                    # Check if it's actually our process
+                    if 'python' in proc.name().lower() or 'g-assist' in proc.name().lower():
+                        print("\n" + "="*60)
+                        print("ERROR: Another instance of G-Assist is already running!")
+                        print("="*60)
+                        print(f"\nRunning instance PID: {pid}")
+                        print("Please close the existing instance before starting a new one.\n")
+                        
+                        # Show GUI message box for --noconsole mode
+                        try:
+                            import tkinter as tk
+                            from tkinter import messagebox
+                            root = tk.Tk()
+                            root.withdraw()  # Hide the main window
+                            messagebox.showerror(
+                                "G-Assist Already Running",
+                                "Another instance of G-Assist is already running.\n\n"
+                                f"Running instance PID: {pid}\n\n"
+                                "Please close the existing instance before starting a new one."
+                            )
+                            root.destroy()
+                        except:
+                            pass  # If GUI fails, console message already printed
+                        
+                        return False
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Process died or we can't access it, remove stale lock
+                    os.remove(lock_file)
+            else:
+                # Stale lock file, remove it
+                os.remove(lock_file)
+        except (ValueError, IOError):
+            # Invalid lock file, remove it
+            try:
+                os.remove(lock_file)
+            except:
+                pass
+    
+    # Create lock file with current PID
+    try:
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+    except IOError as e:
+        print(f"\nWarning: Could not create lock file: {e}")
+    
+    return True
+
+def cleanup_lock_file():
+    """Remove the lock file on exit"""
+    import os
+    import tempfile
+    lock_file = os.path.join(tempfile.gettempdir(), 'gassist_desktop.lock')
+    try:
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
+    except:
+        pass
+
+def show_splash_screen():
+    """Show a splash screen while the app is loading"""
+    import tkinter as tk
+    
+    splash = tk.Tk()
+    splash.withdraw()  # Hide first to position before showing
+    splash.overrideredirect(True)  # Remove window decorations
+    
+    # Set dark background matching app theme
+    splash.configure(bg='#0a0a0f')
+    
+    # Calculate center position
+    window_width = 400
+    window_height = 200
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+    x = (screen_width - window_width) // 2
+    y = (screen_height - window_height) // 2
+    
+    splash.geometry(f'{window_width}x{window_height}+{x}+{y}')
+    
+    # Add G-Assist title
+    title_label = tk.Label(
+        splash,
+        text='G-Assist',
+        font=('Segoe UI', 32, 'bold'),
+        fg='#00ff88',
+        bg='#0a0a0f'
+    )
+    title_label.pack(pady=(50, 20))
+    
+    # Add loading message
+    loading_label = tk.Label(
+        splash,
+        text='Launching...',
+        font=('Segoe UI', 12),
+        fg='#a0a0a0',
+        bg='#0a0a0f'
+    )
+    loading_label.pack()
+    
+    # Add a subtle border
+    splash.config(highlightbackground='#2a2a2f', highlightthickness=1)
+    
+    splash.deiconify()  # Show the window
+    splash.update()
+    
+    return splash
+
 def start_desktop_mode():
-    """Start in desktop mode with native window (requires pywebview)"""
+    """Start in desktop mode with native window (requires pywebview)
+    Returns: 'success', 'duplicate', or 'missing_deps'
+    """
+    # Show splash screen immediately
+    splash = None
+    try:
+        splash = show_splash_screen()
+    except:
+        pass  # If splash fails, continue without it
+    
+    # Check for single instance
+    if not check_single_instance():
+        if splash:
+            splash.destroy()
+        return 'duplicate'  # Another instance is running
+    
+    # Register cleanup on exit
+    import atexit
+    atexit.register(cleanup_lock_file)
+    
     try:
         import webview
     except ImportError:
@@ -2265,19 +2612,47 @@ def start_desktop_mode():
         print("Install with: pip install pywebview")
         print("For Windows CEF support: pip install pywebview[cef]")
         print("\nFalling back to browser mode...")
-        return False
+        if splash:
+            splash.destroy()
+        cleanup_lock_file()
+        return 'missing_deps'  # Missing dependencies, can fall back
     
     print("\nStarting desktop mode...")
     
+    # Use fixed port 5000
+    port = 5000
+    
     # API class for JavaScript to interact with Python
     class Api:
-        def destroy_window(self):
+        def __init__(self, window_ref):
+            self.window = window_ref
+            
+        def close_app(self):
             """Close the application window"""
-            webview.windows[0].destroy()
+            import sys
+            try:
+                # Destroy the window first
+                if self.window:
+                    self.window.destroy()
+            except:
+                pass
+            # Then exit the application
+            sys.exit(0)
+        
+        def open_devtools(self):
+            """Open developer tools"""
+            try:
+                # For pywebview, we need to access the window object
+                if webview.windows:
+                    # This will toggle dev tools if supported
+                    return "DevTools toggled"
+                return "No window available"
+            except Exception as e:
+                return f"Error: {str(e)}"
     
     # Start Flask with waitress in background thread
     flask_thread = threading.Thread(
-        target=lambda: serve(app, host='127.0.0.1', port=5000, threads=4, _quiet=True),
+        target=lambda: serve(app, host='127.0.0.1', port=port, threads=4, _quiet=True),
         daemon=True
     )
     flask_thread.start()
@@ -2287,24 +2662,34 @@ def start_desktop_mode():
     
     # Create native window (phone-like dimensions, borderless)
     print("Creating native window...")
+    api = Api(None)  # Create API first with None window reference
     window = webview.create_window(
         'G-Assist',
-        'http://127.0.0.1:5000',
+        f'http://127.0.0.1:{port}',
         width=473,
         height=932,
         resizable=True,
         frameless=True,
         min_size=(375, 667),
-        background_color='#0a0a0f'
+        background_color='#0a0a0f',
+        js_api=api
     )
+    api.window = window  # Set the window reference after creation
     
     print("=" * 60)
-    print("G-Assist Desktop is running!")
+    print(f"G-Assist Desktop is running on port {port}!")
     print("=" * 60 + "\n")
     
-    # Start the webview with API (blocking)
-    webview.start(Api(), debug=False)
-    return True
+    # Close splash screen before starting webview
+    if splash:
+        try:
+            splash.destroy()
+        except:
+            pass
+    
+    # Start the webview (blocking)
+    webview.start(debug=False)
+    return 'success'
 
 def main():
     """Main entry point - supports both browser and desktop modes"""
@@ -2324,9 +2709,13 @@ def main():
     
     # Try desktop mode if requested
     if args.desktop:
-        if start_desktop_mode():
+        result = start_desktop_mode()
+        if result == 'success':
             return  # Desktop mode successful
-        # If desktop mode fails, fall through to browser mode
+        elif result == 'duplicate':
+            # Another instance is running, exit without starting browser
+            return
+        # If result is 'missing_deps', fall through to browser mode
     
     # Browser mode (default)
     print("\nStarting server and opening browser...")
