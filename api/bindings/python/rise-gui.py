@@ -1582,6 +1582,31 @@ textarea {
             height: 16px;
             margin-right: 6px;
         }
+        
+        /* Close button */
+        .close-button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: var(--transition);
+            margin-left: 8px;
+        }
+        
+        .close-button:hover {
+            background-color: rgba(255, 77, 77, 0.2);
+            color: #ff4d4d;
+        }
+        
+        .close-button svg {
+            width: 20px;
+            height: 20px;
+        }
     </style>
 </head>
 <body>
@@ -1591,6 +1616,12 @@ textarea {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m-1 1l-4.2 4.2M23 12h-6m-6 0H1m18.2 5.2l-4.2-4.2m-1-1l-4.2-4.2"></path>
+            </svg>
+        </button>
+        <button class="close-button" id="closeButton" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
         </button>
     </header>
@@ -1676,6 +1707,20 @@ textarea {
             
             // Close settings when clicking backdrop
             settingsBackdrop.addEventListener('click', toggleSettings);
+            
+            // Close button functionality
+            const closeButton = document.getElementById('closeButton');
+            if (closeButton) {
+                closeButton.addEventListener('click', function() {
+                    // For pywebview desktop mode
+                    if (window.pywebview) {
+                        window.pywebview.api.destroy_window();
+                    } else {
+                        // Fallback for browser mode
+                        window.close();
+                    }
+                });
+            }
             
             function isJSON(str) {
                 try {
@@ -2224,6 +2269,12 @@ def start_desktop_mode():
     
     print("\nStarting desktop mode...")
     
+    # API class for JavaScript to interact with Python
+    class Api:
+        def destroy_window(self):
+            """Close the application window"""
+            webview.windows[0].destroy()
+    
     # Start Flask with waitress in background thread
     flask_thread = threading.Thread(
         target=lambda: serve(app, host='127.0.0.1', port=5000, threads=4, _quiet=True),
@@ -2251,8 +2302,8 @@ def start_desktop_mode():
     print("G-Assist Desktop is running!")
     print("=" * 60 + "\n")
     
-    # Start the webview (blocking)
-    webview.start(debug=False)
+    # Start the webview with API (blocking)
+    webview.start(Api(), debug=False)
     return True
 
 def main():
