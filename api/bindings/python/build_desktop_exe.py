@@ -22,7 +22,7 @@ def main():
     
     # Install dependencies
     print("\nInstalling dependencies...")
-    dependencies = ["pywebview", "waitress", "psutil"]
+    dependencies = ["pywebview", "waitress", "psutil", "faster-whisper"]
     for dep in dependencies:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
@@ -94,11 +94,18 @@ def main():
         "--hidden-import=psutil",
         "--hidden-import=tempfile",
         "--hidden-import=atexit",
+        "--hidden-import=faster_whisper",
+        "--hidden-import=ctranslate2",
+        "--hidden-import=tokenizers",
+        "--hidden-import=av",
+        "--hidden-import=onnxruntime",
         "--collect-all=flask",
         "--collect-all=flask_cors",
         "--collect-all=webview",
         "--collect-all=pythonnet",
         "--collect-all=waitress",
+        "--collect-all=faster_whisper",
+        "--collect-all=ctranslate2",
         "--noconfirm",  # Overwrite output directory without confirmation
         "--distpath=dist_desktop",
         "rise-gui-desktop-launcher.py"

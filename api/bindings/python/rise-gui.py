@@ -82,6 +82,63 @@ def send_message():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/check-microphones', methods=['GET'])
+def check_microphones():
+    """API endpoint to check available microphones"""
+    try:
+        # This will be checked on the client side using JavaScript navigator.mediaDevices.enumerateDevices()
+        # Just return a success response
+        return jsonify({'status': 'success', 'message': 'Use client-side enumeration'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe_audio():
+    """API endpoint for audio transcription using Faster-Whisper"""
+    try:
+        # Get audio data from request
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+        
+        audio_file = request.files['audio']
+        
+        # Save to temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+            audio_file.save(temp_audio.name)
+            temp_path = temp_audio.name
+        
+        try:
+            # Lazy load Whisper model (loads on first use)
+            global whisper_model
+            if 'whisper_model' not in globals():
+                from faster_whisper import WhisperModel
+                print("Loading Faster-Whisper model (tiny.en)...")
+                whisper_model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+                print("Whisper model loaded successfully")
+            
+            # Transcribe
+            segments, info = whisper_model.transcribe(temp_path, language="en", beam_size=1)
+            text = " ".join([seg.text.strip() for seg in segments])
+            
+            # Clean up temp file
+            import os
+            os.unlink(temp_path)
+            
+            return jsonify({'text': text, 'language': info.language})
+            
+        except Exception as e:
+            # Clean up temp file on error
+            import os
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/send-message-stream', methods=['POST'])
 def send_message_stream():
     """API endpoint for streaming messages from G-Assist"""
@@ -1452,6 +1509,10 @@ textarea {
             transition: all 0.3s ease;
         }
         
+        button[type="submit"] {
+            margin-right: 4px;
+        }
+        
         button:hover:not(:disabled) {
             background-color: var(--button-hover);
             transform: translateY(-2px);
@@ -1563,11 +1624,8 @@ textarea {
             justify-content: center;
             border-radius: 8px;
             transition: var(--transition);
-            font-size: 14px;
-            font-weight: 500;
+            margin-left: 4px;
             margin-right: 8px;
-            min-width: 100px;
-            white-space: nowrap;
         }
         
         .thinking-toggle:hover {
@@ -1583,9 +1641,75 @@ textarea {
         }
         
         .thinking-toggle svg {
-            width: 16px;
-            height: 16px;
-            margin-right: 6px;
+            width: 18px;
+            height: 18px;
+        }
+        
+        /* Voice button */
+        .voice-button {
+            background: none;
+            border: 2px solid var(--text-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            transition: var(--transition);
+            margin-right: 8px;
+        }
+        
+        .voice-button:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            transform: translateY(-1px);
+        }
+        
+        .voice-button.recording {
+            background-color: #ff3d00;
+            border-color: #ff3d00;
+            color: white;
+            animation: pulse-recording 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-recording {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .voice-button svg {
+            width: 18px;
+            height: 18px;
+        }
+        
+        .voice-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: #555;
+            color: #555;
+        }
+        
+        .voice-button:disabled:hover {
+            transform: none;
+            border-color: #555;
+            color: #555;
+        }
+        
+        /* Mic status in settings */
+        .mic-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            font-style: italic;
+        }
+        
+        .mic-status.error {
+            color: #ff4d4d;
+        }
+        
+        .mic-status.success {
+            color: var(--accent-primary);
         }
         
         /* Close button */
@@ -1843,7 +1967,6 @@ textarea {
             </div>
         </div>
     </header>
-    <div class="debug-info" id="debugInfo" title="Click to toggle debug console">Debug (F12)</div>
     <div class="debug-console" id="debugConsole"></div>
     <div class="chat-page">
       <div class="chat-container">
@@ -1861,11 +1984,19 @@ textarea {
           <form class="input-area" id="messageForm">
               <button type="button" class="thinking-toggle" id="thinkingToggle" title="Toggle thinking mode">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      <path d="M9.5 2c-1.82 0-3.53.5-5 1.35C2.99 4.07 2 5.8 2 7.75c0 2.07 1.13 3.87 2.81 4.86.06.38.16.75.29 1.1.36.97.96 1.84 1.73 2.53 0 .91.46 1.76 1.24 2.26.78.5 1.76.5 2.54 0 .78-.5 1.24-1.35 1.24-2.26.77-.69 1.37-1.56 1.73-2.53.13-.35.23-.72.29-1.1C15.87 11.62 17 9.82 17 7.75c0-1.95-.99-3.68-2.5-4.4C13.03 2.5 11.32 2 9.5 2zm0 1.5c1.48 0 2.87.41 4.06 1.13 1.06.64 1.94 1.66 1.94 3.12 0 1.58-.95 2.95-2.31 3.55l-.26.11-.04.28c-.03.24-.1.47-.19.69-.27.68-.73 1.29-1.32 1.75l-.35.27v.85c0 .36-.18.7-.5.9-.32.2-.73.2-1.05 0-.32-.2-.5-.54-.5-.9v-.85l-.35-.27c-.59-.46-1.05-1.07-1.32-1.75-.09-.22-.16-.45-.19-.69l-.04-.28-.26-.11C4.45 10.7 3.5 9.33 3.5 7.75c0-1.46.88-2.48 1.94-3.12C6.63 3.91 8.02 3.5 9.5 3.5z"></path>
+                      <circle cx="9.5" cy="8" r="1"></circle>
+                      <circle cx="12.5" cy="8" r="1"></circle>
+                      <path d="M14.5 14c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5zm-10 0c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5z"></path>
                   </svg>
-                  Think
+              </button>
+              <button type="button" class="voice-button" id="voiceButton" title="Voice input">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                      <line x1="12" y1="19" x2="12" y2="23"></line>
+                      <line x1="8" y1="23" x2="16" y2="23"></line>
+                  </svg>
               </button>
               <input type="text" id="messageInput" placeholder="Type your message here..." autofocus class="message-input">
               <button type="submit" id="sendButton">
@@ -1883,6 +2014,13 @@ textarea {
       <div class="settings-pane hidden">
           <h3>Settings</h3>
           <hr/>
+          <div class="settings-container">
+            <h5>Microphone</h5>
+            <select id="microphoneSelect" class="adapter-input">
+                <option value="">Detecting microphones...</option>
+            </select>
+            <div id="micStatus" class="mic-status"></div>
+           </div>
           <div class="settings-container">
             <h5>Assistant Identifier</h5>
             <input type="text" id="assistantIdentifierInput" placeholder="Assistant Identifier (optional)" class="adapter-input" >
@@ -1920,11 +2058,9 @@ textarea {
             const testButton = document.getElementById('closeButton');
             console.log('Close button element:', testButton ? 'FOUND' : 'NOT FOUND');
             
-            // Debug console setup
+            // Debug console setup (F12 only, no visible button)
             const debugConsole = document.getElementById('debugConsole');
-            const debugInfo = document.getElementById('debugInfo');
             console.log('Debug console element:', debugConsole ? 'FOUND' : 'NOT FOUND');
-            console.log('Debug info element:', debugInfo ? 'FOUND' : 'NOT FOUND');
             
             function addDebugLine(message, type = 'log') {
                 if (!debugConsole) return;
@@ -1961,12 +2097,7 @@ textarea {
                 }
             }
             
-            if (debugInfo) {
-                debugInfo.addEventListener('click', toggleDebugConsole);
-                console.log('Debug console initialized');
-            }
-            
-            // Keyboard shortcut for debug console (F12)
+            // Keyboard shortcut for debug console (F12 only, no button)
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'F12') {
                     e.preventDefault();
@@ -1985,8 +2116,88 @@ textarea {
             const settingsPane = document.querySelector('.settings-pane');
             const settingsBackdrop = document.getElementById('settingsBackdrop');
             const thinkingToggle = document.getElementById('thinkingToggle');
+            const microphoneSelect = document.getElementById('microphoneSelect');
+            const micStatus = document.getElementById('micStatus');
             
             console.log('G-Assist UI initialized');
+            
+            // Microphone detection and management
+            let availableMicrophones = [];
+            let selectedMicId = localStorage.getItem('selectedMicrophone') || '';
+            
+            async function enumerateMicrophones() {
+                try {
+                    // Request permission first
+                    await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    // Get all devices
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    availableMicrophones = devices.filter(device => device.kind === 'audioinput');
+                    
+                    console.log('Found microphones:', availableMicrophones.length);
+                    
+                    // Update UI
+                    if (microphoneSelect) {
+                        microphoneSelect.innerHTML = '';
+                        
+                        if (availableMicrophones.length === 0) {
+                            microphoneSelect.innerHTML = '<option value="">No microphones detected</option>';
+                            voiceButton.disabled = true;
+                            voiceButton.title = 'No microphones detected';
+                            if (micStatus) {
+                                micStatus.textContent = 'No microphones found';
+                                micStatus.className = 'mic-status error';
+                            }
+                        } else {
+                            availableMicrophones.forEach((device, index) => {
+                                const option = document.createElement('option');
+                                option.value = device.deviceId;
+                                option.textContent = device.label || `Microphone ${index + 1}`;
+                                microphoneSelect.appendChild(option);
+                            });
+                            
+                            // Select previously chosen mic or first one
+                            if (selectedMicId && availableMicrophones.find(m => m.deviceId === selectedMicId)) {
+                                microphoneSelect.value = selectedMicId;
+                            } else {
+                                microphoneSelect.value = availableMicrophones[0].deviceId;
+                                selectedMicId = availableMicrophones[0].deviceId;
+                                localStorage.setItem('selectedMicrophone', selectedMicId);
+                            }
+                            
+                            voiceButton.disabled = false;
+                            voiceButton.title = 'Voice input';
+                            if (micStatus) {
+                                micStatus.textContent = `${availableMicrophones.length} microphone(s) detected`;
+                                micStatus.className = 'mic-status success';
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Microphone enumeration error:', error);
+                    if (microphoneSelect) {
+                        microphoneSelect.innerHTML = '<option value="">Microphone access denied</option>';
+                    }
+                    voiceButton.disabled = true;
+                    voiceButton.title = 'Microphone access denied';
+                    if (micStatus) {
+                        micStatus.textContent = 'Microphone access denied. Please grant permission.';
+                        micStatus.className = 'mic-status error';
+                    }
+                }
+            }
+            
+            // Handle microphone selection change
+            if (microphoneSelect) {
+                microphoneSelect.addEventListener('change', function() {
+                    selectedMicId = microphoneSelect.value;
+                    localStorage.setItem('selectedMicrophone', selectedMicId);
+                    console.log('Selected microphone:', selectedMicId);
+                });
+            }
+            
+            // Enumerate microphones on page load
+            enumerateMicrophones();
             
             // Thinking toggle state (enabled by default)
             let thinkingEnabled = true;
@@ -2064,6 +2275,91 @@ textarea {
                 });
             } else {
                 console.error('Close button not found!');
+            }
+            
+            // Voice recording functionality
+            const voiceButton = document.getElementById('voiceButton');
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let isRecording = false;
+            
+            if (voiceButton) {
+                console.log('Voice button found, adding event listener');
+                
+                voiceButton.addEventListener('click', async function() {
+                    if (!isRecording) {
+                        // Start recording
+                        try {
+                            // Use selected microphone if available
+                            const constraints = {
+                                audio: selectedMicId ? { deviceId: { exact: selectedMicId } } : true
+                            };
+                            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                            mediaRecorder = new MediaRecorder(stream);
+                            audioChunks = [];
+                            
+                            mediaRecorder.ondataavailable = (event) => {
+                                audioChunks.push(event.data);
+                            };
+                            
+                            mediaRecorder.onstop = async () => {
+                                voiceButton.classList.remove('recording');
+                                voiceButton.title = 'Voice input';
+                                
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                                
+                                // Send to backend for transcription
+                                try {
+                                    const formData = new FormData();
+                                    formData.append('audio', audioBlob, 'recording.wav');
+                                    
+                                    const apiUrl = `${window.location.protocol}//${window.location.host}/api/transcribe`;
+                                    const response = await fetch(apiUrl, {
+                                        method: 'POST',
+                                        body: formData
+                                    });
+                                    
+                                    const result = await response.json();
+                                    
+                                    if (result.text) {
+                                        // Populate input field with transcribed text
+                                        messageInput.value = result.text.trim();
+                                        messageInput.focus();
+                                        console.log('Transcribed:', result.text);
+                                    } else if (result.error) {
+                                        console.error('Transcription error:', result.error);
+                                        addMessage('system', 'Error: ' + result.error);
+                                    }
+                                } catch (error) {
+                                    console.error('Transcription request failed:', error);
+                                    addMessage('system', 'Error: Failed to transcribe audio');
+                                }
+                                
+                                // Stop all tracks
+                                stream.getTracks().forEach(track => track.stop());
+                            };
+                            
+                            mediaRecorder.start();
+                            isRecording = true;
+                            voiceButton.classList.add('recording');
+                            voiceButton.title = 'Recording... (click to stop)';
+                            console.log('Recording started');
+                            
+                        } catch (error) {
+                            console.error('Microphone access error:', error);
+                            addMessage('system', 'Error: Could not access microphone');
+                        }
+                    } else {
+                        // Stop recording
+                        if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                            isRecording = false;
+                            console.log('Recording stopped');
+                        }
+                    }
+                });
+            } else {
+                console.error('Voice button not found!');
             }
             
             // Hamburger menu functionality
