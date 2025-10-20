@@ -1613,6 +1613,144 @@ textarea {
             height: 20px;
         }
         
+        /* Minimize button */
+        .minimize-button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+        
+        .minimize-button:hover {
+            background-color: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+        
+        .minimize-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        /* Header buttons container */
+        .header-buttons {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        /* Hamburger menu button */
+        .hamburger-button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: var(--transition);
+            margin-right: 12px;
+        }
+        
+        .hamburger-button:hover {
+            background-color: rgba(118, 185, 0, 0.2);
+            color: var(--accent-primary);
+        }
+        
+        .hamburger-button svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        /* Dropdown menu */
+        .dropdown-menu {
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            min-width: 200px;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(-10px);
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        
+        .dropdown-menu.show {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: all;
+        }
+        
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 16px;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 14px;
+            transition: var(--transition);
+            text-align: left;
+        }
+        
+        .dropdown-item:first-child {
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .dropdown-item:last-child {
+            border-radius: 0 0 8px 8px;
+        }
+        
+        .dropdown-item:hover {
+            background-color: rgba(118, 185, 0, 0.1);
+            color: var(--accent-primary);
+        }
+        
+        .dropdown-item svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+        
+        .dropdown-item span {
+            flex: 1;
+        }
+        
+        /* Dropdown divider */
+        .dropdown-divider {
+            height: 1px;
+            background-color: var(--border-color);
+            margin: 8px 0;
+        }
+        
+        /* Dropdown version info */
+        .dropdown-version {
+            padding: 12px 16px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-style: italic;
+            user-select: none;
+        }
+        
+        .dropdown-version span {
+            opacity: 0.7;
+        }
+        
         /* Debug console */
         .debug-console {
             position: fixed;
@@ -1662,19 +1800,48 @@ textarea {
 </head>
 <body>
     <header>
+        <button class="hamburger-button" id="hamburgerButton" title="Menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
         <h1>G-Assist</h1>
-        <button class="settings-button" id="settingsToggle" title="Settings">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m-1 1l-4.2 4.2M23 12h-6m-6 0H1m18.2 5.2l-4.2-4.2m-1-1l-4.2-4.2"></path>
-            </svg>
-        </button>
-        <button class="close-button" id="closeButton" title="Close (or press Ctrl+Q)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-        </button>
+        <div class="header-buttons">
+            <button class="minimize-button" id="minimizeButton" title="Minimize">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button class="close-button" id="closeButton" title="Close (or press Ctrl+Q)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="dropdown-menu" id="dropdownMenu">
+            <button class="dropdown-item" id="settingsMenuItem">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>Settings</span>
+            </button>
+            <button class="dropdown-item" id="exportMenuItem">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Export Chat</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-version">
+                <span>Version 0.0.2</span>
+            </div>
+        </div>
     </header>
     <div class="debug-info" id="debugInfo" title="Click to toggle debug console">Debug (F12)</div>
     <div class="debug-console" id="debugConsole"></div>
@@ -1815,7 +1982,6 @@ textarea {
             const statusText = document.getElementById('status');
             const statusDot = document.getElementById('statusDot');
             const statusBar = document.getElementById('status');
-            const settingsToggle = document.getElementById('settingsToggle');
             const settingsPane = document.querySelector('.settings-pane');
             const settingsBackdrop = document.getElementById('settingsBackdrop');
             const thinkingToggle = document.getElementById('thinkingToggle');
@@ -1846,10 +2012,32 @@ textarea {
                 settingsBackdrop.classList.toggle('hidden');
             }
             
-            settingsToggle.addEventListener('click', toggleSettings);
-            
             // Close settings when clicking backdrop
             settingsBackdrop.addEventListener('click', toggleSettings);
+            
+            // Minimize button functionality
+            const minimizeButton = document.getElementById('minimizeButton');
+            if (minimizeButton) {
+                console.log('Minimize button found, adding event listener');
+                minimizeButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Minimize button clicked!');
+                    
+                    // For pywebview desktop mode
+                    if (window.pywebview && window.pywebview.api) {
+                        console.log('Calling pywebview.api.minimize_app()');
+                        try {
+                            window.pywebview.api.minimize_app();
+                        } catch (error) {
+                            console.error('Error calling minimize_app:', error);
+                        }
+                    } else {
+                        console.log('Minimize not available in browser mode');
+                    }
+                });
+            } else {
+                console.error('Minimize button not found!');
+            }
             
             // Close button functionality
             const closeButton = document.getElementById('closeButton');
@@ -1876,6 +2064,162 @@ textarea {
                 });
             } else {
                 console.error('Close button not found!');
+            }
+            
+            // Hamburger menu functionality
+            const hamburgerButton = document.getElementById('hamburgerButton');
+            const dropdownMenu = document.getElementById('dropdownMenu');
+            const settingsMenuItem = document.getElementById('settingsMenuItem');
+            const exportMenuItem = document.getElementById('exportMenuItem');
+            
+            if (hamburgerButton && dropdownMenu) {
+                console.log('Hamburger menu found, adding event listener');
+                
+                hamburgerButton.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    dropdownMenu.classList.toggle('show');
+                    console.log('Hamburger menu toggled:', dropdownMenu.classList.contains('show'));
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!hamburgerButton.contains(e.target) && !dropdownMenu.contains(e.target)) {
+                        dropdownMenu.classList.remove('show');
+                    }
+                });
+                
+                // Settings menu item - opens settings pane
+                if (settingsMenuItem) {
+                    settingsMenuItem.addEventListener('click', function() {
+                        dropdownMenu.classList.remove('show');
+                        toggleSettings();
+                    });
+                }
+                
+                // Export menu item - export chat history
+                if (exportMenuItem) {
+                    exportMenuItem.addEventListener('click', function() {
+                        dropdownMenu.classList.remove('show');
+                        exportChatHistory();
+                    });
+                }
+            }
+            
+            // Export chat history function
+            function exportChatHistory() {
+                const messagesDiv = document.getElementById('messages');
+                if (!messagesDiv) return;
+                
+                const messages = messagesDiv.querySelectorAll('.message');
+                const chatHistory = [];
+                
+                messages.forEach(msg => {
+                    const senderElem = msg.querySelector('.sender');
+                    const messageContent = msg.querySelector('.message-content');
+                    
+                    if (!senderElem || !messageContent) return;
+                    
+                    const senderText = senderElem.textContent.trim().toLowerCase();
+                    
+                    // Map sender to OpenAI format roles
+                    // Sender text format: "You: ", "G-Assist: ", "System: "
+                    let role = 'user';
+                    if (senderText.startsWith('you')) {
+                        role = 'user';
+                    } else if (senderText.startsWith('g-assist')) {
+                        role = 'assistant';
+                    } else if (senderText.startsWith('system')) {
+                        role = 'system';
+                    }
+                    
+                    // Extract content with thinking blocks preserved
+                    let content = '';
+                    
+                    // Check for thinking blocks in the entire message content
+                    const thinkingBlocks = messageContent.querySelectorAll('.thinking-block');
+                    
+                    if (thinkingBlocks.length > 0) {
+                        // Message has thinking blocks - preserve them with tags
+                        thinkingBlocks.forEach(thinkBlock => {
+                            const thinkContent = thinkBlock.textContent.trim();
+                            // Skip the "💭 Thinking..." header if present
+                            const actualContent = thinkContent.replace(/^💭\s*Thinking\.\.\./, '').trim();
+                            if (actualContent) {
+                                content += '<think>\n' + actualContent + '\n</think>\n\n';
+                            }
+                        });
+                        
+                        // Extract ONLY text nodes and non-thinking-block elements from .text
+                        const textElem = messageContent.querySelector('.text');
+                        if (textElem) {
+                            let regularText = '';
+                            
+                            function extractTextExcludingThinkingBlocks(node) {
+                                for (const child of node.childNodes) {
+                                    if (child.nodeType === Node.TEXT_NODE) {
+                                        // Plain text node - include it
+                                        regularText += child.textContent;
+                                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                                        // Element node - check if it's a thinking-block
+                                        if (child.classList && child.classList.contains('thinking-block')) {
+                                            // Skip thinking blocks entirely
+                                            continue;
+                                        } else {
+                                            // For other elements (code blocks, etc), recurse into them
+                                            extractTextExcludingThinkingBlocks(child);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            extractTextExcludingThinkingBlocks(textElem);
+                            const trimmed = regularText.trim();
+                            if (trimmed) {
+                                content += trimmed;
+                            }
+                        }
+                    } else {
+                        // No thinking blocks - just get text content
+                        const textElem = messageContent.querySelector('.text');
+                        content = textElem ? textElem.textContent.trim() : '';
+                    }
+                    
+                    // Skip system welcome message
+                    if (senderText.startsWith('system') && content.includes('Welcome to G-Assist')) {
+                        return;
+                    }
+                    
+                    if (content) {
+                        chatHistory.push({
+                            role: role,
+                            content: content
+                        });
+                    }
+                });
+                
+                console.log('Exporting chat history:', chatHistory.length, 'messages');
+                
+                // Check if running in pywebview desktop mode
+                if (window.pywebview && window.pywebview.api) {
+                    // Use Python API to save with file dialog
+                    const jsonData = JSON.stringify(chatHistory);
+                    window.pywebview.api.save_chat_history(jsonData).then(result => {
+                        console.log('Save result:', result);
+                    });
+                } else {
+                    // Browser mode - use download link
+                    const jsonData = JSON.stringify(chatHistory, null, 2);
+                    const blob = new Blob([jsonData], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+                    a.download = `gassist-chat-${timestamp}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
             }
             
             // Ctrl+Q keyboard shortcut for closing
@@ -2627,6 +2971,15 @@ def start_desktop_mode():
         def __init__(self, window_ref):
             self.window = window_ref
             
+        def minimize_app(self):
+            """Minimize the application window"""
+            try:
+                if self.window:
+                    self.window.minimize()
+                return "Window minimized"
+            except Exception as e:
+                return f"Error minimizing: {str(e)}"
+        
         def close_app(self):
             """Close the application window"""
             import sys
@@ -2638,6 +2991,59 @@ def start_desktop_mode():
                 pass
             # Then exit the application
             sys.exit(0)
+        
+        def save_chat_history(self, chat_data):
+            """Save chat history to a file with a save dialog"""
+            try:
+                from datetime import datetime
+                import json
+                import os
+                
+                # Generate default filename with timestamp
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                default_filename = f"gassist-chat-{timestamp}.json"
+                
+                # Get user's Documents folder as default directory
+                documents_dir = os.path.expanduser('~/Documents')
+                
+                # Open file save dialog
+                result = self.window.create_file_dialog(
+                    webview.SAVE_DIALOG,
+                    directory=documents_dir,
+                    save_filename=default_filename,
+                    file_types=('JSON Files (*.json)',)
+                )
+                
+                # result can be None, a string, or a tuple
+                if result:
+                    # Handle different return types
+                    if isinstance(result, tuple) or isinstance(result, list):
+                        file_path = result[0] if len(result) > 0 else None
+                    else:
+                        file_path = result
+                    
+                    if file_path:
+                        # Ensure .json extension
+                        if not file_path.endswith('.json'):
+                            file_path += '.json'
+                        
+                        # Parse and save the chat data
+                        chat_obj = json.loads(chat_data)
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            json.dump(chat_obj, f, indent=2, ensure_ascii=False)
+                        
+                        print(f"[Python] Chat history saved to: {file_path}")
+                        print(f"[Python] Saved {len(chat_obj)} messages")
+                        return f"Saved {len(chat_obj)} messages to:\n{file_path}"
+                    else:
+                        return "No file path selected"
+                else:
+                    return "Save cancelled"
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"[Python] Error saving file: {error_details}")
+                return f"Error saving file: {str(e)}"
         
         def open_devtools(self):
             """Open developer tools"""
