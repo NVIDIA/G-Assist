@@ -1963,7 +1963,7 @@ textarea {
             </button>
             <div class="dropdown-divider"></div>
             <div class="dropdown-version">
-                <span>Version 0.0.2</span>
+                <span>Version 0.0.3</span>
             </div>
         </div>
     </header>
