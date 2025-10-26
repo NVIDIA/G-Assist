@@ -24,21 +24,21 @@ Make sure you have:
      - "Desktop development with C++"
      - "Python development" (optional, but recommended)
    
-   💡 **Tip**: This option is best if you plan to do any development work
+   **Tip**: This option is best if you plan to do any development work
 
 2. **Option 2: Visual C++ Runtime Only**
    - Download the x64 version from Microsoft: [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
    - Install it before running any G-Assist Python applications
    - Restart your computer if needed
 
-   💡 **Tip**: Choose this option if you only need to run the application
+   **Tip**: Choose this option if you only need to run the application
 
 3. **Python Requirements**
 ```bash
 pip install -r requirements.txt
 ```
 
-💡 **Tip**: The "Could not find module" error often means Visual C++ components are missing or need to be updated.
+**Tip**: The "Could not find module" error often means Visual C++ components are missing or need to be updated.
 
 ## Getting Started
 
@@ -106,36 +106,107 @@ if __name__ == "__main__":
     main()
 ```
 
-## G-Assist Sample GUI
+## G-Assist Desktop GUI
 
-Transform your G-Assist experience with our modern chat interface! This sample application provides a sleek, desktop-ready GUI for interacting with G-Assist.
+Experience G-Assist through our modern, native desktop application! This GUI connects directly to the Python bindings for maximum performance and real-time streaming responses.
 
 ### Features
-- Modern, dark-themed interface
-- Real-time chat interactions
-- Live status indicators
-- Easy to use and customize
+- Modern, dark-themed interface with NVIDIA branding
+- **Real-time streaming responses** - see text as it's generated
+- **Thinking mode** with animated bubbles showing AI reasoning
+- **Voice input support** via WAV file upload
+- **TTFT (Time To First Token) metrics** displayed for every response
+- **Native desktop experience** using pywebview (no browser required)
+- Chat history export to JSON
+- Customizable settings (microphone, system prompts)
 
-### Running the GUI
+### Quick Start
+
+#### Development Mode
 ```bash
 # Install required packages
 pip install .
 
 # Launch the application
-python rise-gui.py
+python rise-gui-desktop-direct.py
 ```
 
-💡 **Tip**: The GUI will automatically open in your default web browser. If it doesn't, navigate to `http://localhost:5000` manually.
+#### Building Standalone Executable
+```bash
+# Build the executable (includes all dependencies)
+python build_desktop_direct.py
+
+# Run the built application
+.\dist_direct\G-Assist-Direct.exe
+```
+
+### Architecture
+
+The desktop GUI uses a **direct binding architecture** for optimal performance:
+
+```
+┌─────────────────────────────┐
+│  rise-gui-desktop-direct.py │  ← Main Application
+│  (Python + HTML/CSS/JS)     │
+└──────────────┬──────────────┘
+               │ Direct API calls
+               ↓
+┌─────────────────────────────┐
+│   rise.py (Python Binding)  │  ← Python Wrapper
+└──────────────┬──────────────┘
+               │ ctypes
+               ↓
+┌─────────────────────────────┐
+│  python_binding.dll (C++)   │  ← Native Bridge
+└──────────────┬──────────────┘
+               │ NVAPI
+               ↓
+┌─────────────────────────────┐
+│      RISE Engine (C++)      │  ← G-Assist Core
+└─────────────────────────────┘
+```
+
+**Key Benefits:**
+- **Zero network overhead** - No Flask server, no HTTP requests
+- **True streaming** - Text appears instantly as the AI generates it
+- **Low latency** - Direct function calls via pywebview's JavaScript bridge
+- **Single process** - Everything runs in one efficient desktop application
 
 ### Requirements
-- Node.js (for full Electron experience)
-- Modern web browser
-- Python packages from requirements.txt
+- Python 3.x with packages from requirements.txt
+- pywebview (automatically installed)
+- Modern Windows OS (Windows 10/11)
+- Visual C++ Runtime (see installation section above)
 
-If Node.js is not installed, the application will fall back to a simplified browser interface automatically.
+### UI Features
 
-## Sample Output
-![G-Assist GUI Output Example](rise-gui-example.png)
+#### Real-Time Streaming
+Watch responses appear word-by-word as the AI generates them - no waiting for complete responses!
+
+#### Thinking Mode
+Enable "Thinking Mode" from the + menu to see the AI's reasoning process in formatted bubbles.
+
+#### TTFT Metrics
+Every response displays its Time To First Token (TTFT) - the critical latency metric showing how quickly the AI starts responding.
+
+Example: `TTFT: 0.234s`
+
+#### Voice Input
+Click the + button and select "Load WAV File" to transcribe and process audio input.
+
+**Tip**: The GUI automatically handles microphone detection and will show available options in Settings.
+
+## Screenshots
+
+### Desktop GUI in Action
+![G-Assist Desktop GUI](rise-gui-example.png)
+
+**What you'll see:**
+- Dark-themed chat interface with NVIDIA green accents
+- Real-time streaming responses with thinking bubbles
+- TTFT metrics displayed below each response
+- Microphone icon and input controls at the bottom
+- Hamburger menu for settings and options
 
 ## Troubleshooting Tips
 - **Commands not working?** Make sure G-Assist core services are running

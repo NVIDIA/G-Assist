@@ -51,6 +51,7 @@ class NV_RISE_CONTENT_TYPE(IntEnum):
     - PROGRESS_UPDATE: Progress information
     - READY: System ready status
     - DOWNLOAD_REQUEST: Download initiation
+    - RESERVED: Reserved for experimental features (e.g., streaming ASR PoC)
     """
     NV_RISE_CONTENT_TYPE_INVALID = 0
     NV_RISE_CONTENT_TYPE_TEXT = 1
@@ -61,6 +62,8 @@ class NV_RISE_CONTENT_TYPE(IntEnum):
     NV_RISE_CONTENT_TYPE_PROGRESS_UPDATE = 6
     NV_RISE_CONTENT_TYPE_READY = 7
     NV_RISE_CONTENT_TYPE_DOWNLOAD_REQUEST = 8
+    NV_RISE_CONTENT_TYPE_UPDATE_INFO = 9
+    NV_RISE_CONTENT_TYPE_RESERVED = 10  # Reserved for experimental features (streaming ASR PoC)
 
 
 class NV_CLIENT_CALLBACK_SETTINGS_SUPER_V1(ctypes.Structure):
@@ -129,7 +132,9 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
         chunk = data.content.decode('utf-8')
-        response += chunk
+        # For text responses: accumulate all chunks
+        if chunk:
+            response += chunk  # APPEND chunks, don't replace
         print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
@@ -281,6 +286,138 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
 
     except AttributeError as e:
         print(f"An error occurred: {e}")
+        return None
+
+
+def send_audio_chunk(audio_base64: str, chunk_id: int, sample_rate: int = 16000) -> Optional[dict]:
+    """
+    Send an audio chunk to the engine for streaming ASR (PoC).
+    
+    Uses NV_RISE_CONTENT_TYPE_RESERVED with base64-encoded audio data.
+    Content format: "<chunk_id>:<sample_rate>:<base64_pcm_data>"
+    
+    Args:
+        audio_base64: Base64-encoded PCM audio data
+        chunk_id: Sequential chunk number
+        sample_rate: Sample rate of the audio (Hz)
+        
+    Returns:
+        Optional[dict]: The response from RISE (may contain partial ASR result)
+    """
+    global nvapi, response_done, response
+    
+    try:
+        # Format: "CHUNK:<id>:<sample_rate>:<base64_data>"
+        payload = f"CHUNK:{chunk_id}:{sample_rate}:{audio_base64}"
+        
+        content = NV_REQUEST_RISE_SETTINGS_V1()
+        content.content = payload.encode('utf-8')
+        content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
+        content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
+        content.completed = 0  # Not completed - more chunks coming
+        
+        print(f'[ASR_POC] Sending chunk {chunk_id} via nvapi.request_rise()...', flush=True)
+        ret = nvapi.request_rise(content)
+        if ret != 0:
+            print(f'[ASR_POC] Send audio chunk {chunk_id} failed with error {ret}', flush=True)
+            return None
+        
+        print(f'[ASR_POC] Chunk {chunk_id} sent successfully, waiting for response...', flush=True)
+        
+        # Wait for response from engine/SURA (no timeout - wait as long as needed)
+        # Engine blocks on SURA's response, so we must wait for full round-trip
+        wait_start = time.time()
+        while not response_done:
+            time.sleep(0.01)
+            elapsed = time.time() - wait_start
+            if elapsed > 5.0 and int(elapsed) % 5 == 0:  # Log every 5 seconds if waiting too long
+                print(f'[ASR_POC] Still waiting for chunk {chunk_id} response... ({elapsed:.1f}s)', flush=True)
+        
+        wait_time = time.time() - wait_start
+        
+        response_done = False
+        chunk_response = response
+        response = ''
+        
+        response_preview = chunk_response[:100] if chunk_response else '(empty)'
+        print(f'[ASR_POC] Chunk {chunk_id} response received after {wait_time:.3f}s: "{response_preview}"', flush=True)
+        
+        return {'chunk_response': chunk_response}
+        
+    except Exception as e:
+        print(f"[ASR_POC] Error sending audio chunk: {e}")
+        return None
+
+
+def send_audio_stop() -> Optional[dict]:
+    """
+    Send stop signal to finalize audio recording session.
+    
+    Uses NV_RISE_CONTENT_TYPE_RESERVED with "STOP:" content.
+    
+    Returns:
+        Optional[dict]: The final response from RISE
+    """
+    global nvapi, response_done, response
+    
+    try:
+        content = NV_REQUEST_RISE_SETTINGS_V1()
+        content.content = b"STOP:"
+        content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
+        content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
+        content.completed = 0
+        
+        ret = nvapi.request_rise(content)
+        if ret != 0:
+            print(f'[ASR_POC] Send audio stop failed with {ret}')
+            return None
+        
+        # Wait for final response (increased timeout for final transcription)
+        # Note: Engine sends multiple callback batches for STOP:
+        # 1. Empty ACKs (first response_done)
+        # 2. ASR_INTERIM with full transcription
+        # 3. ASR_FINAL with full transcription
+        # We MUST wait for ASR_FINAL specifically!
+        timeout = 10.0  # Longer timeout for final transcription
+        start_time = time.time()
+        max_wait_after_final = 0.5  # Wait 500ms after receiving ASR_FINAL to ensure no more updates
+        
+        last_final_time = None
+        final_response = ''
+        interim_response = ''
+        
+        while (time.time() - start_time) < timeout:
+            if response_done:
+                # Got a completed message - check if it has text
+                if response:
+                    if 'ASR_FINAL:' in response:
+                        # Got the FINAL transcription - this is what we want!
+                        final_response = response
+                        last_final_time = time.time()
+                        print(f"[ASR_POC] Got ASR_FINAL text: {response[:100]}...", flush=True)
+                    elif 'ASR_INTERIM:' in response:
+                        # Got interim - keep it as backup but keep waiting for FINAL
+                        interim_response = response
+                        print(f"[ASR_POC] Got ASR_INTERIM text (waiting for FINAL): {response[:100]}...", flush=True)
+                
+                # Reset for next batch
+                response_done = False
+            
+            # If we got ASR_FINAL and waited long enough, we're done
+            if last_final_time and (time.time() - last_final_time) > max_wait_after_final:
+                break
+            
+            time.sleep(0.01)
+        
+        # Use final response if available, otherwise fall back to interim
+        result = final_response if final_response else interim_response
+        
+        response = ''  # Clear for next request
+        
+        return {'final_response': result}
+        
+    except Exception as e:
+        print(f"[ASR_POC] Error sending audio stop: {e}")
         return None
 
 
