@@ -132,10 +132,17 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
         chunk = data.content.decode('utf-8')
-        # For text responses: accumulate all chunks
+        # For ASR responses: REPLACE (don't accumulate) since each callback is a complete message
+        # For LLM responses: APPEND (accumulate chunks)
         if chunk:
-            response += chunk  # APPEND chunks, don't replace
-        print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
+            if chunk.startswith('ASR_'):
+                # ASR responses are complete messages - replace, don't append
+                response = chunk
+                print(f"[Callback] ASR response received at {time.time():.3f}: '{chunk[:100]}...' (completed={data.completed})", flush=True)
+            else:
+                # LLM responses are chunked - append
+                response += chunk
+                print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
     
@@ -361,6 +368,11 @@ def send_audio_stop() -> Optional[dict]:
     global nvapi, response_done, response
     
     try:
+        # CRITICAL: Clear response buffer before sending STOP
+        # This prevents accumulation of previous interim responses
+        response = ''
+        response_done = False
+        
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = b"STOP:"
         content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
@@ -372,6 +384,8 @@ def send_audio_stop() -> Optional[dict]:
             print(f'[ASR_POC] Send audio stop failed with {ret}')
             return None
         
+        print(f"[ASR_POC] STOP command sent at {time.time():.3f}", flush=True)
+        
         # Wait for final response (increased timeout for final transcription)
         # Note: Engine sends multiple callback batches for STOP:
         # 1. Empty ACKs (first response_done)
@@ -380,9 +394,7 @@ def send_audio_stop() -> Optional[dict]:
         # We MUST wait for ASR_FINAL specifically!
         timeout = 10.0  # Longer timeout for final transcription
         start_time = time.time()
-        max_wait_after_final = 0.5  # Wait 500ms after receiving ASR_FINAL to ensure no more updates
         
-        last_final_time = None
         final_response = ''
         interim_response = ''
         
@@ -393,8 +405,10 @@ def send_audio_stop() -> Optional[dict]:
                     if 'ASR_FINAL:' in response:
                         # Got the FINAL transcription - this is what we want!
                         final_response = response
-                        last_final_time = time.time()
-                        print(f"[ASR_POC] Got ASR_FINAL text: {response[:100]}...", flush=True)
+                        elapsed = time.time() - start_time
+                        print(f"[ASR_POC] Got ASR_FINAL text after {elapsed:.3f}s: {response[:100]}...", flush=True)
+                        # Exit immediately - no need to wait for more updates
+                        break
                     elif 'ASR_INTERIM:' in response:
                         # Got interim - keep it as backup but keep waiting for FINAL
                         interim_response = response
@@ -402,10 +416,6 @@ def send_audio_stop() -> Optional[dict]:
                 
                 # Reset for next batch
                 response_done = False
-            
-            # If we got ASR_FINAL and waited long enough, we're done
-            if last_final_time and (time.time() - last_final_time) > max_wait_after_final:
-                break
             
             time.sleep(0.01)
         

@@ -174,17 +174,30 @@ class DesktopAPI:
     def send_audio_stop(self):
         """Send stop signal - DIRECT API"""
         try:
+            import time
+            python_start = time.time()
             stop_result = rise.send_audio_stop()
+            python_got_result = time.time()
             
             response_data = {}
             if stop_result and 'final_response' in stop_result:
                 final_text = stop_result['final_response'].strip()
+                logger.info(f"[DIRECT] send_audio_stop() received: '{final_text}'")
+                
                 if final_text:
                     if final_text.startswith("ASR_FINAL:"):
-                        response_data['final_text'] = final_text[len("ASR_FINAL:"):].strip()
+                        stripped = final_text[len("ASR_FINAL:"):].strip()
+                        response_data['final_text'] = stripped
+                        logger.info(f"[DIRECT] Returning final_text: '{stripped}'")
                     elif final_text.startswith("ASR_INTERIM:"):
-                        response_data['final_text'] = final_text[len("ASR_INTERIM:"):].strip()
+                        stripped = final_text[len("ASR_INTERIM:"):].strip()
+                        response_data['final_text'] = stripped
+                        logger.info(f"[DIRECT] Returning final_text (from interim): '{stripped}'")
+                    else:
+                        logger.warning(f"[DIRECT] No ASR prefix found in: '{final_text}'")
             
+            python_return = time.time()
+            logger.info(f"[DIRECT] Python processing time: {(python_return - python_got_result)*1000:.1f}ms (total: {(python_return - python_start)*1000:.1f}ms)")
             return response_data
         except Exception as e:
             logger.error(f"[DIRECT] Stop error: {e}")
@@ -211,6 +224,12 @@ class DesktopAPI:
         """Start streaming message to RISE - runs in background thread"""
         try:
             logger.info(f"[DIRECT] Starting streaming message: {message[:50]}...")
+            
+            # CRITICAL: Reset global rise module variables BEFORE starting thread!
+            # Otherwise JavaScript polling sees stale response_done=True from previous request
+            rise.response_done = False
+            rise.response = ""
+            rise.chart = ""
             
             # Reset streaming state and track start time
             import time
@@ -1773,13 +1792,20 @@ def get_html():
             }
             
             return promise.then(function() {
+                console.log('[DIRECT] Before STOP - messageInput.value: "' + messageInput.value + '"');
+                // Store the last interim text to show immediately
+                var lastInterimText = messageInput.value;
                 return window.pywebview.api.send_audio_stop();
             }).then(function(finalResult) {
-            if (finalResult && finalResult.final_text) {
-                messageInput.value = finalResult.final_text;
-                messageInput.style.height = 'auto';
-                messageInput.style.height = messageInput.scrollHeight + 'px';
-                    console.log('[DIRECT] Final: "' + finalResult.final_text + '"');
+                var jsReceiveTime = Date.now();
+                console.log('[DIRECT] JS received finalResult at ' + jsReceiveTime + ':', finalResult);
+                if (finalResult && finalResult.final_text) {
+                    console.log('[DIRECT] Setting messageInput.value to: "' + finalResult.final_text + '"');
+                    messageInput.value = finalResult.final_text;
+                    messageInput.style.height = 'auto';
+                    messageInput.style.height = messageInput.scrollHeight + 'px';
+                    var jsDisplayTime = Date.now();
+                    console.log('[DIRECT] UI updated at ' + jsDisplayTime + ' (delay: ' + (jsDisplayTime - jsReceiveTime) + 'ms)');
                 }
             });
         };
@@ -1977,7 +2003,7 @@ def get_html():
                 // Handle <think>...</think> blocks
                 // First, handle complete blocks
                 var completeMatches = 0;
-                html = html.replace(/&lt;think&gt;([\s\S]*?)&lt;\/think&gt;/g, function(match, content) {
+                html = html.replace(/&lt;think&gt;([\\s\\S]*?)&lt;\\/think&gt;/g, function(match, content) {
                     completeMatches++;
                     console.log('Found complete think block #' + completeMatches);
                     return '<div class="thinking-bubble"><strong>💭 THINKING:</strong><pre>' + content + '</pre></div>';
@@ -1988,7 +2014,7 @@ def get_html():
                 // If streaming, handle incomplete <think> blocks (no closing tag yet)
                 if (isStreaming) {
                     console.log('Checking for incomplete think blocks...');
-                    html = html.replace(/(&lt;think&gt;)([\s\S]*?)$/g, function(match, openTag, content) {
+                    html = html.replace(/(&lt;think&gt;)([\\s\\S]*?)$/g, function(match, openTag, content) {
                         // Only format if there's no closing tag after this
                         if (!content.includes('&lt;/think&gt;')) {
                             console.log('Found incomplete think block with content length:', content.length);
@@ -2000,7 +2026,7 @@ def get_html():
                 
                 // Detect and wrap JSON objects/arrays in code blocks
                 // Match {...} or [...]
-                html = html.replace(/(\{[\s\S]*?\}|\[[\s\S]*?\])/g, function(match) {
+                html = html.replace(/(\\{[\\\\s\\\\S]*?\\}|\\[[\\\\s\\\\S]*?\\])/g, function(match) {
                     // Only wrap if it looks like valid JSON (contains colons for objects or is an array)
                     if (match.includes(':') || match.startsWith('[')) {
                         return '<pre><code>' + match + '</code></pre>';
