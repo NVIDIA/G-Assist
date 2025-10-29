@@ -1,0 +1,50 @@
+# Build artifacts
+x64/
+Debug/
+Release/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.log
+*.tlog
+*.lastbuildstate
+
+# Visual Studio user files
+*.user
+*.suo
+*.sdf
+*.opensdf
+.vs/
+
+# Build directories
+[Bb]in/
+[Oo]bj/
+
+# Intermediate files
+*.ipch
+*.aps
+*.ncb
+*.opendb
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# NuGet
+packages/
+*.nupkg
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NVAPI files (these should be copied by user)
+# Uncomment if you don't want to track these in git
+# nvapi.h
+# nvapi64.lib
+
