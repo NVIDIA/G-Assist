@@ -1,0 +1,17 @@
+pywebview>=4.0.0
+# USB Audio support is handled through browser WebRTC APIs
+# No additional Python packages needed for USB microphone detection
+# All USB-specific logic is implemented in JavaScript within the webview
+
+# IMPORTANT: For microphone support on Windows, you need:
+# 1. Microsoft Edge WebView2 Runtime installed
+#    Download: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+# 2. OR use a modern browser (Chrome, Firefox, Edge) directly
+# 
+# If you see "microphones are not supported in this browser":
+# - Install Edge WebView2 Runtime
+# - Restart the application
+# - Check that pywebview is using Edge WebView2, not Internet Explorer
+#
+# DIAGNOSTIC TOOL: Run this to check compatibility:
+# python check_webview_compatibility.py

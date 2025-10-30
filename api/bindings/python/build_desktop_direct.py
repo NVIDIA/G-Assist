@@ -38,7 +38,7 @@ for item in ["build_direct", "dist_direct", "*.spec"]:
 # Build with minimal dependencies
 print("\nBuilding...")
 cmd = [
-    "pyinstaller",
+    sys.executable, "-m", "PyInstaller",
     "--name=G-Assist-Direct",
     "--onefile",
     "--noconsole",

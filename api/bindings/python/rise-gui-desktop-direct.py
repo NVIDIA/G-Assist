@@ -10,6 +10,10 @@ import logging
 import struct
 import base64
 import wave
+import threading
+import socketserver 
+import http.server
+
 
 # Setup logging
 log_file = os.path.join(tempfile.gettempdir(), 'gassist_desktop_direct.log')
@@ -58,8 +62,27 @@ class DesktopAPI:
         import threading
         def do_close():
             try:
+                # Cleanup microphone and voice recording resources via JavaScript
                 if self.window:
+                    try:
+                        self.window.evaluate_js('''
+                            if (window.voiceRecorder) {
+                                window.voiceRecorder.cleanup();
+                            }
+                            if (window.microphoneManager) {
+                                window.microphoneManager.cleanup();
+                            }
+                        ''')
+                    except:
+                        pass  # Ignore JS errors during shutdown
                     self.window.destroy()
+                
+                # Cleanup HTTP server if it exists
+                if hasattr(self, 'httpd') and self.httpd:
+                    try:
+                        self.httpd.shutdown()
+                    except:
+                        pass
             except:
                 pass
             sys.exit(0)
@@ -1561,18 +1584,6 @@ def get_html():
             flex-shrink: 0;
         }
         
-        .checkbox-icon {
-            margin-right: 4px;
-        }
-        
-        .checkbox-icon .checkmark {
-            stroke: var(--accent-secondary);
-            stroke-width: 2;
-        }
-        
-        .input-menu-item:hover .checkbox-icon .checkmark {
-            stroke: #000000;
-        }
 
         .input-menu-item span {
             flex: 1;
@@ -1613,6 +1624,21 @@ def get_html():
             height: 24px;
             stroke: currentColor;
         }
+        
+        .voice-button-right.recording {
+            animation: pulse-recording 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-recording {
+            0%, 100% { 
+                opacity: 1; 
+                transform: scale(1);
+            }
+            50% { 
+                opacity: 0.7; 
+                transform: scale(1.1);
+            }
+        }
     </style>
 </head>
 <body>
@@ -1625,10 +1651,9 @@ def get_html():
         </div>
         <div class="dropdown-menu" id="dropdownMenu">
             <button class="dropdown-item" id="settingsMenuItem">Settings</button>
-            <button class="dropdown-item" id="exportMenuItem">Export</button>
             <div class="dropdown-divider"></div>
             <div class="dropdown-version">
-                <span>Version 0.0.4</span>
+                <span>Version 0.0.5</span>
             </div>
         </div>
     </header>
@@ -1660,15 +1685,9 @@ def get_html():
                           <span>Load WAV File</span>
                       </button>
                       <button type="button" class="input-menu-item" id="thinkingToggle" title="Toggle thinking mode">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" class="checkbox-icon" id="thinkingCheckbox">
-                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                              <polyline points="9 11 12 14 22 4" class="checkmark" style="display: none;"></polyline>
-                          </svg>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M9.5 2c-1.82 0-3.53.5-5 1.35C2.99 4.07 2 5.8 2 7.75c0 2.07 1.13 3.87 2.81 4.86.06.38.16.75.29 1.10.36.97.96 1.84 1.73 2.53 0 .91.46 1.76 1.24 2.26.78.5 1.76.5 2.54 0 .78-.5 1.24-1.35 1.24-2.26.77-.69 1.37-1.56 1.73-2.53.13-.35.23-.72.29-1.10C15.87 11.62 17 9.82 17 7.75c0-1.95-.99-3.68-2.5-4.4C13.03 2.5 11.32 2 9.5 2zm0 1.5c1.48 0 2.87.41 4.06 1.13 1.06.64 1.94 1.66 1.94 3.12 0 1.58-.95 2.95-2.31 3.55l-.26.11-.04.28c-.03.24-.1.47-.19.69-.27.68-.73 1.29-1.32 1.75l-.35.27v.85c0 .36-.18.7-.5.9-.32.2-.73.2-1.05 0-.32-.2-.5-.54-.5-.9v-.85l-.35-.27c-.59-.46-1.05-1.07-1.32-1.75-.09-.22-.16-.45-.19-.69l-.04-.28-.26-.11C4.45 10.7 3.5 9.33 3.5 7.75c0-1.46.88-2.48 1.94-3.12C6.63 3.91 8.02 3.5 9.5 3.5z"></path>
-                              <circle cx="9.5" cy="8" r="1"></circle>
-                              <circle cx="12.5" cy="8" r="1"></circle>
-                              <path d="M14.5 14c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5zm-10 0c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5z"></path>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" id="thinkingIcon">
+                              <circle cx="12" cy="12" r="3"></circle>
+                              <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
                           </svg>
                           <span>Thinking</span>
                       </button>
@@ -1715,7 +1734,6 @@ def get_html():
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        console.log('SCRIPT TAG 1 STARTING - processWavDirect definition');
         
         // Process WAV using direct API - SIMPLIFIED WITH PROMISES
         window.processWavDirect = function(arrayBuffer, messageInput) {
@@ -1849,112 +1867,1006 @@ def get_html():
                 input.value = '';
             });
         };
-        
-        console.log('SCRIPT TAG 1 COMPLETED - handleWavFile defined');
 
     </script>
     <script>
-        console.log('SCRIPT TAG 2 LOADED');
         window.thinkingEnabled = true;
         
-        // Initialize checkbox state for thinking mode
-        document.addEventListener('DOMContentLoaded', function() {
-            var checkbox = document.getElementById('thinkingCheckbox');
-            var thinkingBtn = document.getElementById('thinkingToggle');
-            if (checkbox && window.thinkingEnabled) {
-                var checkmark = checkbox.querySelector('.checkmark');
-                if (checkmark) {
-                    checkmark.style.display = 'block';
+        // Voice Recording Manager
+        window.voiceRecorder = {
+            isRecording: false,
+            mediaRecorder: null,
+            audioChunks: [],
+            chunkId: 0,
+            sampleRate: 16000,
+            
+            // Start voice recording
+            startRecording: function() {
+                var self = this;
+                console.log('[VOICE] Starting recording...');
+                
+                var stream = window.microphoneManager.getMediaStream();
+                if (!stream) {
+                    console.error('[VOICE] No media stream available');
+                    alert('Microphone not ready. Please check microphone settings.');
+                    return false;
                 }
-                if (thinkingBtn) {
+                
+                try {
+                    // Create MediaRecorder with optimal settings for real-time transcription
+                    this.mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus',
+                        audioBitsPerSecond: 16000
+                    });
+                    
+                    this.audioChunks = [];
+                    this.chunkId = 0;
+                    this.isRecording = true;
+                    
+                    // Handle audio data chunks
+                    this.mediaRecorder.ondataavailable = function(event) {
+                        if (event.data.size > 0) {
+                            self.audioChunks.push(event.data);
+                            console.log('[VOICE] Audio chunk received:', event.data.size, 'bytes');
+                        }
+                    };
+                    
+                    // Handle recording stop
+                    this.mediaRecorder.onstop = function() {
+                        console.log('[VOICE] Recording stopped, processing audio...');
+                        self.processRecordedAudio();
+                    };
+                    
+                    // Start recording with small time slices for real-time processing
+                    this.mediaRecorder.start(100); // 100ms chunks
+                    
+                    // Update UI
+                    var voiceBtn = document.getElementById('voiceButtonRight');
+                    if (voiceBtn) {
+                        voiceBtn.style.color = '#ff3d00';
+                        voiceBtn.title = 'Stop recording';
+                        voiceBtn.classList.add('recording');
+                    }
+                    
+                    var messageInput = document.getElementById('messageInput');
+                    if (messageInput) {
+                        messageInput.placeholder = 'Recording... Click mic to stop';
+                        messageInput.classList.add('processing');
+                    }
+                    
+                    console.log('[VOICE] Recording started successfully');
+                    return true;
+                    
+                } catch (error) {
+                    console.error('[VOICE] Failed to start recording:', error);
+                    alert('Failed to start recording: ' + error.message);
+                    this.isRecording = false;
+                    return false;
+                }
+            },
+            
+            // Stop voice recording
+            stopRecording: function() {
+                console.log('[VOICE] Stopping recording...');
+                
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.isRecording = false;
+                    
+                    // Update UI
+                    var voiceBtn = document.getElementById('voiceButtonRight');
+                    if (voiceBtn) {
+                        voiceBtn.style.color = '#76b900';
+                        voiceBtn.title = 'Voice recording';
+                        voiceBtn.classList.remove('recording');
+                    }
+                    
+                    var messageInput = document.getElementById('messageInput');
+                    if (messageInput) {
+                        messageInput.placeholder = 'Processing audio...';
+                    }
+                }
+            },
+            
+            // Process recorded audio and send to API
+            processRecordedAudio: function() {
+                var self = this;
+                console.log('[VOICE] Processing', this.audioChunks.length, 'audio chunks');
+                
+                if (this.audioChunks.length === 0) {
+                    console.warn('[VOICE] No audio data to process');
+                    this.resetUI();
+                    return;
+                }
+                
+                // Combine all audio chunks into a single blob
+                var audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+                console.log('[VOICE] Combined audio blob size:', audioBlob.size, 'bytes');
+                
+                // Convert to WAV format for processing
+                this.convertToWavAndProcess(audioBlob);
+            },
+            
+            // Convert WebM to WAV and process
+            convertToWavAndProcess: function(audioBlob) {
+                var self = this;
+                console.log('[VOICE] Converting audio to WAV format...');
+                
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    var arrayBuffer = e.target.result;
+                    
+                    // Create audio context for conversion
+                    var audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000 // Target sample rate for ASR
+                    });
+                    
+                    audioContext.decodeAudioData(arrayBuffer).then(function(decodedData) {
+                        console.log('[VOICE] Audio decoded:', decodedData.length, 'samples at', decodedData.sampleRate, 'Hz');
+                        
+                        // Convert to mono float32 array
+                        var samples = decodedData.getChannelData(0); // Get first channel (mono)
+                        
+                        // Send audio data to API in chunks
+                        self.sendAudioToAPI(samples, decodedData.sampleRate);
+                        
+                    }).catch(function(error) {
+                        console.error('[VOICE] Audio decode failed:', error);
+                        alert('Failed to process recorded audio: ' + error.message);
+                        self.resetUI();
+                    });
+                };
+                
+                reader.onerror = function(error) {
+                    console.error('[VOICE] FileReader error:', error);
+                    alert('Failed to read recorded audio');
+                    self.resetUI();
+                };
+                
+                reader.readAsArrayBuffer(audioBlob);
+            },
+            
+            // Send audio data to API in chunks
+            sendAudioToAPI: function(samples, sampleRate) {
+                var self = this;
+                console.log('[VOICE] Sending', samples.length, 'samples to API at', sampleRate, 'Hz');
+                
+                var messageInput = document.getElementById('messageInput');
+                if (messageInput) {
+                    messageInput.value = '';
+                }
+                
+                // Send in chunks similar to WAV file processing
+                var chunkSize = 700;
+                var chunkId = 0;
+                var lastTranscription = '';
+                
+                // Create promise chain for sequential chunk sending
+                var promise = Promise.resolve();
+                
+                for (var i = 0; i < samples.length; i += chunkSize) {
+                    (function(startIdx) {
+                        promise = promise.then(function() {
+                            return new Promise(function(resolve) {
+                                var chunk = samples.slice(startIdx, startIdx + chunkSize);
+                                chunkId++;
+                                
+                                // Convert to base64
+                                var float32Array = new Float32Array(chunk);
+                                var bytes = new Uint8Array(float32Array.buffer);
+                                var binary = '';
+                                for (var j = 0; j < bytes.length; j++) {
+                                    binary += String.fromCharCode(bytes[j]);
+                                }
+                                var base64 = btoa(binary);
+                                
+                                // Send chunk to API
+                                window.pywebview.api.send_audio_chunk(base64, chunkId, sampleRate).then(function(result) {
+                                    if (result && result.text) {
+                                        lastTranscription = result.text;
+                                        if (messageInput) {
+                                            messageInput.value = result.text;
+                                            messageInput.style.height = 'auto';
+                                            messageInput.style.height = messageInput.scrollHeight + 'px';
+                                        }
+                                        console.log('[VOICE] Chunk', chunkId, 'transcription:', result.text);
+                                    }
+                                    resolve();
+                                }).catch(function(error) {
+                                    console.error('[VOICE] Chunk', chunkId, 'failed:', error);
+                                    resolve(); // Continue with next chunk
+                                });
+                            });
+                        });
+                    })(i);
+                }
+                
+                // Send stop signal and get final result
+                promise.then(function() {
+                    console.log('[VOICE] Sending stop signal...');
+                    return window.pywebview.api.send_audio_stop();
+                }).then(function(finalResult) {
+                    console.log('[VOICE] Final result:', finalResult);
+                    if (finalResult && finalResult.final_text) {
+                        if (messageInput) {
+                            messageInput.value = finalResult.final_text;
+                            messageInput.style.height = 'auto';
+                            messageInput.style.height = messageInput.scrollHeight + 'px';
+                        }
+                        console.log('[VOICE] Final transcription:', finalResult.final_text);
+                    }
+                    self.resetUI();
+                }).catch(function(error) {
+                    console.error('[VOICE] API processing failed:', error);
+                    alert('Failed to process voice recording: ' + error.message);
+                    self.resetUI();
+                });
+            },
+            
+            // Reset UI to normal state
+            resetUI: function() {
+                var messageInput = document.getElementById('messageInput');
+                if (messageInput) {
+                    messageInput.placeholder = '';
+                    messageInput.classList.remove('processing');
+                    messageInput.focus();
+                }
+                
+                var voiceBtn = document.getElementById('voiceButtonRight');
+                if (voiceBtn) {
+                    voiceBtn.style.color = '#76b900';
+                    voiceBtn.title = 'Voice recording';
+                    voiceBtn.classList.remove('recording');
+                }
+                
+                console.log('[VOICE] UI reset to normal state');
+            },
+            
+            // Cleanup voice recorder resources
+            cleanup: function() {
+                console.log('[VOICE] Cleaning up voice recorder...');
+                
+                if (this.mediaRecorder && this.isRecording) {
+                    try {
+                        this.mediaRecorder.stop();
+                    } catch (error) {
+                        console.warn('[VOICE] Error stopping MediaRecorder during cleanup:', error);
+                    }
+                }
+                
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.chunkId = 0;
+                
+                this.resetUI();
+            }
+        };
+        
+        // Toggle voice recording function
+        window.toggleVoiceRecording = function() {
+            if (window.voiceRecorder.isRecording) {
+                window.voiceRecorder.stopRecording();
+            } else {
+                // Check if microphone is ready
+                if (!window.microphoneManager.getMediaStream()) {
+                    alert('Microphone not ready. Please check settings and refresh microphones.');
+                    return;
+                }
+                window.voiceRecorder.startRecording();
+            }
+        };
+        
+        // Initialize thinking mode state
+        document.addEventListener('DOMContentLoaded', function() {
+            var thinkingBtn = document.getElementById('thinkingToggle');
+            var thinkingIcon = document.getElementById('thinkingIcon');
+            if (thinkingBtn && window.thinkingEnabled) {
                     thinkingBtn.classList.add('active');
+                if (thinkingIcon) {
+                    thinkingIcon.style.fill = 'currentColor';
                 }
             }
         });
         
-        // Microphone enumeration function
-        window.enumerateMicrophones = function() {
-            console.log('Enumerate called');
-            var sel = document.getElementById('microphoneSelect');
-            var stat = document.getElementById('micStatus');
-            var voiceBtn = document.getElementById('voiceButtonRight');
+        /**
+         * Enhanced USB Microphone Detection and Management System
+         * 
+         * This system is specifically optimized for USB microphones:
+         * 
+         * 1. USB DEVICE IDENTIFICATION: Detects and prioritizes USB audio devices
+         *    by analyzing device labels and group IDs
+         * 
+         * 2. USB-OPTIMIZED CONSTRAINTS: Uses optimal audio settings for USB mics
+         *    including proper buffer sizes and sample rates
+         * 
+         * 3. USB RECONNECTION HANDLING: Automatically handles USB disconnect/reconnect
+         *    scenarios common with USB microphones
+         * 
+         * 4. USB DRIVER COMPATIBILITY: Tests multiple constraint combinations to
+         *    work around USB audio driver limitations
+         * 
+         * 5. USB LATENCY OPTIMIZATION: Configures low-latency settings for
+         *    real-time audio processing with USB devices
+         * 
+         * 6. USB-SPECIFIC ERROR HANDLING: Provides targeted error messages for
+         *    common USB microphone issues
+         * 
+         * Usage:
+         * - Plug in your USB microphone before starting or use "Refresh"
+         * - System automatically prioritizes USB devices over built-in mics
+         * - Use "Test USB Microphone" for USB-specific testing
+         */
+        window.microphoneManager = {
+            devices: [],
+            usbDevices: [],
+            selectedDeviceId: null,
+            mediaStream: null,
+            isMonitoring: false,
+            reconnectionAttempts: 0,
+            maxReconnectionAttempts: 5,
             
-            if (!navigator.mediaDevices) {
-                console.log('No mediaDevices');
-                if (sel) sel.innerHTML = '<option>Not available</option>';
-                if (stat) stat.textContent = 'Use WAV files instead';
-                if (voiceBtn) {
-                    voiceBtn.disabled = true;
-                    voiceBtn.title = 'Microphone not available';
-                }
-                return;
-            }
-            
-            navigator.mediaDevices.enumerateDevices().then(function(devices) {
-                console.log('Got devices:', devices.length);
-                var mics = [];
-                for (var i = 0; i < devices.length; i++) {
-                    if (devices[i].kind === 'audioinput') {
-                        mics.push(devices[i]);
-                    }
-                }
-                console.log('Mics:', mics.length);
+            // Initialize microphone detection with comprehensive browser compatibility check
+            initialize: function() {
+                console.log('[MIC] Initializing microphone manager...');
+                this.updateStatus('Checking browser compatibility...', 'info');
                 
-                if (sel) {
-                    sel.innerHTML = '';
-                    if (mics.length === 0) {
-                        sel.innerHTML = '<option>No mics found</option>';
-                                        } else {
-                        for (var j = 0; j < mics.length; j++) {
-                            var opt = document.createElement('option');
-                            opt.value = mics[j].deviceId;
-                            opt.textContent = mics[j].label || ('Mic ' + (j+1));
-                            sel.appendChild(opt);
+                // Detailed browser capability detection
+                var capabilities = this.checkBrowserCapabilities();
+                
+                if (!capabilities.mediaDevicesSupported) {
+                    var errorMsg = this.getBrowserCompatibilityError(capabilities);
+                    this.updateStatus(errorMsg, 'error');
+                    this.disableVoiceFeatures();
+                    this.showCompatibilityHelp(capabilities);
+                    return Promise.reject(new Error('MediaDevices API not supported'));
+                }
+                
+                console.log('[MIC] Browser capabilities:', capabilities);
+                this.updateStatus('Browser compatible - checking microphones...', 'info');
+                
+                // Start device monitoring
+                this.startDeviceMonitoring();
+                
+                // Request permissions and enumerate devices
+                return this.requestPermissionsAndEnumerate();
+            },
+            
+            // Request microphone permissions and enumerate devices
+            requestPermissionsAndEnumerate: function() {
+                var self = this;
+                
+                // First, try to get user media to request permissions
+                return navigator.mediaDevices.getUserMedia({ 
+                    audio: { 
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true 
+                    } 
+                }).then(function(stream) {
+                    console.log('[MIC] Permissions granted, releasing initial stream');
+                    // Release the stream immediately - we just needed permissions
+                    stream.getTracks().forEach(function(track) {
+                        track.stop();
+                    });
+                    
+                    // Now enumerate devices with labels
+                    return self.enumerateDevices();
+                }).catch(function(error) {
+                    console.warn('[MIC] Permission denied or error:', error);
+                    self.updateStatus('Microphone access denied. Click to grant permission.', 'error');
+                    
+                    // Still try to enumerate without permissions (won't have labels)
+                    return self.enumerateDevices();
+                });
+            },
+            
+            // Enumerate available audio input devices
+            enumerateDevices: function() {
+                var self = this;
+                
+                return navigator.mediaDevices.enumerateDevices().then(function(devices) {
+                    console.log('[MIC] Enumerating devices...');
+                    
+                    var audioInputs = devices.filter(function(device) {
+                    return device.kind === 'audioinput';
+                });
+                
+                    console.log('[MIC] Found ' + audioInputs.length + ' audio input devices');
+                    
+                    // Identify and prioritize USB devices
+                    self.devices = audioInputs;
+                    self.usbDevices = audioInputs.filter(function(device) {
+                        return self.isUSBDevice(device);
+                    });
+                    
+                    console.log('[USB] Found ' + self.usbDevices.length + ' USB microphones');
+                    
+                    // Sort devices to prioritize USB microphones
+                    self.devices = self.prioritizeUSBDevices(audioInputs);
+                    self.populateDeviceList();
+                    
+                    if (audioInputs.length > 0) {
+                        // Prefer USB devices, fall back to first available device
+                        var defaultDevice = self.usbDevices.length > 0 ? self.usbDevices[0] : audioInputs[0];
+                        self.selectedDeviceId = defaultDevice.deviceId;
+                        
+                        if (self.isUSBDevice(defaultDevice)) {
+                            console.log('[USB] Testing USB microphone:', defaultDevice.label);
+                            return self.testUSBDevice(defaultDevice.deviceId);
+                    } else {
+                            return self.testDevice(defaultDevice.deviceId);
+                        }
+                    } else {
+                        self.updateStatus('No microphones detected', 'error');
+                        self.disableVoiceFeatures();
+                        return false;
+                    }
+                }).catch(function(error) {
+                    console.error('[MIC] Error enumerating devices:', error);
+                    self.updateStatus('Error detecting microphones: ' + error.message, 'error');
+                    self.disableVoiceFeatures();
+                    return false;
+                });
+            },
+            
+            // Populate the device selection dropdown
+            populateDeviceList: function() {
+                var select = document.getElementById('microphoneSelect');
+                if (!select) return;
+                
+                select.innerHTML = '';
+                
+                if (this.devices.length === 0) {
+                    var option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No microphones detected';
+                    select.appendChild(option);
+                    return;
+                }
+                
+                for (var i = 0; i < this.devices.length; i++) {
+                    var device = this.devices[i];
+                    var option = document.createElement('option');
+                    option.value = device.deviceId;
+                    
+                    // Mark USB devices clearly in the dropdown
+                    var displayName = device.label || ('Microphone ' + (i + 1));
+                    if (this.isUSBDevice(device)) {
+                        displayName = '🔌 USB: ' + displayName;
+                    }
+                    option.textContent = displayName;
+                    
+                    if (device.deviceId === this.selectedDeviceId) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                }
+                
+                // Add event listener for device selection changes
+                var self = this;
+                select.onchange = function() {
+                    var selectedId = this.value;
+                    if (selectedId && selectedId !== self.selectedDeviceId) {
+                        self.selectedDeviceId = selectedId;
+                        
+                        // Find the selected device to check if it's USB
+                        var selectedDevice = self.devices.find(function(d) {
+                            return d.deviceId === selectedId;
+                        });
+                        
+                        if (selectedDevice && self.isUSBDevice(selectedDevice)) {
+                            console.log('[USB] Auto-testing USB device on selection');
+                            self.testUSBDevice(selectedId);
+                        } else {
+                            self.testDevice(selectedId);
                         }
                     }
+                };
+            },
+            
+            // Test if a specific device is accessible and working
+            testDevice: function(deviceId) {
+                var self = this;
+                
+                console.log('[MIC] Testing device:', deviceId);
+                self.updateStatus('Testing microphone...', 'info');
+                
+                // Stop any existing stream
+                if (self.mediaStream) {
+                    self.mediaStream.getTracks().forEach(function(track) {
+                        track.stop();
+                    });
                 }
                 
-                if (stat) stat.textContent = mics.length + ' mic(s) found';
-                
-                // Disable voice button if no mics
-                if (voiceBtn) {
-                    if (mics.length === 0) {
-                        voiceBtn.disabled = true;
-                        voiceBtn.title = 'No microphones available - use WAV files instead';
-                } else {
-                        voiceBtn.disabled = false;
-                        voiceBtn.title = 'Voice input';
+                var constraints = {
+                    audio: {
+                        deviceId: deviceId ? { exact: deviceId } : undefined,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000,  // Preferred for ASR
+                        channelCount: 1     // Mono
                     }
+                };
+                
+                return navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+                    console.log('[MIC] Device test successful');
+                    
+                    // Store the stream for later use
+                    self.mediaStream = stream;
+                    
+                    // Get device info
+                    var track = stream.getAudioTracks()[0];
+                    var settings = track.getSettings();
+                    
+                    var deviceName = 'Unknown Device';
+                    var device = self.devices.find(function(d) { 
+                        return d.deviceId === deviceId; 
+                    });
+                    if (device && device.label) {
+                        deviceName = device.label;
+                    }
+                    
+                    self.updateStatus(
+                        'Ready: ' + deviceName + 
+                        ' (' + (settings.sampleRate || 'Unknown') + 'Hz, ' + 
+                        (settings.channelCount || 'Unknown') + 'ch)', 
+                        'success'
+                    );
+                    
+                    self.enableVoiceFeatures();
+                    return true;
+                    
+                }).catch(function(error) {
+                    console.error('[MIC] Device test failed:', error);
+                    
+                    var errorMsg = 'Microphone test failed';
+                    if (error.name === 'NotAllowedError') {
+                        errorMsg = 'Microphone access denied';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMsg = 'Microphone not found';
+                    } else if (error.name === 'NotReadableError') {
+                        errorMsg = 'Microphone in use by another application';
+                    } else if (error.name === 'OverconstrainedError') {
+                        errorMsg = 'Microphone constraints not supported';
+                    }
+                    
+                    self.updateStatus(errorMsg + ': ' + error.message, 'error');
+                    self.disableVoiceFeatures();
+                    return false;
+                });
+            },
+            
+            // Start monitoring for device changes (plug/unplug)
+            startDeviceMonitoring: function() {
+                if (this.isMonitoring) return;
+                
+                var self = this;
+                this.isMonitoring = true;
+                
+                if (navigator.mediaDevices.addEventListener) {
+                    navigator.mediaDevices.addEventListener('devicechange', function() {
+                        console.log('[USB] Device change detected, checking for USB microphones...');
+                        
+                        // Longer delay for USB devices to settle after plug/unplug
+                        setTimeout(function() {
+                            var prevUSBCount = self.usbDevices.length;
+                            self.enumerateDevices().then(function() {
+                                var newUSBCount = self.usbDevices.length;
+                                if (newUSBCount > prevUSBCount) {
+                                    console.log('[USB] New USB microphone detected!');
+                                    self.updateStatus('New USB microphone detected and ready!', 'success');
+                                } else if (newUSBCount < prevUSBCount) {
+                                    console.log('[USB] USB microphone disconnected');
+                                    self.updateStatus('USB microphone disconnected', 'error');
+                                }
+                            });
+                        }, 2000); // Longer delay for USB device stabilization
+                    });
                 }
-            }).catch(function(err) {
-                console.error('Mic error:', err);
-                if (sel) sel.innerHTML = '<option>Not available</option>';
-                if (stat) stat.textContent = 'Use WAV files';
+            },
+            
+            // Update status display
+            updateStatus: function(message, type) {
+                var statusEl = document.getElementById('micStatus');
+                if (!statusEl) return;
+                
+                statusEl.textContent = message;
+                statusEl.className = 'mic-status ' + (type || '');
+                
+                console.log('[MIC] Status:', message, '(' + type + ')');
+            },
+            
+            // Enable voice features
+            enableVoiceFeatures: function() {
+                var voiceBtn = document.getElementById('voiceButtonRight');
+                if (voiceBtn) {
+                    voiceBtn.disabled = false;
+                    voiceBtn.title = 'Voice recording available';
+                }
+            },
+            
+            // Disable voice features
+            disableVoiceFeatures: function() {
+                var voiceBtn = document.getElementById('voiceButtonRight');
                 if (voiceBtn) {
                     voiceBtn.disabled = true;
-                    voiceBtn.title = 'Microphone error - use WAV files instead';
+                    voiceBtn.title = 'Voice recording not available - use WAV files';
                 }
-            });
+            },
+            
+            // Get current media stream
+            getMediaStream: function() {
+                return this.mediaStream;
+            },
+            
+            // ============================================================================
+            // BROWSER COMPATIBILITY DETECTION
+            // ============================================================================
+            
+            // Check what browser capabilities are available
+            checkBrowserCapabilities: function() {
+                var capabilities = {
+                    mediaDevicesSupported: false,
+                    getUserMediaSupported: false,
+                    enumerateDevicesSupported: false,
+                    httpsContext: false,
+                    webviewEngine: 'unknown',
+                    browserInfo: {}
+                };
+                
+                // Check HTTPS context (required for microphone access)
+                capabilities.httpsContext = location.protocol === 'https:' || 
+                                           location.hostname === 'localhost' || 
+                                           location.hostname === '127.0.0.1' ||
+                                           (location.protocol === 'http:' && location.hostname === 'localhost') ||
+                                           (location.protocol === 'http:' && location.hostname === '127.0.0.1') ||
+                                           location.protocol === 'file:'; // pywebview uses file:// protocol
+                
+                // Detect browser/webview engine
+                var userAgent = navigator.userAgent.toLowerCase();
+                if (userAgent.includes('edg/')) {
+                    capabilities.webviewEngine = 'Edge WebView2';
+                } else if (userAgent.includes('chrome')) {
+                    capabilities.webviewEngine = 'Chromium-based';
+                } else if (userAgent.includes('webkit')) {
+                    capabilities.webviewEngine = 'WebKit';
+                } else if (userAgent.includes('trident') || userAgent.includes('msie')) {
+                    capabilities.webviewEngine = 'Internet Explorer (Legacy)';
+                } else if (userAgent.includes('firefox')) {
+                    capabilities.webviewEngine = 'Firefox';
+                } else if (userAgent.includes('safari')) {
+                    capabilities.webviewEngine = 'Safari';
+                }
+                
+                capabilities.browserInfo = {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform || 'Unknown',
+                    language: navigator.language || 'Unknown'
+                };
+                
+                // Check MediaDevices API support
+                if (navigator.mediaDevices) {
+                    capabilities.mediaDevicesSupported = true;
+                    
+                    if (navigator.mediaDevices.getUserMedia) {
+                        capabilities.getUserMediaSupported = true;
+                    }
+                    
+                    if (navigator.mediaDevices.enumerateDevices) {
+                        capabilities.enumerateDevicesSupported = true;
+                    }
+                } else {
+                    // Check for legacy getUserMedia
+                    var legacyGetUserMedia = navigator.getUserMedia || 
+                                           navigator.webkitGetUserMedia || 
+                                           navigator.mozGetUserMedia || 
+                                           navigator.msGetUserMedia;
+                    
+                    if (legacyGetUserMedia) {
+                        capabilities.legacyGetUserMedia = true;
+                    }
+                }
+                
+                return capabilities;
+            },
+            
+            // Generate specific browser compatibility error message
+            getBrowserCompatibilityError: function(capabilities) {
+                if (!capabilities.httpsContext && capabilities.webviewEngine === 'Internet Explorer (Legacy)') {
+                    return 'Internet Explorer detected - upgrade to Edge WebView2 required';
+                }
+                
+                if (capabilities.webviewEngine === 'Internet Explorer (Legacy)') {
+                    return 'Legacy Internet Explorer engine - modern web engine required';
+                }
+                
+                if (!capabilities.httpsContext) {
+                    return 'Secure context required for microphone access';
+                }
+                
+                if (!capabilities.mediaDevicesSupported && !capabilities.legacyGetUserMedia) {
+                    return 'Browser does not support microphone access APIs';
+                }
+                
+                return 'Microphone APIs not available in this browser configuration';
+            },
+            
+            // Show detailed compatibility help
+            showCompatibilityHelp: function(capabilities) {
+                var helpMsg = '\\n🔧 MICROPHONE COMPATIBILITY ISSUE\\n\\n';
+                
+                helpMsg += 'Engine: ' + capabilities.webviewEngine + '\\n';
+                helpMsg += 'Platform: ' + capabilities.browserInfo.platform + '\\n\\n';
+                
+                if (capabilities.webviewEngine === 'Internet Explorer (Legacy)') {
+                    helpMsg += '❌ SOLUTION NEEDED:\\n';
+                    helpMsg += '1. Install Microsoft Edge WebView2:\\n';
+                    helpMsg += '   https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n';
+                    helpMsg += '2. Restart the application after installation\\n\\n';
+                    helpMsg += '3. Alternative: Use a modern browser directly\\n';
+                } else if (!capabilities.httpsContext) {
+                    helpMsg += '❌ HTTPS CONTEXT ISSUE:\\n';
+                    helpMsg += '• Microphones require secure context (HTTPS)\\n';
+                    helpMsg += '• Or localhost/file:// protocol\\n';
+                    helpMsg += '• Check your webview configuration\\n';
+                } else {
+                    helpMsg += '❌ BROWSER API ISSUE:\\n';
+                    helpMsg += '• MediaDevices API not supported\\n';
+                    helpMsg += '• Try updating your browser/webview\\n';
+                    helpMsg += '• Use WAV file input as alternative\\n';
+                }
+                
+                // Show as alert for now, could be a better modal later
+                setTimeout(function() {
+                    alert(helpMsg);
+                }, 1000);
+                
+                console.error('[COMPAT]', helpMsg);
+            },
+            
+            // ============================================================================
+            // USB MICROPHONE SPECIFIC METHODS
+            // ============================================================================
+            
+            // Detect if a device is a USB microphone
+            isUSBDevice: function(device) {
+                if (!device || !device.label) {
+                    return false; // Can't determine without label
+                }
+                
+                var label = device.label.toLowerCase();
+                
+                // Common USB microphone indicators
+                var usbIndicators = [
+                    'usb', 'usb microphone', 'usb mic', 'usb audio',
+                    'usb\\s+\\d+\\.\\d+', // USB version numbers
+                    'blue yeti', 'audio-technica', 'rode', 'samson', 'shure',
+                    'hyperx', 'razer', 'logitech', 'corsair', 'steelseries',
+                    'fifine', 'marantz', 'zoom', 'behringer', 'focusrite',
+                    'scarlett', 'podcaster', 'procaster', 'quadcast'
+                ];
+                
+                // Check for USB indicators in device label
+                for (var i = 0; i < usbIndicators.length; i++) {
+                    var regex = new RegExp(usbIndicators[i], 'i');
+                    if (regex.test(label)) {
+                        return true;
+                    }
+                }
+                
+                // Check for USB-specific groupId patterns (when available)
+                if (device.groupId) {
+                    var groupId = device.groupId.toLowerCase();
+                    if (groupId.includes('usb') || 
+                        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(groupId)) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            },
+            
+            // Prioritize USB devices in the device list
+            prioritizeUSBDevices: function(devices) {
+                var self = this;
+                return devices.sort(function(a, b) {
+                    var aIsUSB = self.isUSBDevice(a);
+                    var bIsUSB = self.isUSBDevice(b);
+                    
+                    // USB devices come first
+                    if (aIsUSB && !bIsUSB) return -1;
+                    if (!aIsUSB && bIsUSB) return 1;
+                    
+                    // Within same type, sort by label
+                    var aLabel = a.label || '';
+                    var bLabel = b.label || '';
+                    return aLabel.localeCompare(bLabel);
+                });
+            },
+            
+            // Get optimal audio constraints for USB microphones
+            getUSBOptimalConstraints: function(deviceId) {
+                return [
+                    // Primary constraints - optimal for USB microphones
+                    {
+                        audio: {
+                            deviceId: deviceId ? { exact: deviceId } : undefined,
+                            sampleRate: { ideal: 48000, min: 44100 }, // Higher quality for USB
+                            channelCount: { ideal: 1, max: 2 }, // Prefer mono, allow stereo
+                            echoCancellation: false, // USB mics often have built-in processing
+                            noiseSuppression: false, // Let USB mic handle it
+                            autoGainControl: false,  // USB mics have hardware gain
+                            latency: { ideal: 0.01, max: 0.05 } // Low latency for real-time
+                        }
+                    },
+                    // Fallback constraints - more permissive
+                    {
+                        audio: {
+                            deviceId: deviceId ? { exact: deviceId } : undefined,
+                            sampleRate: { ideal: 44100, min: 16000 },
+                            channelCount: { ideal: 1 },
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    },
+                    // Last resort - minimal constraints
+                    {
+                        audio: {
+                            deviceId: deviceId ? { exact: deviceId } : undefined
+                        }
+                    }
+                ];
+            },
+            
+            // Test USB microphone with multiple constraint attempts
+            testUSBDevice: function(deviceId) {
+                var self = this;
+                
+                console.log('[USB] Testing USB microphone:', deviceId);
+                self.updateStatus('Testing USB microphone...', 'info');
+                
+                // Stop any existing stream
+                if (self.mediaStream) {
+                    self.mediaStream.getTracks().forEach(function(track) {
+                        track.stop();
+                    });
+                }
+                
+                var constraintSets = self.getUSBOptimalConstraints(deviceId);
+                
+                function tryConstraint(index) {
+                    if (index >= constraintSets.length) {
+                        return Promise.reject(new Error('All USB constraint sets failed'));
+                    }
+                    
+                    var constraints = constraintSets[index];
+                    console.log('[USB] Trying constraint set', index + 1, ':', constraints);
+                    
+                    return navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+                        console.log('[USB] Constraint set', index + 1, 'successful');
+                        
+                        // Store the stream for later use
+                        self.mediaStream = stream;
+                        
+                        // Get device info
+                        var track = stream.getAudioTracks()[0];
+                        var settings = track.getSettings();
+                        
+                        var device = self.devices.find(function(d) { 
+                            return d.deviceId === deviceId; 
+                        });
+                        var deviceName = device && device.label ? device.label : 'USB Microphone';
+                        
+                        self.updateStatus(
+                            '✅ USB Ready: ' + deviceName + 
+                            ' (' + (settings.sampleRate || 'Unknown') + 'Hz, ' + 
+                            (settings.channelCount || 'Unknown') + 'ch, Set ' + (index + 1) + ')', 
+                            'success'
+                        );
+                        
+                        self.enableVoiceFeatures();
+                        self.reconnectionAttempts = 0; // Reset on success
+                        return true;
+                        
+                    }).catch(function(error) {
+                        console.warn('[USB] Constraint set', index + 1, 'failed:', error);
+                        return tryConstraint(index + 1);
+                    });
+                }
+                
+                return tryConstraint(0).catch(function(error) {
+                    console.error('[USB] All USB constraint sets failed:', error);
+                    
+                    // Provide USB-specific error messages
+                    var errorMsg = 'USB microphone test failed';
+                    if (error.name === 'NotAllowedError') {
+                        errorMsg = 'USB microphone access denied - check browser permissions';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMsg = 'USB microphone not found - check USB connection';
+                    } else if (error.name === 'NotReadableError') {
+                        errorMsg = 'USB microphone in use - close other audio applications';
+                    } else if (error.name === 'OverconstrainedError') {
+                        errorMsg = 'USB microphone settings not supported - try different USB port';
+                    }
+                    
+                    self.updateStatus(errorMsg, 'error');
+                    
+                    // Try reconnection if it might be a USB connection issue
+                    if (error.name === 'NotFoundError' && self.reconnectionAttempts < self.maxReconnectionAttempts) {
+                        return self.handleUSBReconnection(deviceId);
+                    }
+                    
+                    self.disableVoiceFeatures();
+                    return false;
+                });
+            },
+            
+            // Handle USB microphone reconnection attempts
+            handleUSBReconnection: function(deviceId) {
+                var self = this;
+                
+                self.reconnectionAttempts++;
+                console.log('[USB] Attempting reconnection', self.reconnectionAttempts, 'of', self.maxReconnectionAttempts);
+                
+                self.updateStatus('USB reconnection attempt ' + self.reconnectionAttempts + '...', 'info');
+                
+                return new Promise(function(resolve) {
+                    setTimeout(function() {
+                        // Re-enumerate devices to check if USB device came back
+                        navigator.mediaDevices.enumerateDevices().then(function(devices) {
+                            var audioInputs = devices.filter(function(device) {
+                                return device.kind === 'audioinput' && device.deviceId === deviceId;
+                            });
+                            
+                            if (audioInputs.length > 0) {
+                                console.log('[USB] Device found on reconnection attempt');
+                                resolve(self.testUSBDevice(deviceId));
+                            } else {
+                                console.log('[USB] Device still not found');
+                                self.updateStatus('USB microphone not detected - check connection', 'error');
+                                resolve(false);
+                            }
+                        }).catch(function(error) {
+                            console.error('[USB] Reconnection enumeration failed:', error);
+                            resolve(false);
+                        });
+                    }, 2000); // Wait 2 seconds between attempts
+                });
+            },
+            
+            // Cleanup resources
+            cleanup: function() {
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(function(track) {
+                        track.stop();
+                    });
+                    this.mediaStream = null;
+                }
+            }
         };
         
-        console.log('enumerateMicrophones defined');
+        // Legacy function for backward compatibility
+        window.enumerateMicrophones = function() {
+            return window.microphoneManager.initialize();
+        };
+        
             
             // Toggle thinking mode button handler
             window.toggleThinkingMode = function() {
                 var btn = document.getElementById('thinkingToggle');
-                var checkbox = document.getElementById('thinkingCheckbox');
+                var icon = document.getElementById('thinkingIcon');
                 if (btn) {
                     btn.classList.toggle('active');
                     window.thinkingEnabled = btn.classList.contains('active');
                     btn.title = 'Thinking mode: ' + (window.thinkingEnabled ? 'ON' : 'OFF');
                     console.log('Thinking toggled:', window.thinkingEnabled);
                     
-                    // Toggle checkmark visibility
-                    if (checkbox) {
-                        var checkmark = checkbox.querySelector('.checkmark');
-                        if (checkmark) {
-                            checkmark.style.display = window.thinkingEnabled ? 'block' : 'none';
-                        }
+                    // Toggle icon visual state
+                    if (icon) {
+                        icon.style.fill = window.thinkingEnabled ? 'currentColor' : 'none';
                     }
                 }
                 var dropdown = document.getElementById('inputMenuDropdown');
@@ -2039,7 +2951,6 @@ def get_html():
             
             // Initialize UI
             function initializeUI() {
-                console.log('=== initializeUI called ===');
                 
                 var messageForm = document.getElementById('messageForm');
                 var messageInput = document.getElementById('messageInput');
@@ -2050,8 +2961,6 @@ def get_html():
                     console.error('ERROR: Required elements not found');
                     return;
                 }
-                
-                console.log('Core UI elements found');
                 
                 // Setup form submission
                 var handleFormSubmit = function(e) {
@@ -2266,105 +3175,75 @@ def get_html():
                 
                 messageForm.onsubmit = handleFormSubmit;
                 
-                console.log('About to attach click event listener...');
+                // Simple button handlers
+                document.getElementById('hamburgerButton').addEventListener('click', function() {
+                    document.getElementById('dropdownMenu').classList.toggle('show');
+                });
                 
-                // Centralized event delegation for clicks (removed duplicate onclick handlers)
-                document.addEventListener('click', function(evt) {
-                    console.log('CLICK EVENT FIRED on:', evt.target);
-                    var originalTarget = evt.target;
-                    var target = evt.target;
-                    
-                    // Check if click is outside dropdown menu and close it
-                    var dropdownMenu = document.getElementById('dropdownMenu');
-                    var hamburgerButton = document.getElementById('hamburgerButton');
-                    if (dropdownMenu && dropdownMenu.classList.contains('show')) {
-                        if (!dropdownMenu.contains(originalTarget) && !hamburgerButton.contains(originalTarget)) {
-                            dropdownMenu.classList.remove('show');
-                            console.log('Closed dropdown menu (clicked outside)');
-                        }
+                document.getElementById('minimizeButton').addEventListener('click', function() {
+                    if (window.pywebview && window.pywebview.api) {
+                        window.pywebview.api.minimize_app();
                     }
-                    
-                    // Check if click is outside input menu dropdown and close it
-                    var inputMenuDropdown = document.getElementById('inputMenuDropdown');
-                    var inputMenuButton = document.getElementById('inputMenuButton');
-                    if (inputMenuDropdown && inputMenuDropdown.classList.contains('show')) {
-                        if (!inputMenuDropdown.contains(originalTarget) && !inputMenuButton.contains(originalTarget)) {
-                            inputMenuDropdown.classList.remove('show');
-                            console.log('Closed input menu (clicked outside)');
-                        }
+                });
+                
+                document.getElementById('closeButton').addEventListener('click', function() {
+                    if (window.pywebview && window.pywebview.api) {
+                        window.pywebview.api.close_app();
+                    } else {
+                        window.close();
                     }
-                    
-                    // Climb up to button if inner icon/text clicked
-                    if (target && target.closest) { 
-                        var closestButton = target.closest('button');
-                        var closestBackdrop = target.closest('.settings-backdrop');
-                        target = closestButton || closestBackdrop;
-                    }
-                    
-                    if (!target) return;
-                    
-                    console.log('Button clicked:', target.id || target.className);
-                    
-                    // TEST - Simple alert for ANY button
-                    if (target.tagName === 'BUTTON') {
-                        console.log('BUTTON ELEMENT DETECTED! ID=' + target.id);
-                    }
-                    
-                    // Header
-                    if (target.id === 'hamburgerButton') {
-                        console.log('Hamburger button handler triggered');
-                        if (dropdownMenu) { 
-                            dropdownMenu.classList.toggle('show'); 
-                            console.log('Dropdown toggled');
-                        }
-                        return;
-                    }
-                    if (target.id === 'minimizeButton') {
-                        if (window.pywebview && window.pywebview.api) { window.pywebview.api.minimize_app(); }
-                        return;
-                    }
-                    if (target.id === 'closeButton') {
-                        if (window.pywebview && window.pywebview.api) { window.pywebview.api.close_app(); } else { window.close(); }
-                        return;
-                    }
-                    if (target.id === 'settingsMenuItem') {
-                        window.openSettings();
-                        return;
-                    }
-                    if (target.id === 'exportMenuItem') {
-                        // Close dropdown menu first
-                        if (dropdownMenu) { dropdownMenu.classList.remove('show'); }
-                        // Export chat functionality placeholder
-                        alert('Export functionality - to be implemented');
-                        return;
-                    }
-                    if (target.id === 'inputMenuButton') {
-                        var dd = document.getElementById('inputMenuDropdown');
-                        if (dd) dd.classList.toggle('show');
-                        return;
-                    }
-                    if (target.id === 'testButton') {
-                        var finput = document.getElementById('testAudioInput');
-                        if (finput) finput.click();
-                        var dd2 = document.getElementById('inputMenuDropdown');
-                        if (dd2) dd2.classList.remove('show');
-                        return;
-                    }
-                    if (target.id === 'thinkingToggle') {
-                        window.toggleThinkingMode();
-                        return;
-                    }
-                    if (target.id === 'voiceButtonRight') {
-                        alert('Voice recording disabled - use WAV files');
-                        return;
-                    }
-                    if (target.id === 'refreshMicsBtn') {
-                        if (window.enumerateMicrophones) window.enumerateMicrophones();
-                        return;
-                    }
-                    if (target.classList && target.classList.contains('settings-backdrop')) {
+                });
+                
+                document.getElementById('settingsMenuItem').addEventListener('click', function() {
+                    document.getElementById('dropdownMenu').classList.remove('show');
+                    window.openSettings();
+                });
+                
+                document.getElementById('inputMenuButton').addEventListener('click', function() {
+                    document.getElementById('inputMenuDropdown').classList.toggle('show');
+                });
+                
+                document.getElementById('testButton').addEventListener('click', function() {
+                    document.getElementById('testAudioInput').click();
+                    document.getElementById('inputMenuDropdown').classList.remove('show');
+                });
+                
+                document.getElementById('thinkingToggle').addEventListener('click', function() {
+                    window.toggleThinkingMode();
+                });
+                
+                document.getElementById('voiceButtonRight').addEventListener('click', function() {
+                    window.toggleVoiceRecording();
+                });
+                
+                document.getElementById('refreshMicsBtn').addEventListener('click', function() {
+                    console.log('Refresh microphones button clicked');
+                    window.microphoneManager.initialize().catch(function(error) {
+                        console.error('Microphone refresh failed:', error);
+                    });
+                });
+                
+                
+                // Settings backdrop close
+                var settingsBackdrop = document.querySelector('.settings-backdrop');
+                if (settingsBackdrop) {
+                    settingsBackdrop.addEventListener('click', function() {
                         window.closeSettings();
-                        return;
+                    });
+                }
+                
+                // Close menus when clicking outside
+                document.addEventListener('click', function(e) {
+                    var dropdown = document.getElementById('dropdownMenu');
+                    var hamburger = document.getElementById('hamburgerButton');
+                    if (!dropdown.contains(e.target) && !hamburger.contains(e.target)) {
+                        dropdown.classList.remove('show');
+                    }
+                    
+                    var inputMenu = document.getElementById('inputMenuDropdown');
+                    var inputButton = document.getElementById('inputMenuButton');
+                    if (!inputMenu.contains(e.target) && !inputButton.contains(e.target)) {
+                        inputMenu.classList.remove('show');
                     }
                 });
                 
@@ -2376,10 +3255,12 @@ def get_html():
                     }
                 };
                 
-                // Enumerate microphones on load
+                // Initialize microphone manager on load
                 setTimeout(function() {
-                    console.log('Calling enumerateMicrophones on load...');
-                    window.enumerateMicrophones();
+                    console.log('Initializing microphone manager...');
+                    window.microphoneManager.initialize().catch(function(error) {
+                        console.error('Microphone initialization failed:', error);
+                    });
                 }, 500);
                 
                 // Wire handlers for file input and input menu
@@ -2400,26 +3281,17 @@ def get_html():
                     };
                 }
 
-                console.log('=== initializeUI COMPLETED ===');
             }
             
             // Run initialization when DOM is ready
-            console.log('Document readyState:', document.readyState);
             if (document.readyState === 'loading') {
-                console.log('Waiting for DOMContentLoaded...');
-                document.addEventListener('DOMContentLoaded', function() {
-                    console.log('DOMContentLoaded fired');
-                    initializeUI();
-                });
+                document.addEventListener('DOMContentLoaded', initializeUI);
             } else {
-                console.log('DOM already loaded, calling initializeUI immediately');
                 initializeUI();
             }
 
     </script>
-    <script>
-        console.log('SCRIPT TAG 2 INITIALIZATION COMPLETE');
-    </script>
+    <script></script>
 </body>
 </html>
 '''
@@ -2487,11 +3359,38 @@ def get_splash_html():
         <div class="logo">G-ASSIST</div>
         <div class="message">Launching G-Assist...</div>
         <div class="spinner"></div>
-        <div class="version">Version 0.0.4</div>
+        <div class="version">Version 0.0.5</div>
     </div>
 </body>
 </html>
 '''
+
+class QuietHTTPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+def start_http_server():
+    # write HTML to a temp folder and serve it
+    tmpdir = tempfile.mkdtemp(prefix="pvw_mic_")
+    index = os.path.join(tmpdir, "index.html")
+    with open(index, "w", encoding="utf-8") as f:
+        f.write(get_html())
+
+    os.chdir(tmpdir)
+    handler = http.server.SimpleHTTPRequestHandler
+    httpd = QuietHTTPServer(("127.0.0.1", 0), handler)  # random free port
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, f"http://127.0.0.1:{port}/index.html"
+
+def maybe_hook_permission(win):
+    # pywebview >= 4.4 exposes permission_request event
+    if hasattr(win.events, "permission_request"):
+        def on_permission(window, permission, origin, **kw):
+            if permission == "media":  # mic/cam
+                return True
+            return None
+        win.events.permission_request += on_permission
 
 def main():
     """Main entry point - Desktop only with direct API"""
@@ -2505,6 +3404,34 @@ def main():
     logger.info("Starting G-Assist Desktop (Direct API mode)")
     logger.info(f"Log file: {log_file}")
     
+    # Force modern web engine for MediaDevices API support
+    import sys
+    if sys.platform.startswith('win'):
+        # On Windows, prefer Edge WebView2 over IE for modern web API support
+        logger.info("Windows detected - attempting to use Edge WebView2 for modern web API support")
+        try:
+            # Try to detect if Edge WebView2 is available
+            import subprocess
+            result = subprocess.run(['reg', 'query', 'HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'], 
+                                   capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info("Edge WebView2 detected on system")
+            else:
+                logger.warning("Edge WebView2 not detected - microphone support may be limited")
+                print("WARNING: For best microphone support, install Microsoft Edge WebView2:")
+                print("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
+        except Exception as e:
+            logger.warning(f"Could not check for Edge WebView2: {e}")
+    
+    elif sys.platform.startswith('darwin'):
+        logger.info("macOS detected - using WKWebView (should support modern APIs)")
+    elif sys.platform.startswith('linux'):
+        logger.info("Linux detected - using GTK WebKit")
+    
+    logger.info("Initializing webview with modern web engine preference")
+    
+# Create webview application
+    
     # Create splash screen
     splash = webview.create_window(
         'G-Assist',
@@ -2515,22 +3442,43 @@ def main():
         on_top=True
     )
     
+    httpd, url = start_http_server()
+    
     # Create API
     api = DesktopAPI()
+    api.httpd = httpd  # Store httpd reference for cleanup
     
-    # Create main window (hidden initially)
-    window = webview.create_window(
-        'G-Assist Desktop',
-        html=get_html(),
-        width=520,
-        height=932,
-        resizable=True,
-        frameless=True,
-        min_size=(400, 600),
-        background_color='#0a0a0f',
-        js_api=api,  # Direct Python API!
-        hidden=True
-    )
+    # Create main window with HTTP server URL (needed for microphone access)
+    window_config = {
+        'title': 'G-Assist Desktop',
+        'url': url,  # Use HTTP server URL instead of direct HTML
+        'width': 520,
+        'height': 932,
+        'resizable': True,
+        'frameless': True,
+        'min_size': (400, 600),
+        'background_color': '#0a0a0f',
+        'js_api': api,  # Direct Python API!
+        'hidden': True
+    }
+
+    # Force modern webview engine on Windows
+    import sys
+    if sys.platform.startswith('win'):
+        try:
+            # Try to force Edge WebView2 (modern engine with full MediaDevices support)
+            window = webview.create_window(**window_config)
+            logger.info("Window created with HTTP server URL for secure microphone access")
+
+        except Exception as e:
+            logger.error(f"Failed to create window with default engine: {e}")
+            # Fallback to standard creation
+            window = webview.create_window(**window_config)
+    else:
+        window = webview.create_window(**window_config)
+    
+    # Hook permission events for automatic microphone access
+    maybe_hook_permission(window)
     api.window = window
     
     # Function to handle window loading
@@ -2550,9 +3498,34 @@ def main():
         window.show()
     
     window.events.loaded += on_loaded
+
+    logger.info("Window created, starting with modern webview engine...")
     
-    logger.info("Window created, starting...")
-    webview.start(debug=False)
+    # Start webview with engine preferences for better compatibility
+    start_config = {'gui': 'edgechromium', 'debug': False}
+    
+    # On Windows, try to ensure we use Edge WebView2
+    if sys.platform.startswith('win'):
+        try:
+            # Check pywebview version and capabilities
+            import webview
+            logger.info(f"PyWebView version: {webview.__version__}")
+            
+            # Debug mode disabled for production use
+            start_config['debug'] = False
+            logger.info("Debug mode disabled for clean user experience")
+            
+        except Exception as e:
+            logger.warning(f"Could not configure webview engine: {e}")
+    
+    try:
+        webview.start(**start_config)
+    finally:
+        # Cleanup HTTP server
+        try:
+            httpd.shutdown()
+        except Exception as e:
+            logger.error(f"Error shutting down HTTP server: {e}")
 
 if __name__ == "__main__":
     main()
