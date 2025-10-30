@@ -1872,18 +1872,21 @@ def get_html():
     <script>
         window.thinkingEnabled = true;
         
-        // Voice Recording Manager
+        // Voice Recording Manager - TRUE REAL-TIME STREAMING
         window.voiceRecorder = {
+            audioContext: null,
+            scriptProcessor: null,
+            mediaStreamSource: null,
             isRecording: false,
-            mediaRecorder: null,
-            audioChunks: [],
             chunkId: 0,
             sampleRate: 16000,
+            chunkSize: 700,
+            audioBuffer: [],
             
-            // Start voice recording
+            // Start voice recording with real-time streaming
             startRecording: function() {
                 var self = this;
-                console.log('[VOICE] Starting recording...');
+                console.log('[VOICE] Starting REAL-TIME recording...');
                 
                 var stream = window.microphoneManager.getMediaStream();
                 if (!stream) {
@@ -1893,32 +1896,48 @@ def get_html():
                 }
                 
                 try {
-                    // Create MediaRecorder with optimal settings for real-time transcription
-                    this.mediaRecorder = new MediaRecorder(stream, {
-                        mimeType: 'audio/webm;codecs=opus',
-                        audioBitsPerSecond: 16000
+                    // Create audio context with 16kHz sample rate (optimal for ASR)
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000
                     });
                     
-                    this.audioChunks = [];
+                    console.log('[VOICE] AudioContext created with sample rate:', this.audioContext.sampleRate, 'Hz');
+                    
+                    // Create media stream source from microphone
+                    this.mediaStreamSource = this.audioContext.createMediaStreamSource(stream);
+                    
+                    // Create script processor for real-time audio processing
+                    // Buffer size: 4096 samples = ~256ms @ 16kHz (good balance for responsiveness)
+                    var bufferSize = 4096;
+                    this.scriptProcessor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+                    
                     this.chunkId = 0;
+                    this.audioBuffer = [];
                     this.isRecording = true;
                     
-                    // Handle audio data chunks
-                    this.mediaRecorder.ondataavailable = function(event) {
-                        if (event.data.size > 0) {
-                            self.audioChunks.push(event.data);
-                            console.log('[VOICE] Audio chunk received:', event.data.size, 'bytes');
+                    // Process audio in real-time
+                    this.scriptProcessor.onaudioprocess = function(audioProcessingEvent) {
+                        if (!self.isRecording) return;
+                        
+                        // Get input audio data (mono channel)
+                        var inputBuffer = audioProcessingEvent.inputBuffer;
+                        var inputData = inputBuffer.getChannelData(0);
+                        
+                        // Add to buffer
+                        for (var i = 0; i < inputData.length; i++) {
+                            self.audioBuffer.push(inputData[i]);
+                        }
+                        
+                        // Send chunks when we have enough samples
+                        while (self.audioBuffer.length >= self.chunkSize) {
+                            var chunk = self.audioBuffer.splice(0, self.chunkSize);
+                            self.sendChunkToAPI(chunk);
                         }
                     };
                     
-                    // Handle recording stop
-                    this.mediaRecorder.onstop = function() {
-                        console.log('[VOICE] Recording stopped, processing audio...');
-                        self.processRecordedAudio();
-                    };
-                    
-                    // Start recording with small time slices for real-time processing
-                    this.mediaRecorder.start(100); // 100ms chunks
+                    // Connect audio nodes: microphone -> processor -> destination
+                    this.mediaStreamSource.connect(this.scriptProcessor);
+                    this.scriptProcessor.connect(this.audioContext.destination);
                     
                     // Update UI
                     var voiceBtn = document.getElementById('voiceButtonRight');
@@ -1930,162 +1949,86 @@ def get_html():
                     
                     var messageInput = document.getElementById('messageInput');
                     if (messageInput) {
-                        messageInput.placeholder = 'Recording... Click mic to stop';
+                        messageInput.value = '';
+                        messageInput.placeholder = 'Listening... (live transcription)';
                         messageInput.classList.add('processing');
                     }
                     
-                    console.log('[VOICE] Recording started successfully');
+                    console.log('[VOICE] Real-time streaming started successfully');
                     return true;
                     
                 } catch (error) {
                     console.error('[VOICE] Failed to start recording:', error);
                     alert('Failed to start recording: ' + error.message);
                     this.isRecording = false;
+                    this.cleanup();
                     return false;
                 }
             },
             
-            // Stop voice recording
-            stopRecording: function() {
-                console.log('[VOICE] Stopping recording...');
+            // Send audio chunk to API immediately (no buffering, no delay - naturally at sample rate)
+            sendChunkToAPI: function(chunk) {
+                var self = this;
+                self.chunkId++;
                 
-                if (this.mediaRecorder && this.isRecording) {
-                    this.mediaRecorder.stop();
-                    this.isRecording = false;
-                    
-                    // Update UI
-                    var voiceBtn = document.getElementById('voiceButtonRight');
-                    if (voiceBtn) {
-                        voiceBtn.style.color = '#76b900';
-                        voiceBtn.title = 'Voice recording';
-                        voiceBtn.classList.remove('recording');
-                    }
-                    
-                    var messageInput = document.getElementById('messageInput');
-                    if (messageInput) {
-                        messageInput.placeholder = 'Processing audio...';
-                    }
+                // Convert to base64
+                var float32Array = new Float32Array(chunk);
+                var bytes = new Uint8Array(float32Array.buffer);
+                var binary = '';
+                for (var i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
                 }
+                var base64 = btoa(binary);
+                
+                // Send chunk to API (fire and forget - no waiting, chunks arrive at sample rate naturally)
+                window.pywebview.api.send_audio_chunk(base64, self.chunkId, self.sampleRate).then(function(result) {
+                    if (result && result.text) {
+                        var messageInput = document.getElementById('messageInput');
+                        if (messageInput && self.isRecording) {
+                            messageInput.value = result.text;
+                            messageInput.style.height = 'auto';
+                            messageInput.style.height = messageInput.scrollHeight + 'px';
+                        }
+                        console.log('[VOICE] Chunk', self.chunkId, 'LIVE transcription:', result.text);
+                    }
+                }).catch(function(error) {
+                    console.error('[VOICE] Chunk', self.chunkId, 'failed:', error);
+                });
             },
             
-            // Process recorded audio and send to API
-            processRecordedAudio: function() {
-                var self = this;
-                console.log('[VOICE] Processing', this.audioChunks.length, 'audio chunks');
+            // Stop voice recording
+            stopRecording: function() {
+                console.log('[VOICE] Stopping real-time recording...');
                 
-                if (this.audioChunks.length === 0) {
-                    console.warn('[VOICE] No audio data to process');
-                    this.resetUI();
+                if (!this.isRecording) {
+                    console.warn('[VOICE] Not recording, nothing to stop');
                     return;
                 }
                 
-                // Combine all audio chunks into a single blob
-                var audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
-                console.log('[VOICE] Combined audio blob size:', audioBlob.size, 'bytes');
+                this.isRecording = false;
                 
-                // Convert to WAV format for processing
-                this.convertToWavAndProcess(audioBlob);
-            },
-            
-            // Convert WebM to WAV and process
-            convertToWavAndProcess: function(audioBlob) {
-                var self = this;
-                console.log('[VOICE] Converting audio to WAV format...');
+                // Send any remaining buffered audio
+                if (this.audioBuffer.length > 0) {
+                    console.log('[VOICE] Sending', this.audioBuffer.length, 'remaining samples');
+                    this.sendChunkToAPI(this.audioBuffer);
+                    this.audioBuffer = [];
+                }
                 
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    var arrayBuffer = e.target.result;
-                    
-                    // Create audio context for conversion
-                    var audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                        sampleRate: 16000 // Target sample rate for ASR
-                    });
-                    
-                    audioContext.decodeAudioData(arrayBuffer).then(function(decodedData) {
-                        console.log('[VOICE] Audio decoded:', decodedData.length, 'samples at', decodedData.sampleRate, 'Hz');
-                        
-                        // Convert to mono float32 array
-                        var samples = decodedData.getChannelData(0); // Get first channel (mono)
-                        
-                        // Send audio data to API in chunks
-                        self.sendAudioToAPI(samples, decodedData.sampleRate);
-                        
-                    }).catch(function(error) {
-                        console.error('[VOICE] Audio decode failed:', error);
-                        alert('Failed to process recorded audio: ' + error.message);
-                        self.resetUI();
-                    });
-                };
-                
-                reader.onerror = function(error) {
-                    console.error('[VOICE] FileReader error:', error);
-                    alert('Failed to read recorded audio');
-                    self.resetUI();
-                };
-                
-                reader.readAsArrayBuffer(audioBlob);
-            },
-            
-            // Send audio data to API in chunks
-            sendAudioToAPI: function(samples, sampleRate) {
-                var self = this;
-                console.log('[VOICE] Sending', samples.length, 'samples to API at', sampleRate, 'Hz');
+                // Update UI immediately
+                var voiceBtn = document.getElementById('voiceButtonRight');
+                if (voiceBtn) {
+                    voiceBtn.style.color = '#76b900';
+                    voiceBtn.title = 'Voice recording';
+                    voiceBtn.classList.remove('recording');
+                }
                 
                 var messageInput = document.getElementById('messageInput');
                 if (messageInput) {
-                    messageInput.value = '';
+                    messageInput.placeholder = 'Finalizing transcription...';
                 }
                 
-                // Send in chunks similar to WAV file processing
-                var chunkSize = 700;
-                var chunkId = 0;
-                var lastTranscription = '';
-                
-                // Create promise chain for sequential chunk sending
-                var promise = Promise.resolve();
-                
-                for (var i = 0; i < samples.length; i += chunkSize) {
-                    (function(startIdx) {
-                        promise = promise.then(function() {
-                            return new Promise(function(resolve) {
-                                var chunk = samples.slice(startIdx, startIdx + chunkSize);
-                                chunkId++;
-                                
-                                // Convert to base64
-                                var float32Array = new Float32Array(chunk);
-                                var bytes = new Uint8Array(float32Array.buffer);
-                                var binary = '';
-                                for (var j = 0; j < bytes.length; j++) {
-                                    binary += String.fromCharCode(bytes[j]);
-                                }
-                                var base64 = btoa(binary);
-                                
-                                // Send chunk to API
-                                window.pywebview.api.send_audio_chunk(base64, chunkId, sampleRate).then(function(result) {
-                                    if (result && result.text) {
-                                        lastTranscription = result.text;
-                                        if (messageInput) {
-                                            messageInput.value = result.text;
-                                            messageInput.style.height = 'auto';
-                                            messageInput.style.height = messageInput.scrollHeight + 'px';
-                                        }
-                                        console.log('[VOICE] Chunk', chunkId, 'transcription:', result.text);
-                                    }
-                                    resolve();
-                                }).catch(function(error) {
-                                    console.error('[VOICE] Chunk', chunkId, 'failed:', error);
-                                    resolve(); // Continue with next chunk
-                                });
-                            });
-                        });
-                    })(i);
-                }
-                
-                // Send stop signal and get final result
-                promise.then(function() {
-                    console.log('[VOICE] Sending stop signal...');
-                    return window.pywebview.api.send_audio_stop();
-                }).then(function(finalResult) {
+                // Send STOP signal to finalize transcription
+                window.pywebview.api.send_audio_stop().then(function(finalResult) {
                     console.log('[VOICE] Final result:', finalResult);
                     if (finalResult && finalResult.final_text) {
                         if (messageInput) {
@@ -2095,12 +2038,19 @@ def get_html():
                         }
                         console.log('[VOICE] Final transcription:', finalResult.final_text);
                     }
-                    self.resetUI();
                 }).catch(function(error) {
-                    console.error('[VOICE] API processing failed:', error);
-                    alert('Failed to process voice recording: ' + error.message);
-                    self.resetUI();
+                    console.error('[VOICE] Stop signal failed:', error);
+                }).finally(function() {
+                    // Reset UI
+                    if (messageInput) {
+                        messageInput.placeholder = '';
+                        messageInput.classList.remove('processing');
+                        messageInput.focus();
+                    }
                 });
+                
+                // Cleanup audio nodes
+                this.cleanup();
             },
             
             // Reset UI to normal state
@@ -2124,22 +2074,31 @@ def get_html():
             
             // Cleanup voice recorder resources
             cleanup: function() {
-                console.log('[VOICE] Cleaning up voice recorder...');
+                console.log('[VOICE] Cleaning up audio nodes...');
                 
-                if (this.mediaRecorder && this.isRecording) {
-                    try {
-                        this.mediaRecorder.stop();
-                    } catch (error) {
-                        console.warn('[VOICE] Error stopping MediaRecorder during cleanup:', error);
-                    }
+                // Disconnect and cleanup audio nodes
+                if (this.scriptProcessor) {
+                    this.scriptProcessor.disconnect();
+                    this.scriptProcessor.onaudioprocess = null;
+                    this.scriptProcessor = null;
                 }
                 
-                this.isRecording = false;
-                this.mediaRecorder = null;
-                this.audioChunks = [];
+                if (this.mediaStreamSource) {
+                    this.mediaStreamSource.disconnect();
+                    this.mediaStreamSource = null;
+                }
+                
+                if (this.audioContext) {
+                    this.audioContext.close().catch(function(err) {
+                        console.warn('[VOICE] Error closing AudioContext:', err);
+                    });
+                    this.audioContext = null;
+                }
+                
+                this.audioBuffer = [];
                 this.chunkId = 0;
                 
-                this.resetUI();
+                console.log('[VOICE] Cleanup complete');
             }
         };
         
