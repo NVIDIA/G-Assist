@@ -4,12 +4,34 @@
   "persistent": false,
   "passthrough": true,
   "name": "google",
-  "description": "Ask Google Gemini general queries including but not limited to gaming wiki queries, weather, news, food, etc.",
+  "description": "Google Gemini AI assistant for real-time information, general knowledge, current events, and any non-GPU/gaming queries",
   "functions": [
     {
       "name": "query_gemini",
-      "description": "Support for general queries including but not limited to gaming wiki queries, weather, news, food, etc.",
-      "tags": ["gemini", "google", "chat", "question", "answers", "query", "knowledge", "queries"],
+      "description": "Handles real-time queries (weather, time, date, news, current events), general knowledge questions (facts, definitions, explanations, how-to, trivia), non-gaming topics (movies, sports, science, history, geography, culture), web searches, and any queries outside GPU/gaming domain. Provides up-to-date information with Google Search integration.",
+      "tags": [
+        "gemini", "google", "chat", "question", "questions", "answer", "answers", "query", "queries", "knowledge", "ask",
+        "time", "date", "clock", "timezone", "current time", "what time",
+        "weather", "temperature", "forecast", "climate", "rain", "snow", "sunny", "cloudy",
+        "news", "current events", "today", "latest", "recent", "breaking news", "updates",
+        "search", "find", "lookup", "look up", "google search", "web search", "internet",
+        "what", "how", "when", "where", "why", "who", "which", "explain", "tell me", "define", "definition",
+        "fact", "facts", "information", "info", "trivia", "general knowledge",
+        "movie", "movies", "film", "show", "tv", "series", "entertainment",
+        "sports", "football", "basketball", "soccer", "baseball", "game", "match", "score",
+        "science", "physics", "chemistry", "biology", "math", "mathematics", "equation",
+        "history", "historical", "past", "ancient", "war", "event",
+        "geography", "country", "countries", "city", "cities", "capital", "location", "place",
+        "culture", "language", "translation", "translate",
+        "food", "recipe", "cooking", "restaurant", "eat", "drink",
+        "travel", "trip", "vacation", "hotel", "flight",
+        "health", "medical", "doctor", "medicine", "symptoms",
+        "technology", "tech", "computer", "software", "hardware", "internet",
+        "wiki", "wikipedia", "guide", "tutorial", "help",
+        "about", "regarding", "concerning", "related to",
+        "general", "generic", "miscellaneous", "other", "misc",
+        "conversational", "conversation", "chat", "talk", "discuss"
+      ],
       "properties": {
         "input": {
           "type": "string",
