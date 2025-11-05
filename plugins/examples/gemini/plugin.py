@@ -307,8 +307,8 @@ def open_browser_maximized(url: str) -> bool:
     try:
         import time
         
-        # Open the URL in the default browser
-        webbrowser.open(url)
+        # Open the URL in a new tab of the default browser
+        webbrowser.open_new_tab(url)
         logging.info(f'Opened URL in browser: {url}')
         
         # Give the browser a moment to start
