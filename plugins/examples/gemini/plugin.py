@@ -397,27 +397,27 @@ def execute_initialize_command() -> dict:
         
         # Provide helpful setup message
         setup_message = (
-            "\n🤖 **Welcome to the Gemini Plugin!**\n\n"
+            "\n**Welcome to the Gemini Plugin**\n\n"
             "To get started, you'll need a free Google AI API key.\n\n"
-            "✨ **I've opened TWO windows for you:**\n"
-            "   1️⃣ Your browser → Google AI Studio (to get the key)\n"
-            "   2️⃣ Notepad → google.key file (to paste the key)\n\n"
-            "**📋 Super Quick Setup (90 seconds):**\n\n"
-            "**Step 1:** Get Your API Key (in your browser window)\n"
-            "   → Click **\"Create API key\"** button\n"
-            "   → Sign in with Google if prompted\n"
-            "   → Click **\"Create API key in new project\"** (easiest option)\n"
-            "   → Copy the API key that appears\n\n"
-            "**Step 2:** Save Your Key (in the Notepad window)\n"
-            "   → Switch to the Notepad window I opened\n"
-            "   → Select all (Ctrl+A) and delete the template\n"
-            "   → Paste your API key (Ctrl+V)\n"
-            "   → Save (Ctrl+S) and close Notepad\n\n"
-            "**Step 3:** Ask Your Question!\n"
-            "   → Come back here and send your prompt\n"
-            "   → G-Assist will automatically detect the new key\n"
-            "   → No restart needed! 🎉\n\n"
-            "**💡 Pro Tip:** The API is completely FREE and takes less than 2 minutes!\n\n"
+            "**I've opened two windows for you:**\n"
+            "    1. Your browser - Google AI Studio (to get the key)\n"
+            "    2. Notepad - google.key file (to paste the key)\n\n"
+            "**Quick Setup (90 seconds):**\n\n"
+            "**Step 1: Get Your API Key** (in your browser window)\n"
+            "   1. Click the \"Create API key\" button\n"
+            "   2. Sign in with Google if prompted\n"
+            "   3. Click \"Create API key in new project\" (easiest option)\n"
+            "   4. Copy the API key that appears\n\n"
+            "**Step 2: Save Your Key** (in the Notepad window)\n"
+            "   1. Switch to the Notepad window I opened\n"
+            "   2. Select all (Ctrl+A) and delete the template\n"
+            "   3. Paste your API key (Ctrl+V)\n"
+            "   4. Save (Ctrl+S) and close Notepad\n\n"
+            "**Step 3: Ask Your Question**\n"
+            "   1. Come back here and send your prompt\n"
+            "   2. G-Assist will automatically detect the new key\n"
+            "   3. No restart needed!\n\n"
+            "**Note:** The API is completely free and takes less than 2 minutes to set up.\n\n"
             "**Need help?** Visit: https://github.com/NVIDIA/G-Assist/tree/main/plugins/examples/gemini\n"
         )
         
@@ -431,11 +431,11 @@ def execute_initialize_command() -> dict:
         
         # Send a friendly welcome message
         welcome_message = (
-            "✅ **Gemini Plugin Ready!**\n\n"
+            "**Gemini Plugin Ready**\n\n"
             "I'm powered by Google's Gemini AI and ready to help you with:\n"
-            "• Knowledge questions and explanations\n"
-            "• Real-time web searches\n"
-            "• Gaming tips and strategies\n\n"
+            "\n\t Knowledge questions and explanations\n"
+            "\n\t Real-time web searches\n"
+            "\n\t Gaming tips and strategies\n\n"
             "Just ask me anything!"
         )
         write_response(generate_message_response(welcome_message))
@@ -465,16 +465,16 @@ def execute_initialize_command() -> dict:
         
         # Provide actionable error message
         error_message = (
-            "\n⚠️ **API Key Error**\n\n"
+            "\n**API Key Error**\n\n"
             "Your API key appears to be invalid or expired.\n\n"
-            "✨ **I've opened TWO windows to help you fix this:**\n"
-            "   1️⃣ Browser → Get a new API key\n"
-            "   2️⃣ Notepad → Paste the new key\n\n"
-            "**🔧 Quick Fix (60 seconds):**\n"
-            "1. In your browser → Generate a new API key\n"
-            "2. In Notepad → Replace the old key with the new one\n"
-            "3. Save (Ctrl+S) and close Notepad\n"
-            "4. **Just try your request again** - No restart needed! 🎉\n\n"
+            "**I've opened two windows to help you fix this:**\n"
+            "    1. Browser - Get a new API key\n"
+            "    2. Notepad - Paste the new key\n\n"
+            "**Quick Fix (60 seconds):**\n"
+            "    1. In your browser - Generate a new API key\n"
+            "    2. In Notepad - Replace the old key with the new one\n"
+            "    3. Save (Ctrl+S) and close Notepad\n"
+            "    4. Just try your request again - No restart needed!\n\n"
             f"**Technical details:** {str(e)}"
         )
         write_response(generate_message_response(error_message))
@@ -578,7 +578,7 @@ def execute_query_gemini_command(params: dict = None, context: dict = None, syst
                             
                             # Send welcome message
                             welcome_message = (
-                                "✅ **Gemini Plugin Ready!**\n\n"
+                                "**Gemini Plugin Ready**\n\n"
                                 "Your API key is now configured! I'm powered by Google's Gemini AI and ready to help.\n\n"
                             )
                             write_response(generate_message_response(welcome_message))
@@ -609,27 +609,27 @@ def execute_query_gemini_command(params: dict = None, context: dict = None, syst
             setup_windows_opened = True
         
         ERROR_MESSAGE = (
-            "\n🔑 **Gemini API Key Required**\n\n"
+            "\n**Gemini API Key Required**\n\n"
             "I need a Google AI API key to answer your question.\n\n"
-            "✨ **I've opened TWO windows for you:**\n"
-            "   1️⃣ Your browser → Google AI Studio (to get the key)\n"
-            "   2️⃣ Notepad → google.key file (to paste the key)\n\n"
-            "**🚀 Super Quick Setup (90 seconds):**\n\n"
-            "**Step 1:** Get Your FREE API Key\n"
-            "   → Switch to your browser window\n"
-            "   → Click **\"Create API key\"** button\n"
-            "   → Click **\"Create API key in new project\"**\n"
-            "   → Copy the API key that appears\n\n"
-            "**Step 2:** Save Your Key\n"
-            "   → Switch to the Notepad window\n"
-            "   → Select all (Ctrl+A) and delete the template\n"
-            "   → Paste your API key (Ctrl+V)\n"
-            "   → Save (Ctrl+S) and close Notepad\n\n"
-            "**Step 3:** Ask Your Question!\n"
-            "   → Come back here and send your prompt again\n"
-            "   → G-Assist will automatically detect the new key\n"
-            "   → No restart needed! 🎉\n\n"
-            "**💡 Pro Tip:** The API is FREE forever and this takes less than 2 minutes!\n\n"
+            "**I've opened two windows for you:**\n"
+            "    1. Your browser - Google AI Studio (to get the key)\n"
+            "    2. Notepad - google.key file (to paste the key)\n\n"
+            "**Quick Setup (90 seconds):**\n\n"
+            "**Step 1: Get Your Free API Key**\n"
+            "   1. Switch to your browser window\n"
+            "   2. Click the \"Create API key\" button\n"
+            "   3. Click \"Create API key in new project\"\n"
+            "   4. Copy the API key that appears\n\n"
+            "**Step 2: Save Your Key**\n"
+            "   1. Switch to the Notepad window\n"
+            "   2. Select all (Ctrl+A) and delete the template\n"
+            "   3. Paste your API key (Ctrl+V)\n"
+            "   4. Save (Ctrl+S) and close Notepad\n\n"
+            "**Step 3: Ask Your Question**\n"
+            "   1. Come back here and send your prompt again\n"
+            "   2. G-Assist will automatically detect the new key\n"
+            "   3. No restart needed!\n\n"
+            "**Note:** The API is free and this takes less than 2 minutes.\n\n"
             "**Still stuck?** Visit: https://github.com/NVIDIA/G-Assist/tree/main/plugins/examples/gemini"
         )
         write_response(generate_message_response(ERROR_MESSAGE))
