@@ -19,6 +19,8 @@ import ctypes
 import json
 import logging
 import os
+import webbrowser
+import subprocess
 
 from ctypes import byref, windll, wintypes, GetLastError, create_string_buffer
 import re
@@ -41,6 +43,7 @@ logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s -
 API_KEY = None
 client = None
 model: str = 'gemini-pro'  # Default model
+setup_windows_opened = False  # Track if we've already opened setup windows this session
 
 def main():
     ''' Main entry point.
@@ -253,33 +256,229 @@ def generate_message_response(message:str):
     return { 'message': message }
 
 
+def open_file_in_notepad(file_path: str, show_maximized: bool = False) -> bool:
+    ''' Opens a file in Notepad using Windows ShellExecute API.
+    
+    Args:
+        file_path: Path to the file to open
+        show_maximized: If True, opens the window maximized; otherwise normal
+        
+    Returns:
+        True if successful, False otherwise
+    '''
+    try:
+        # SW_SHOWNORMAL = 1 (normal window)
+        # SW_SHOWMAXIMIZED = 3 (maximized window)
+        # SW_SHOW = 5 (activates and displays in current size/position)
+        show_cmd = 3 if show_maximized else 5
+        
+        # Use ShellExecuteW to open the file with Notepad
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None,           # hwnd
+            "open",         # operation
+            "notepad.exe",  # file
+            file_path,      # parameters
+            None,           # directory
+            show_cmd        # show command
+        )
+        
+        # ShellExecute returns a value > 32 on success
+        if result > 32:
+            logging.info(f'Successfully opened {file_path} in Notepad')
+            return True
+        else:
+            logging.error(f'Failed to open file in Notepad. Return code: {result}')
+            return False
+            
+    except Exception as e:
+        logging.error(f'Exception opening file in Notepad: {e}')
+        return False
+
+
+def open_browser_maximized(url: str) -> bool:
+    ''' Opens URL in default browser and brings the window to foreground.
+    
+    Args:
+        url: URL to open
+        
+    Returns:
+        True if successful, False otherwise
+    '''
+    try:
+        import time
+        
+        # Open the URL in the default browser
+        webbrowser.open(url)
+        logging.info(f'Opened URL in browser: {url}')
+        
+        # Give the browser a moment to start
+        time.sleep(0.5)
+        
+        # Find and activate the browser window
+        # This brings the browser to the foreground
+        EnumWindows = ctypes.windll.user32.EnumWindows
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+        GetWindowText = ctypes.windll.user32.GetWindowTextW
+        GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
+        IsWindowVisible = ctypes.windll.user32.IsWindowVisible
+        SetForegroundWindow = ctypes.windll.user32.SetForegroundWindow
+        ShowWindow = ctypes.windll.user32.ShowWindow
+        
+        def foreach_window(hwnd, lParam):
+            if IsWindowVisible(hwnd):
+                length = GetWindowTextLength(hwnd)
+                buff = ctypes.create_unicode_buffer(length + 1)
+                GetWindowText(hwnd, buff, length + 1)
+                title = buff.value.lower()
+                
+                # Check if it's a browser window (common browser names in title)
+                browser_indicators = ['chrome', 'firefox', 'edge', 'brave', 'opera', 'google', 'mozilla']
+                if any(indicator in title for indicator in browser_indicators):
+                    # Show the window if minimized (SW_RESTORE = 9)
+                    ShowWindow(hwnd, 9)
+                    # Bring to foreground
+                    SetForegroundWindow(hwnd)
+                    logging.info(f'Brought browser window to foreground: {title}')
+                    return False  # Stop enumerating
+            return True
+        
+        EnumWindows(EnumWindowsProc(foreach_window), 0)
+        return True
+        
+    except Exception as e:
+        logging.error(f'Exception in open_browser_maximized: {e}')
+        # Fallback to regular webbrowser.open if custom method fails
+        try:
+            webbrowser.open(url)
+            return True
+        except:
+            return False
+
+
 def execute_initialize_command() -> dict:
     ''' Initialize the Gemini API connection.
     
     Reads the API key from file and configures the Gemini client.
+    If no key is found, opens browser and provides interactive setup instructions.
     
     Returns:
         Success or failure response
     '''
-    global API_KEY, API_KEY_FILE, client
+    global API_KEY, API_KEY_FILE, client, setup_windows_opened
 
     key = None
     if os.path.isfile(API_KEY_FILE):
         with open(API_KEY_FILE) as file:
             key = file.read().strip()
+            # Check if it's the placeholder text
+            if key.startswith("<insert your API key") or key.startswith("YOUR_API_KEY_HERE"):
+                key = None
 
     if not key:
         logging.error('No API key found')
+        
+        # Only open setup windows if we haven't already done so this session
+        if not setup_windows_opened:
+            # Auto-open Google AI Studio API key page in browser (brings to foreground)
+            try:
+                open_browser_maximized("https://aistudio.google.com/app/apikey")
+                logging.info('Opened Google AI Studio API key page in browser')
+            except Exception as e:
+                logging.warning(f'Could not open browser: {e}')
+            
+            # Auto-open the API key file in Notepad (normal window, not minimized)
+            try:
+                open_file_in_notepad(API_KEY_FILE, show_maximized=False)
+                logging.info('Opened API key file in Notepad')
+            except Exception as e:
+                logging.warning(f'Could not open API key file: {e}')
+            
+            setup_windows_opened = True
+        
+        # Provide helpful setup message
+        setup_message = (
+            "\n🤖 **Welcome to the Gemini Plugin!**\n\n"
+            "To get started, you'll need a free Google AI API key.\n\n"
+            "✨ **I've opened TWO windows for you:**\n"
+            "   1️⃣ Your browser → Google AI Studio (to get the key)\n"
+            "   2️⃣ Notepad → google.key file (to paste the key)\n\n"
+            "**📋 Super Quick Setup (90 seconds):**\n\n"
+            "**Step 1:** Get Your API Key (in your browser window)\n"
+            "   → Click **\"Create API key\"** button\n"
+            "   → Sign in with Google if prompted\n"
+            "   → Click **\"Create API key in new project\"** (easiest option)\n"
+            "   → Copy the API key that appears\n\n"
+            "**Step 2:** Save Your Key (in the Notepad window)\n"
+            "   → Switch to the Notepad window I opened\n"
+            "   → Select all (Ctrl+A) and delete the template\n"
+            "   → Paste your API key (Ctrl+V)\n"
+            "   → Save (Ctrl+S) and close Notepad\n\n"
+            "**Step 3:** Ask Your Question!\n"
+            "   → Come back here and send your prompt\n"
+            "   → G-Assist will automatically detect the new key\n"
+            "   → No restart needed! 🎉\n\n"
+            "**💡 Pro Tip:** The API is completely FREE and takes less than 2 minutes!\n\n"
+            "**Need help?** Visit: https://github.com/NVIDIA/G-Assist/tree/main/plugins/examples/gemini\n"
+        )
+        
+        write_response(generate_message_response(setup_message))
         return generate_success_response() # this allows us to print the error ##bug to be fixed in driver
 
     try:
         client = genai.Client(api_key=key)
         logging.info('Successfully configured Gemini API')
         API_KEY = key
+        
+        # Send a friendly welcome message
+        welcome_message = (
+            "✅ **Gemini Plugin Ready!**\n\n"
+            "I'm powered by Google's Gemini AI and ready to help you with:\n"
+            "• Knowledge questions and explanations\n"
+            "• Real-time web searches\n"
+            "• Gaming tips and strategies\n\n"
+            "Just ask me anything!"
+        )
+        write_response(generate_message_response(welcome_message))
+        
         return generate_success_response()
     except Exception as e:
         logging.error(f'Configuration failed: {str(e)}')
         API_KEY = None
+        
+        # Only open setup windows if we haven't already done so this session
+        if not setup_windows_opened:
+            # Auto-open browser to get a new key (brings to foreground)
+            try:
+                open_browser_maximized("https://aistudio.google.com/app/apikey")
+                logging.info('Opened Google AI Studio for new API key')
+            except Exception:
+                pass
+            
+            # Auto-open the key file for editing
+            try:
+                open_file_in_notepad(API_KEY_FILE, show_maximized=False)
+                logging.info('Opened API key file for editing')
+            except Exception:
+                pass
+            
+            setup_windows_opened = True
+        
+        # Provide actionable error message
+        error_message = (
+            "\n⚠️ **API Key Error**\n\n"
+            "Your API key appears to be invalid or expired.\n\n"
+            "✨ **I've opened TWO windows to help you fix this:**\n"
+            "   1️⃣ Browser → Get a new API key\n"
+            "   2️⃣ Notepad → Paste the new key\n\n"
+            "**🔧 Quick Fix (60 seconds):**\n"
+            "1. In your browser → Generate a new API key\n"
+            "2. In Notepad → Replace the old key with the new one\n"
+            "3. Save (Ctrl+S) and close Notepad\n"
+            "4. **Just try your request again** - No restart needed! 🎉\n\n"
+            f"**Technical details:** {str(e)}"
+        )
+        write_response(generate_message_response(error_message))
+        
         return generate_failure_response(str(e))
 
 def execute_shutdown_command() -> dict:
@@ -359,13 +558,79 @@ def execute_query_gemini_command(params: dict = None, context: dict = None, syst
     Returns:
         Success or failure response
     '''
-    global API_KEY, CONFIG_FILE, model, client
+    global API_KEY, CONFIG_FILE, model, client, setup_windows_opened
 
+    # Re-check for API key if it was missing before (user may have just added it)
     if API_KEY is None:
+        logging.info('API_KEY is None, attempting to re-read from file')
+        key = None
+        if os.path.isfile(API_KEY_FILE):
+            try:
+                with open(API_KEY_FILE) as file:
+                    key = file.read().strip()
+                    # Check if it's the placeholder text
+                    if key and not key.startswith("<insert your API key") and not key.startswith("YOUR_API_KEY_HERE") and len(key) > 10:
+                        # Try to initialize with the new key
+                        try:
+                            client = genai.Client(api_key=key)
+                            API_KEY = key
+                            logging.info('Successfully initialized with newly added API key')
+                            
+                            # Send welcome message
+                            welcome_message = (
+                                "✅ **Gemini Plugin Ready!**\n\n"
+                                "Your API key is now configured! I'm powered by Google's Gemini AI and ready to help.\n\n"
+                            )
+                            write_response(generate_message_response(welcome_message))
+                            # Continue to process the query below
+                        except Exception as init_error:
+                            logging.error(f'Failed to initialize with new key: {init_error}')
+                            API_KEY = None
+            except Exception as read_error:
+                logging.error(f'Failed to read API key file: {read_error}')
+    
+    if API_KEY is None:
+        # Only open setup windows if we haven't already done so this session
+        if not setup_windows_opened:
+            # Auto-open the API key page in browser (brings to foreground)
+            try:
+                open_browser_maximized("https://aistudio.google.com/app/apikey")
+                logging.info('Opened Google AI Studio API key page for user')
+            except Exception as e:
+                logging.warning(f'Could not open browser: {e}')
+            
+            # Auto-open the API key file in Notepad (normal window, not minimized)
+            try:
+                open_file_in_notepad(API_KEY_FILE, show_maximized=False)
+                logging.info('Opened API key file in Notepad for user')
+            except Exception as e:
+                logging.warning(f'Could not open API key file: {e}')
+            
+            setup_windows_opened = True
+        
         ERROR_MESSAGE = (
-            "It looks like your API key is missing or invalid. Please update " +
-            f"{API_KEY_FILE} with a valid key and restart G-Assist.\n\n" +
-            "To obtain an API, visit https://ai.google.dev."
+            "\n🔑 **Gemini API Key Required**\n\n"
+            "I need a Google AI API key to answer your question.\n\n"
+            "✨ **I've opened TWO windows for you:**\n"
+            "   1️⃣ Your browser → Google AI Studio (to get the key)\n"
+            "   2️⃣ Notepad → google.key file (to paste the key)\n\n"
+            "**🚀 Super Quick Setup (90 seconds):**\n\n"
+            "**Step 1:** Get Your FREE API Key\n"
+            "   → Switch to your browser window\n"
+            "   → Click **\"Create API key\"** button\n"
+            "   → Click **\"Create API key in new project\"**\n"
+            "   → Copy the API key that appears\n\n"
+            "**Step 2:** Save Your Key\n"
+            "   → Switch to the Notepad window\n"
+            "   → Select all (Ctrl+A) and delete the template\n"
+            "   → Paste your API key (Ctrl+V)\n"
+            "   → Save (Ctrl+S) and close Notepad\n\n"
+            "**Step 3:** Ask Your Question!\n"
+            "   → Come back here and send your prompt again\n"
+            "   → G-Assist will automatically detect the new key\n"
+            "   → No restart needed! 🎉\n\n"
+            "**💡 Pro Tip:** The API is FREE forever and this takes less than 2 minutes!\n\n"
+            "**Still stuck?** Visit: https://github.com/NVIDIA/G-Assist/tree/main/plugins/examples/gemini"
         )
         write_response(generate_message_response(ERROR_MESSAGE))
         return generate_success_response() #print nothing, the initialize will have done so ## bug to be fixed in driver
@@ -384,12 +649,26 @@ def execute_query_gemini_command(params: dict = None, context: dict = None, syst
             logging.error("GEMINI_HANDLER: No context provided")
             return generate_failure_response("No context provided")
         
+        # Clean the context - remove assistant messages that are just tool call JSON
+        # This prevents Gemini from mimicking the JSON format
+        cleaned_context = []
+        for msg in context:
+            if msg.get("role") == "assistant":
+                content = msg.get("content", "")
+                # Skip if it's a tool call JSON (starts with {"tool": or {"text":)
+                if content.strip().startswith('{"tool":') or content.strip().startswith('{"text":'):
+                    logging.info(f"GEMINI_HANDLER: Filtering out tool call JSON from history: {content[:50]}...")
+                    continue
+            cleaned_context.append(msg)
+        
+        context = cleaned_context
+        
         # Store the incoming prompt
         prompt = context[-1]["content"] if context else ""
         logging.info(f"GEMINI_HANDLER: Received prompt: {prompt[:50]}...")
         # Preserve the original context
         incoming_context = copy.deepcopy(context)
-        logging.info(f"GEMINI_HANDLER: Context length: {len(context)}")
+        logging.info(f"GEMINI_HANDLER: Context length after cleaning: {len(context)}")
         
         # Augment the last user message with the system prompt to classify the input prompt
         logging.info("GEMINI_HANDLER: Augmenting context with classification instructions")
