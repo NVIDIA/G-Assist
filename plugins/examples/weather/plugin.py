@@ -49,14 +49,18 @@ from typing import Optional, Dict, Any
 # Type definitions
 Response = Dict[bool, Optional[str]]
 
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "weather")
+os.makedirs(PLUGIN_DIR, exist_ok=True)
 
 # Configure logging with a more detailed format
-LOG_FILE = os.path.join(os.environ.get('USERPROFILE', '.'), 'weather-plugin.log')
+LOG_FILE = os.path.join(PLUGIN_DIR, 'weather-plugin.log')
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
 def get_weather_info(params: dict = None) -> dict:
     """
@@ -159,11 +163,21 @@ def main():
         'get_weather_info': get_weather_info,
     }
     
+    read_failures = 0
+    MAX_READ_FAILURES = 3
+    
     while True:
         command = read_command()
         if command is None:
-            logging.error('Error reading command')
+            read_failures += 1
+            logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                logging.error('Too many read failures, exiting')
+                break
             continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
         
         tool_calls = command.get("tool_calls", [])
         for tool_call in tool_calls:
@@ -174,13 +188,13 @@ def main():
             logging.info(f"Params: {params}")
             
             if func == INITIALIZE_COMMAND:
-                response = commands.get(INITIALIZE_COMMAND, lambda _: {"success": False, "message": "Unknown command"})()
+                response = commands.get(INITIALIZE_COMMAND, lambda _: {"success": False, "message": "Unknown command"})(params)
             elif func == GET_WEATHER_INFO_COMMAND:
                 logging.info(f"Getting weather info for {params}")
                 response = get_weather_info(params)
                 logging.info(f"Weather info: {response}")
             elif func == SHUTDOWN_COMMAND:
-                response = commands.get(SHUTDOWN_COMMAND, lambda _: {"success": False, "message": "Unknown command"})()
+                response = commands.get(SHUTDOWN_COMMAND, lambda _: {"success": False, "message": "Unknown command"})(params)
                 write_response(response)
                 return
             else:
@@ -226,6 +240,7 @@ def read_command() -> dict | None:
 
         # Combine all chunks and parse JSON
         retval = ''.join(chunks)
+        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
 
     except json.JSONDecodeError:
@@ -249,18 +264,22 @@ def write_response(response:Response) -> None:
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
         message_len = len(message_bytes)
+        
+        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
 
         bytes_written = wintypes.DWORD()
         success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
             message_len,
-            bytes_written,
+            byref(bytes_written),
             None
         )
 
-        if not success:
-            logging.error('Error writing to response pipe')
+        if success:
+            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        else:
+            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
 
     except Exception as e:
         logging.error(f'Exception in write_response(): {str(e)}')

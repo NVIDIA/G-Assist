@@ -9,10 +9,12 @@ from urllib.parse import urlencode, urlparse, parse_qs
 from ctypes import byref, windll, wintypes
 from requests import Response
 
-# Settings specific to the user's system. This is temporary until a
-# configuration file is added to the plugin.
-LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'spotify-plugin.log')
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify")
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+LOG_FILE = os.path.join(PLUGIN_DIR, 'spotify-plugin.log')
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 REDIRECT_URI="https://open.spotify.com"
 SCOPE = "user-library-read user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
@@ -143,12 +145,12 @@ def main():
     AUTH_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
 
     try:
-        # Read the IP from the configuration file
+        # Read the configuration file
         CLIENT_ID = get_client_id(CONFIG_FILE)
         CLIENT_SECRET = get_client_secret(CONFIG_FILE)
         USERNAME = get_username(CONFIG_FILE)
         if CLIENT_ID is None or CLIENT_SECRET is None:
-            logging.error('Unable to read the configuration file. Using default Client')
+            logging.error('CLIENT_ID or CLIENT_SECRET not found in config file - setup wizard will be triggered')
     except Exception as e:
         logging.error(f'Error reading configuration file: {e}')
 
@@ -175,12 +177,23 @@ def main():
         ACCESS_TOKEN = None
         REFRESH_TOKEN = None
 
+    read_failures = 0
+    MAX_READ_FAILURES = 3
+    
     while True:
         function = ''
         response = None
         input = read_command()
         if input is None:
+            read_failures += 1
+            logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                logging.error('Too many read failures, exiting')
+                break
             continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
         logging.info(f'Command: "{input}"')
 
         if TOOL_CALLS_PROPERTY in input:
@@ -376,6 +389,76 @@ def get_username(config_file: str) -> str | None:
 
     return username
 
+def execute_setup_wizard() -> dict:
+    """Guide user through Spotify app setup.
+    
+    Returns:
+        dict: Response with setup instructions
+    """
+    config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+    
+    # Check if config was updated
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as file:
+                data = json.load(file)
+            new_client_id = data.get('client_id', '')
+            new_client_secret = data.get('client_secret', '')
+            
+            if new_client_id and len(new_client_id) > 20 and new_client_secret and len(new_client_secret) > 20:
+                global CLIENT_ID, CLIENT_SECRET
+                CLIENT_ID = new_client_id
+                CLIENT_SECRET = new_client_secret
+                logging.info("Spotify app configured successfully!")
+                return generate_success_response({
+                    'message': "✓ Spotify app configured! Now authorizing with Spotify...",
+                    'awaiting_input': False
+                })
+    except:
+        pass
+    
+    # Show setup instructions
+    message = f"""
+SPOTIFY PLUGIN - FIRST TIME SETUP
+==================================
+
+Welcome! Let's set up your Spotify app. This takes about 10 minutes.
+
+STEP 1 - Create Spotify App:
+   1. Visit: https://developer.spotify.com/dashboard
+   2. Log in with your Spotify account
+   3. Click "Create app"
+   4. Fill in the form:
+      - App name: "G-Assist Plugin"
+      - App description: "Control Spotify via G-Assist"
+      - Redirect URI: "https://open.spotify.com"
+      - Check "Web API" checkbox
+   5. Click "Save"
+
+STEP 2 - Get Credentials:
+   1. On your app's dashboard, click "Settings"
+   2. Copy your "Client ID"
+   3. Click "View client secret" and copy it
+
+STEP 3 - Configure Plugin:
+   1. Open this file: {config_file}
+   2. Replace the values:
+      {{"client_id": "your_client_id_here",
+       "client_secret": "your_client_secret_here",
+       "username": "your_spotify_username"}}
+   3. Save the file
+
+After saving, send me ANY message (like "done") and I'll start the authorization!
+
+Note: Keep your client secret private - don't share it!
+"""
+    
+    logging.info("Showing Spotify setup wizard to user")
+    return generate_success_response({
+        'message': message,
+        'awaiting_input': True
+    })
+
 def generate_command_handlers() -> dict:
     ''' Generates the mapping of commands to their handlers.
 
@@ -434,6 +517,7 @@ def read_command() -> dict | None:
 
         # Combine all chunks and parse JSON
         retval = ''.join(chunks)
+        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
 
     except json.JSONDecodeError:
@@ -457,17 +541,21 @@ def write_response(response:Response) -> None:
         message_bytes = json_message.encode('utf-8')
         message_len = len(message_bytes)
 
+        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
+        
         bytes_written = wintypes.DWORD()
         success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
             message_len,
-            bytes_written,
+            byref(bytes_written),
             None
         )
 
-        if not success:
-            logging.error('Error writing to response pipe')
+        if success:
+            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        else:
+            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
 
     except Exception as e:
         logging.error(f'Exception in write_response(): {str(e)}')
@@ -720,6 +808,11 @@ def execute_initialize_command() -> dict:
     @return function response
     '''
     try:
+        # Check if CLIENT_ID and CLIENT_SECRET are configured
+        if CLIENT_ID is None or CLIENT_SECRET is None:
+            logging.info('CLIENT_ID or CLIENT_SECRET not configured - starting setup wizard')
+            return execute_setup_wizard()
+        
         # Check if we have tokens in auth.json
         auth_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
         

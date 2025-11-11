@@ -18,8 +18,13 @@ from openrgb.utils import RGBColor, DeviceType
 # Data Types
 Response = dict[bool,Optional[str]]
 
-LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'openrgb_plugin.log')
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "openrgb")
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(PLUGIN_DIR, 'openrgb-plugin.log')
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 SIGNALRGB_URL = "http://127.0.0.1:16038/api/v1"
 global CLI 
@@ -72,12 +77,22 @@ def main():
         cmd = ''
 
         logging.info('Plugin started')
+        read_failures = 0
+        MAX_READ_FAILURES = 3
+        
         while cmd != SHUTDOWN_COMMAND:
             response = None
             input = read_command()
             if input is None:
-                logging.error('Error reading command')
+                read_failures += 1
+                logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+                if read_failures >= MAX_READ_FAILURES:
+                    logging.error('Too many read failures, exiting')
+                    break
                 continue
+            
+            # Reset failure counter on successful read
+            read_failures = 0
 
             logging.info(f'Received input: {input}')
             
@@ -156,7 +171,9 @@ def read_command() -> dict | None:
             if message_bytes.value < BUFFER_SIZE:
                 break
 
-        retval = buffer.decode('utf-8')[:message_bytes.value]
+        # BUGFIX: Use ''.join(chunks) instead of buffer to get the full message
+        retval = ''.join(chunks)
+        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
 
     except json.JSONDecodeError:
@@ -180,19 +197,25 @@ def write_response(response:Response) -> None:
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
         message_len = len(message_bytes)
+        
+        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
 
         bytes_written = wintypes.DWORD()
-        windll.kernel32.WriteFile(
+        success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
             message_len,
-            bytes_written,
+            byref(bytes_written),
             None
         )
+        
+        if success:
+            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        else:
+            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
 
     except Exception as e:
         logging.error(f'Failed to write response: {str(e)}')
-        pass
 
 
 def generate_failure_response(message:str=None) -> Response:
@@ -237,11 +260,30 @@ def execute_initialize_command() -> dict:
         The function return value(s)
     '''
     logging.info('Initializing plugin')
-    # initialization function body
-    global CLI 
-    CLI = OpenRGBClient('127.0.0.1', 6742, 'G-Assist Plugin')
-
-    return generate_success_response('initialize success.')
+    global CLI
+    
+    try:
+        # Try to connect to OpenRGB service
+        CLI = OpenRGBClient('127.0.0.1', 6742, 'G-Assist Plugin')
+        logging.info('Successfully connected to OpenRGB service')
+        return generate_success_response('OpenRGB plugin initialized successfully.')
+    except ConnectionRefusedError:
+        logging.error('OpenRGB service is not running')
+        return generate_failure_response(
+            'OpenRGB service is not running. Please start OpenRGB and try again.\n'
+            'Download from: https://openrgb.org/'
+        )
+    except TimeoutError:
+        logging.error('Timeout connecting to OpenRGB service')
+        return generate_failure_response(
+            'Timeout connecting to OpenRGB service. Please check if OpenRGB is running and the SDK server is enabled.'
+        )
+    except Exception as e:
+        logging.error(f'Error connecting to OpenRGB: {str(e)}')
+        return generate_failure_response(
+            f'Failed to connect to OpenRGB: {str(e)}\n'
+            'Make sure OpenRGB is running and SDK server is enabled in Settings.'
+        )
 
 
 def execute_shutdown_command() -> dict:

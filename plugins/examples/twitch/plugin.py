@@ -47,14 +47,17 @@ STD_OUTPUT_HANDLE = -11
 BUFFER_SIZE = 4096
 """Size of buffer for reading from pipe in bytes."""
 
-CONFIG_FILE = os.path.join(
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(
     os.environ.get("PROGRAMDATA", "."),
-    r'NVIDIA Corporation\nvtopps\rise\plugins\twitch',
-    'config.json'
+    r'NVIDIA Corporation\nvtopps\rise\plugins\twitch'
 )
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+
+CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
 """Path to configuration file containing Twitch API credentials."""
 
-LOG_FILE = os.path.join(os.environ.get("USERPROFILE", "."), 'twitch.log')
+LOG_FILE = os.path.join(PLUGIN_DIR, 'twitch-plugin.log')
 """Path to log file for plugin operations."""
 
 # Twitch API endpoints
@@ -118,10 +121,71 @@ def save_config(config_data: Dict[str, str]) -> None:
         config_data (Dict[str, str]): Configuration dictionary to save.
     """
     try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         with open(CONFIG_FILE, "w") as file:
             json.dump(config_data, file, indent=4)
     except Exception as e:
         logging.error(f"Error saving config: {e}")
+
+def execute_setup_wizard() -> Response:
+    """Guide user through Twitch app setup.
+    
+    Returns:
+        Response: Response with setup instructions or success message.
+    """
+    # Check if config was updated
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as file:
+                data = json.load(file)
+            new_client_id = data.get('TWITCH_CLIENT_ID', '')
+            new_client_secret = data.get('TWITCH_CLIENT_SECRET', '')
+            
+            if new_client_id and len(new_client_id) > 20 and new_client_secret and len(new_client_secret) > 20:
+                global config
+                config = data
+                logging.info("Twitch app configured successfully!")
+                return generate_response(True, "✓ Twitch app configured! You can now check stream status.")
+    except:
+        pass
+    
+    # Show setup instructions
+    message = f"""
+TWITCH PLUGIN - FIRST TIME SETUP
+=================================
+
+Welcome! Let's set up your Twitch app. This takes about 5 minutes.
+
+STEP 1 - Create Twitch App:
+   1. Visit: https://dev.twitch.tv/console/apps
+   2. Log in with your Twitch account
+   3. Click "Register Your Application"
+   4. Fill in the form:
+      - Name: "G-Assist Plugin"
+      - OAuth Redirect URLs: "http://localhost"
+      - Category: "Application Integration"
+   5. Click "Create"
+
+STEP 2 - Get Credentials:
+   1. Click "Manage" on your new app
+   2. Copy your "Client ID"
+   3. Click "New Secret" and copy the client secret
+
+STEP 3 - Configure Plugin:
+   1. Open this file: {CONFIG_FILE}
+   2. Replace the values:
+      {{"TWITCH_CLIENT_ID": "your_client_id_here",
+       "TWITCH_CLIENT_SECRET": "your_client_secret_here"}}
+   3. Save the file
+
+After saving, send me ANY message (like "done") and I'll verify it!
+
+Note: Keep your client secret private - don't share it!
+"""
+    
+    logging.info("Showing Twitch setup wizard to user")
+    return generate_response(True, message)
 
 def get_oauth_token() -> Optional[str]:
     """Obtain OAuth token from Twitch API.
@@ -283,7 +347,7 @@ def read_command() -> Optional[Dict[str, Any]]:
                 break
 
         retval = ''.join(chunks)
-        logging.info(f'Raw Input: {retval}')
+        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
         
     except json.JSONDecodeError:
@@ -311,15 +375,23 @@ def write_response(response: Response) -> None:
         pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
+        message_len = len(message_bytes)
+        
+        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
         
         bytes_written = wintypes.DWORD()
-        windll.kernel32.WriteFile(
+        success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
-            len(message_bytes),
-            bytes_written,
+            message_len,
+            byref(bytes_written),
             None
         )
+        
+        if success:
+            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        else:
+            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
     except Exception as e:
         logging.error(f'Error writing response: {e}')
 
@@ -332,6 +404,12 @@ def initialize() -> Response:
         Response: Success response with initialization status.
     """
     logging.info("Initializing plugin")
+    
+    # Check if config is loaded
+    if not config or not config.get("TWITCH_CLIENT_ID") or not config.get("TWITCH_CLIENT_SECRET"):
+        logging.info("Config not found - starting setup wizard")
+        return execute_setup_wizard()
+    
     return generate_response(True, "Plugin initialized successfully")
 
 def shutdown() -> Response:
@@ -367,11 +445,21 @@ def main() -> None:
     setup_logging()
     logging.info("Twitch Plugin Started")
     
+    read_failures = 0
+    MAX_READ_FAILURES = 3
+    
     while True:
         command = read_command()
         if command is None:
-            logging.error('Error reading command')
+            read_failures += 1
+            logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                logging.error('Too many read failures, exiting')
+                break
             continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
         
         tool_calls = command.get("tool_calls", [])
         for tool_call in tool_calls:
