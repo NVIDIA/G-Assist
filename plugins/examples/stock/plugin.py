@@ -18,8 +18,13 @@ INITIALIZE_COMMAND = 'initialize'
 SHUTDOWN_COMMAND = 'shutdown'
 ERROR_MESSAGE = 'Plugin Error!'
 
-# Configure logging
-LOG_FILE = os.path.join(os.path.expanduser("~"), 'stock_plugin.log')
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "stock")
+CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
+
+# Save log in plugin directory for better organization
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+LOG_FILE = os.path.join(PLUGIN_DIR, 'stock-plugin.log')
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.DEBUG,
@@ -27,10 +32,78 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load API Key from config file
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
-API_KEY = config.get("TWELVE_DATA_API_KEY")
+# Load API Key from config file using absolute path
+SETUP_COMPLETE = False
+try:
+    with open(CONFIG_FILE, "r") as config_file:
+        config = json.load(config_file)
+    API_KEY = config.get("TWELVE_DATA_API_KEY", "")
+    if API_KEY and len(API_KEY) > 10:
+        SETUP_COMPLETE = True
+        logger.info(f"Successfully loaded API key from {CONFIG_FILE}")
+    else:
+        logger.warning(f"API key is empty or invalid in {CONFIG_FILE}")
+        API_KEY = None
+except FileNotFoundError:
+    logger.error(f"Config file not found at {CONFIG_FILE}")
+    API_KEY = None
+except Exception as e:
+    logger.error(f"Error loading config: {e}")
+    API_KEY = None
+
+def execute_setup_wizard() -> Response:
+    """Guide user through API key setup.
+    
+    Returns:
+        Response: Message response with setup instructions.
+    """
+    global SETUP_COMPLETE, API_KEY
+    
+    # Check if API key was added
+    try:
+        with open(CONFIG_FILE, "r") as config_file:
+            config = json.load(config_file)
+        new_key = config.get("TWELVE_DATA_API_KEY", "")
+        if new_key and len(new_key) > 10:
+            API_KEY = new_key
+            SETUP_COMPLETE = True
+            logger.info("API key successfully configured!")
+            return {
+                'success': True,
+                'message': "✓ API key configured! You can now ask about stock prices. Try: 'What's the price of NVDA?'",
+                'awaiting_input': False
+            }
+    except:
+        pass
+    
+    # Show setup instructions
+    message = f"""
+STOCK PLUGIN - FIRST TIME SETUP
+================================
+
+Welcome! Let's get your free Twelve Data API key. This takes about 1 minute.
+
+YOUR TASK - Get Your Free API Key:
+   1. Visit: https://twelvedata.com/pricing
+   2. Click "Get Free API Key" (no credit card required)
+   3. Sign up with your email
+   4. Copy your API key from the dashboard
+   5. Open this file: {CONFIG_FILE}
+   6. Replace the empty quotes with your API key:
+      {{"TWELVE_DATA_API_KEY": "your_key_here"}}
+   7. Save the file
+
+After saving, send me ANY message (like "done") and I'll verify it!
+
+Note: The free tier includes 800 API calls per day - plenty for personal use!
+"""
+    
+    logger.info("Showing setup wizard to user")
+    return {
+        'success': True,
+        'message': message,
+        'awaiting_input': True
+    }
 
 def execute_initialize_command() -> Response:
     """Initialize the plugin.
@@ -39,7 +112,12 @@ def execute_initialize_command() -> Response:
         Response: Success response indicating plugin initialization.
     """
     logger.info("Initializing plugin...")
-    return generate_success_response("initialize success.")
+    
+    # Check if setup is needed
+    if not SETUP_COMPLETE or not API_KEY:
+        return execute_setup_wizard()
+    
+    return generate_success_response("Stock plugin initialized successfully.")
 
 def execute_shutdown_command() -> Response:
     """Shutdown the plugin.
@@ -153,21 +231,35 @@ def read_command() -> Dict[str, Any] | None:
     try:
         STD_INPUT_HANDLE = -10
         pipe = windll.kernel32.GetStdHandle(STD_INPUT_HANDLE)
+
         chunks = []
         while True:
             BUFFER_SIZE = 4096
             message_bytes = wintypes.DWORD()
             buffer = bytes(BUFFER_SIZE)
-            success = windll.kernel32.ReadFile(pipe, buffer, BUFFER_SIZE, byref(message_bytes), None)
+            success = windll.kernel32.ReadFile(
+                pipe,
+                buffer,
+                BUFFER_SIZE,
+                byref(message_bytes),
+                None
+            )
+
             if not success:
+                logger.error('Error reading from command pipe')
                 return None
+
             chunk = buffer.decode('utf-8')[:message_bytes.value]
             chunks.append(chunk)
+
             if message_bytes.value < BUFFER_SIZE:
                 break
+
         retval = ''.join(chunks)
+        logger.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
-    except:
+    except Exception as e:
+        logger.error(f'Error in read_command: {e}')
         return None
 
 def write_response(response: Response) -> None:
@@ -184,20 +276,32 @@ def write_response(response: Response) -> None:
         Example: {"success":true,"message":"Plugin initialized successfully"}<<END>>
     """
     try:
-        pipe = windll.kernel32.GetStdHandle(-11)
+        STD_OUTPUT_HANDLE = -11
+        pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
+        message_len = len(message_bytes)
         
+        # Log what we're sending
+        msg_type = response.get('success', 'unknown') if isinstance(response, dict) else 'unknown'
+        logger.info(f"[PIPE] Writing message: success={msg_type}, length={message_len} bytes")
+
         bytes_written = wintypes.DWORD()
-        windll.kernel32.WriteFile(
+        success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
-            len(message_bytes),
+            message_len,
             bytes_written,
             None
         )
+        
+        if success:
+            logger.info(f"[PIPE] Write OK - success={msg_type}, bytes={bytes_written.value}/{message_len}")
+        else:
+            logger.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
     except Exception as e:
-        logging.error(f'Error writing response: {e}')
+        logger.error(f'Error writing response: {e}')
 
 def main() -> int:
     """Main plugin entry point.
@@ -219,14 +323,25 @@ def main() -> int:
 
     cmd = ''
     logger.info('Plugin started')
+    read_failures = 0
+    MAX_READ_FAILURES = 3
+    
     while cmd != SHUTDOWN_COMMAND:
         response = None
         input = read_command()
         if input is None:
-            logger.error('Error reading command')
+            read_failures += 1
+            logger.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                logger.error('Too many read failures, exiting')
+                break
             continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
 
         logger.info(f'Received input: {input}')
+        
         if TOOL_CALLS_PROPERTY in input:
             for tool_call in input[TOOL_CALLS_PROPERTY]:
                 if FUNCTION_PROPERTY in tool_call:
@@ -236,10 +351,15 @@ def main() -> int:
                         if cmd in ['initialize', 'shutdown']:
                             response = commands[cmd]()
                         else:
-                            params = tool_call.get(PARAMS_PROPERTY, {})
-                            context = input.get(CONTEXT_PROPERTY)
-                            system_info = input.get(SYSTEM_INFO_PROPERTY)
-                            response = commands[cmd](params, context, system_info)
+                            # Check if setup is needed before executing stock functions
+                            if not SETUP_COMPLETE or not API_KEY:
+                                logger.info('[COMMAND] API key not configured - starting setup wizard')
+                                response = execute_setup_wizard()
+                            else:
+                                params = tool_call.get(PARAMS_PROPERTY, {})
+                                context = input.get(CONTEXT_PROPERTY)
+                                system_info = input.get(SYSTEM_INFO_PROPERTY)
+                                response = commands[cmd](params, context, system_info)
                     else:
                         logger.error(f'Unknown command: {cmd}')
                         response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')
