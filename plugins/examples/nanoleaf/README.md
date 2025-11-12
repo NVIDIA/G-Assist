@@ -73,10 +73,19 @@ Once everything is set up, you can control your Nanoleaf panels through G-Assist
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist - whatever works best for you!
 
+## First-Time Setup
+When you first try to use the Nanoleaf plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to change your lights, and it will:
+1. Display setup instructions
+2. Guide you to find your Nanoleaf IP address
+3. Walk you through pairing your device
+4. Verify your configuration
+
+No manual config editing required unless you prefer it!
+
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\nanoleaf.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf\nanoleaf-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

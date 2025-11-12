@@ -85,10 +85,19 @@ This plugin uses the IFTTT Webhooks service to trigger applets. For more informa
 - [IFTTT Documentation](https://ifttt.com/docs)
 - [IFTTT Webhooks Service](https://ifttt.com/maker_webhooks)
 
+## First-Time Setup
+When you first try to use the IFTTT plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply try to trigger an applet, and it will:
+1. Display setup instructions
+2. Guide you to create an IFTTT account
+3. Help you get your webhook key
+4. Verify your configuration
+
+No manual config editing required unless you prefer it!
+
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\ifttt_plugin.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\ifttt\ifttt-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

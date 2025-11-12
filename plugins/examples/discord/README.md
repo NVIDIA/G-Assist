@@ -88,8 +88,17 @@ Once everything is set up, you can interact with Discord through simple chat com
 - "Hey Discord, send the latest clip to my channel"
 - "Hey Discord, send the latest screenshot to my channel"
 
+## First-Time Setup
+When you first try to use the Discord plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask the plugin to send a message, and it will:
+1. Display setup instructions
+2. Guide you to create a Discord bot
+3. Help you configure the required settings
+4. Verify your configuration
+
+No manual config editing required unless you prefer it!
+
 ## Troubleshooting
-- **Logs**: Check `%USERPROFILE%\discord-plugin.log` for detailed logs
+- **Logs**: Check `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\discord\discord-plugin.log` for detailed logs
 - **Configuration**: Verify your `config.json` has correct BOT_TOKEN and CHANNEL_ID
 
 ## Developer Documentation

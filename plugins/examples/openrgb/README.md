@@ -70,7 +70,12 @@ This plugin uses the OpenRGB Python SDK to control your RGB devices. For more in
 - [OpenRGB Python SDK](https://github.com/jath03/openrgb-python)
 
 ## Logging
-The plugin logs to `%USERPROFILE%\openrgb_plugin.log` in your user's profile directory, tracking:
+The plugin logs all activity to:
+```
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\openrgb\openrgb-plugin.log
+```
+
+The log tracks:
 - Plugin startup and shutdown
 - Command reception and processing
 - Error conditions
