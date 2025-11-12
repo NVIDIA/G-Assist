@@ -53,10 +53,11 @@ This creates the executable and prepares all necessary files.
 ```bash
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
 ```
+
 💡 **Tip**: Make sure all files are copied, including:
-- The executable
-- manifest.json
-- config.json (Make sure you've updated this with your Twitch credentials)
+- The executable (`g-assist-plugin-twitch.exe`)
+- `manifest.json`
+- `config.json` (with your Twitch Client ID and Secret configured)
 
 ## How to Use
 Once everything is set up, you can check Twitch stream status through simple chat commands.
@@ -65,6 +66,7 @@ Try these commands:
 - "Hey Twitch, is Ninja live?"
 - "Check if shroud is streaming"
 - "Is pokimane online right now?"
+- "Is xQc streaming?"
 
 ### Example Responses
 

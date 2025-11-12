@@ -36,38 +36,33 @@ cd openrgb
 .\build.bat
 ```
 
-### Step 4: Run the Plugin
-Copy the dist/openrgb folder to the proper directory: `%programdata%\NVIDIA Corporation\nvtopps\rise\plugins`
+### Step 4: Install the Plugin
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `openrgb` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
+
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-openrgb.exe`)
+- `manifest.json`
+
+## How to Use
+Once everything is set up, you can control your RGB devices through G-Assist! Try these commands:
+- "Hey OpenRGB, list my devices"
+- "Set all my RGB lights to blue"
+- "Turn off all lighting"
+- "Set my keyboard to rainbow mode"
+
+💡 **Tip**: Make sure OpenRGB is running on your system (default port: 6742)!
 
 ## Available Commands
-- `list_devices`
-
-    Returns a list of all connected RGB devices.
-
-- `disable_lighting`
-
-    Turns off lighting for all devices.
-
-- `set_lighting_to_color`
-
-    Sets the color for either a specific device or all devices.
-    Parameters:
-    - `color`: Color value (hex, RGB, etc.)
-    - `device_name` (optional): Specific device to set color for
-
-- `set_color`
-
-    Sets a specific color for a device by ID.
-    Parameters:
-    - `device_id`: Numeric ID of the device
-    - `color_name`: Color value to set
-
-- `set_mode`
-
-    Sets a specific lighting mode/effect for a device.
-    Parameters:
-    - `device_id`: Numeric ID of the device
-    - `effect_name`: Name of the effect to set
+- **list_devices**: Returns a list of all connected RGB devices
+- **disable_lighting**: Turns off lighting for all devices
+- **set_color**: Sets the color for either a specific device or all devices
+  - Parameters: `color_name` (required), `device_name` (optional)
+- **set_mode**: Sets a specific lighting mode/effect for a device
+  - Parameters: `effect_name` (required), `device_name` (optional)
 
 ## OpenRGB Documentation
 This plugin uses the OpenRGB Python SDK to control your RGB devices. For more information about OpenRGB and its capabilities, visit:
@@ -223,7 +218,7 @@ To add new features:
 
    First, run the script:
    ``` bash
-   python nanoleaf.py
+   python plugin.py
    ```
 
    Run the initialize command: 

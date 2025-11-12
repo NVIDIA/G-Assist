@@ -2,6 +2,8 @@
   "manifestVersion": 1,
   "executable": "g-assist-plugin-corsair.exe",
   "persistent": true,
+  "name": "corsair",
+  "description": "Control Corsair RGB lighting devices.",
   "functions": [
     {
       "name": "corsair_change_keyboard_lights",

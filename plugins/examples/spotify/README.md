@@ -59,33 +59,37 @@ build.bat
 This will create a `dist\spotify` folder containing all the required files for the plugin.
 
 ### Step 6: Install the Plugin
-1. Copy the entire `dist\spotify` folder to:
-   ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\
-   ```
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `spotify` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
 
-💡 **Tip**: Make sure all G-Assist clients are closed when copying files!
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-spotify.exe`)
+- `manifest.json`
+- `config.json` (with your Spotify credentials configured)
 
 ## How to Use
 Once installed, you can control Spotify through G-Assist. Try these commands:
 
 ### Play Music
-- Start Playback: `Hey Spotify, play my music!`
-- Play a song: `Hey Spotify, play Life Itself by Glass Animals`
-- Play an album: `Hey Spotify, play reputation by Taylor Swift`
-- Play a playlist: `Hey Spotify play my Gametime Music playlist`
+- Start Playback: "Hey Spotify, play my music!"
+- Play a song: "Hey Spotify, play Life Itself by Glass Animals"
+- Play an album: "Hey Spotify, play reputation by Taylor Swift"
+- Play a playlist: "Hey Spotify play my Gametime Music playlist"
 
-### Playback
-- Pause playback: `Hey Spotify, pause it`
-- Skip track: `Hey Spotify, go to the next song`
-- Skip to previous track: `Hey Spotify, go to the previous song`
-- Toggle shuffle: `Hey Spotify, turn shuffle [on/off]`
-- Volume control: `Hey Spotify, set the volume to 30`
-- Queue a track: `Hey Spotify, add Heat Waves by Glass Animals to the queue`
+### Playback Control
+- Pause playback: "Hey Spotify, pause it"
+- Skip track: "Hey Spotify, go to the next song"
+- Skip to previous track: "Hey Spotify, go to the previous song"
+- Toggle shuffle: "Hey Spotify, turn shuffle on"
+- Volume control: "Hey Spotify, set the volume to 30"
+- Queue a track: "Hey Spotify, add Heat Waves by Glass Animals to the queue"
 
-### Reading Spotify Info
-- Get current playback: `Hey Spotify, what song is playing?`
-- Get top playlists: `Hey Spotify, what are my top 5 playlists`
+### Get Information
+- Get current playback: "Hey Spotify, what song is playing?"
+- Get top playlists: "Hey Spotify, what are my top 5 playlists"
 
 ### Authentication Flow
 The plugin uses OAuth 2.0 for authentication with Spotify. Here's how it works:

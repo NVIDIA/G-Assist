@@ -68,23 +68,25 @@ Run the build script:
 build.bat
 ```
 
-### Step 3: Install the Plugin
-1. Paste the `discord` folder to the the G-Assist plugins directory:
-   ```
-   %programdata%\NVIDIA Corporation\nvtopps\rise\plugins
-   ```
-2. Ensure the following files are located in this directory:
-   - g-assist-plugin-discord.exe
-   - config.json
-   - manifest.json
+### Step 4: Install the Plugin
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `discord` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
+
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-discord.exe`)
+- `manifest.json`
+- `config.json` (with your Discord bot token and channel ID configured)
 
 ## How to Use
 Once everything is set up, you can interact with Discord through simple chat commands.
 
-- `Hey Discord, send a message to my channel saying I'll be there in five minutes`
-- `Hey Discord, send the latest perf chart to my channel`
-- `Hey Discord, send the latest clip to my channel`
-- `Hey Discord, send the latest screenshot to my channel`
+- "Hey Discord, send a message to my channel saying I'll be there in five minutes"
+- "Hey Discord, send the latest perf chart to my channel"
+- "Hey Discord, send the latest clip to my channel"
+- "Hey Discord, send the latest screenshot to my channel"
 
 ## Troubleshooting
 - **Logs**: Check `%USERPROFILE%\discord-plugin.log` for detailed logs

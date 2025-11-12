@@ -47,9 +47,9 @@ This creates the executable and prepares all necessary files.
 ```
 
 💡 **Tip**: Make sure all files are copied, including:
-- The executable
-- manifest.json
-- config.json (you'll need to update this with your API key)
+- The executable (`g-assist-stock-plugin.exe`)
+- `manifest.json`
+- `config.json` (you'll need to update this with your Twelve Data API key)
 
 ### Step 4: Configure Your API Key
 1. Open `config.json` in the plugin directory
@@ -64,9 +64,10 @@ This creates the executable and prepares all necessary files.
 Once everything is set up, you can check stock prices through simple chat commands!
 
 Try these commands:
-- `Hey stock, what's the stock price for NVIDIA?`
-- `/stock Check the price of AMC`
-- `/stock What's the ticker symbol for GameStop?`
+- "Hey stock, what's the stock price for NVIDIA?"
+- "Check the price of AMC"
+- "What's the ticker symbol for GameStop?"
+- "What's Tesla trading at?"
 
 ### Example Responses
 

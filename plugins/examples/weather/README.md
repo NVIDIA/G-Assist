@@ -46,16 +46,17 @@ This creates the executable and prepares all necessary files.
 ```
 
 💡 **Tip**: Make sure all files are copied, including:
-- The executable
-- manifest.json
+- The executable (`g-assist-plugin-weather.exe`)
+- `manifest.json`
 
 ## How to Use
 Once everything is set up, you can check weather information through simple chat commands.
 
 Try these commands:
--  "Hey weather, what's the weather like in London?"
--  "/weather Check the temperature in New York"
--  "/weather What's the forecast for Tokyo?"
+- "Hey weather, what's the weather like in London?"
+- "Check the temperature in New York"
+- "What's the forecast for Tokyo?"
+- "How's the weather in Santa Clara?"
 
 ### Example Responses
 

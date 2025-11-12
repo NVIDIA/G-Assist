@@ -62,9 +62,9 @@ mkdir json && tar -xf path\to\include.zip -C json
 
 ## How to Use
 Once everything is set up, you can control your Logitech devices through G-Assist! Try these commands:
-- "Hey logiled, Set my mouse to red"
-- "/fc Change my Logitech keyboard to rainbow"
-- "/logiled set all devices to blue"
+- "Hey Logitech, set my mouse to red"
+- "Change my Logitech keyboard to blue"
+- "Set my Logitech headset to green"
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
 
