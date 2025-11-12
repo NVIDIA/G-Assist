@@ -20,7 +20,7 @@ Project G-Assist is built for community expansion. Whether you're a Python devel
 - Custom system interactions for hardware and OS automation
 - Game and application integrations that enhance PC performance or add new commands
 
-If you're looking for inspiration, check out our sample plugins for controling peripheral & smart home lighting, invoking larger AI models like Gemini, managing Spotify tracks, or even checking streamers' online status on Twitch — and then let your own ideas take G-Assist to the next level!
+If you're looking for inspiration, check out our sample plugins for controlling peripheral & smart home lighting, invoking larger AI models like Gemini, managing Spotify tracks, checking stock prices, getting weather information, or even checking streamers' online status on Twitch — and then let your own ideas take G-Assist to the next level!
 
 ## Quick Start 
 
@@ -76,7 +76,7 @@ Started At: 2024-03-14T12:34:56Z
 ```
 
 When a streamer is offline:
-```
+```text
 ninja is OFFLINE
 ```
 
@@ -89,11 +89,13 @@ ninja is OFFLINE
 
 #### Project Structure
 ```
-plugins/twitch/
+plugins/examples/twitch/
 ├── manifest.json        # Plugin configuration
 ├── config.json          # Twitch API credentials
 ├── plugin.py            # Main plugin code
-└── requirements.txt     # Dependencies (requests)
+├── requirements.txt     # Python dependencies
+├── setup.bat            # Environment setup script
+└── build.bat            # Build script
 ```
 See our [Twitch Plugin Example Code](./plugins/examples/twitch/) for a step-by-step guide to creating a Twitch integration plugin for G-Assist.
 
@@ -143,19 +145,24 @@ Each plugin lives in its own directory named after the plugin (this name is used
 ```text
 plugins/
 └── myplugin/              # Plugin directory name = invocation name
-    ├── g-assist-plugin-my-plugin.exe  # Executable
+    ├── g-assist-plugin-myplugin.exe  # Executable
     ├── manifest.json       # Plugin configuration
-    └── config.json         # Settings & credentials
+    └── config.json         # Settings & credentials (optional)
 ```
 
+**File Descriptions:**
 - `g-assist-plugin-<plugin-name>.exe` - Executable file that executes plugin functionality
-- `manifest.json` - Manifest file that contains: 
-    - name of the plugin executable
-    - plugin description
-    - list of functions and their parameters, with descriptions for each
-    - `tags` - array of keywords used to describe the plugin's functionality
-    - `persistent` [true, false] - if the plugin should remain running throughout the entire G-Assist lifecycle 
-- `config.json` - Config file containing any required information for the plugin (API key, usernames, other specifications) (⚠️ add to `.gitignore`)
+- `manifest.json` - Plugin manifest that defines:
+    - `name` - plugin identifier
+    - `description` - brief description of plugin functionality
+    - `executable` - name of the executable file
+    - `persistent` - [true/false] whether plugin runs throughout G-Assist lifecycle
+    - `functions` - array of available functions with:
+      - `name` - function identifier
+      - `description` - what the function does
+      - `tags` - keywords for AI model to match user intent
+      - `properties` - parameters the function accepts
+- `config.json` - Configuration file for plugin-specific settings (API keys, credentials, etc.) ⚠️ **Add to `.gitignore`**
 
 > 💡 **Tip**: The plugin directory name is what users will type to invoke your plugin (e.g., "Hey myplugin, do something")
 
@@ -166,9 +173,9 @@ The manifest file acts as the bridge between G-Assist and your plugin. G-Assist 
 
 #### Two Ways to Invoke Plugins:
 
-1. Zero-Shot Function Calling
+1. **Natural Language Commands**
     ```
-    /fc What are the top upcoming games for 2025?
+    What are the top upcoming games for 2025?
     ```
     The AI model automatically:
     - Analyzes the user's intent
@@ -176,29 +183,35 @@ The manifest file acts as the bridge between G-Assist and your plugin. G-Assist 
     - Chooses the relevant function to execute
     - Passes any required parameters
 
-2. Direct Plugin Invocation
+2. **Direct Plugin Invocation**
     ```
-    Hey logiled, change my keyboard lights to green
+    Hey Logitech, change my keyboard lights to green
     ```
-    or
-    ```
-    /logiled change my keyboard lights to green
-    ```
-    - User explicitly specifies the plugin
+    - User explicitly specifies the plugin by name
     - AI model determines the appropriate function from the manifest
     - Parameters are extracted from the natural language command
 
 > 💡 **Pro Tip**: Direct plugin invocation is faster when you know exactly which plugin you need!
 
 ## NVIDIA-Built G-Assist Plugins
-Explore our official plugins:
-- [Gemini AI Integration](./plugins/examples/gemini)
-- [Logitech Peripheral Lighting](./plugins/examples/logiled)
-- [Corsair Peripheral Lighting](./plugins/examples/corsair)
-- [Nanoleaf Room Lighting](./plugins/examples/nanoleaf)
-- [Twitch Integration](./plugins/examples/twitch)
-- [Spotify Music Player](./plugins/examples/spotify)
-- [More coming soon!]
+Explore our official example plugins:
+
+### AI & Information
+- **[Gemini AI Integration](./plugins/examples/gemini)** - Query Google's Gemini AI for real-time information, general knowledge, and web searches
+- **[Weather](./plugins/examples/weather)** - Get current weather conditions for any city
+- **[Stock Market](./plugins/examples/stock)** - Check stock prices and look up ticker symbols
+- **[Twitch](./plugins/examples/twitch)** - Check if streamers are live and get stream details
+
+### Smart Lighting
+- **[Corsair iCUE](./plugins/examples/corsair)** - Control Corsair RGB peripheral lighting (keyboard, mouse, headset)
+- **[Logitech G HUB](./plugins/examples/logiled)** - Control Logitech G RGB peripheral lighting (keyboard, mouse, headset)
+- **[Nanoleaf](./plugins/examples/nanoleaf)** - Control Nanoleaf smart lighting panels
+- **[OpenRGB](./plugins/examples/openrgb)** - Universal RGB lighting control for multiple device brands
+
+### Automation & Entertainment
+- **[Spotify](./plugins/examples/spotify)** - Control Spotify playback, manage playlists, and get track information
+- **[IFTTT](./plugins/examples/ifttt)** - Trigger IFTTT applets and automate smart home routines
+- **[Discord](./plugins/examples/discord)** - Send messages, charts, screenshots, and clips to Discord channels
 
 ## Community-Built Plugins
 Check out what others have built:
@@ -209,8 +222,10 @@ Check out what others have built:
   - Add unique value to the ecosystem
 
 ## Development Tools
-- [Python Bindings](./api/bindings/python/)
-- [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
+- **[Python Bindings](./api/bindings/python/)** - Python API for interacting with G-Assist
+- **[C++ API](./api/c++/)** - Native C++ interface for performance-critical applications
+- **[ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)** - AI-assisted plugin development tool
+- **[Plugin Templates](./plugins/templates/)** - Starter templates for Python and C++ plugins
 
 ## Need Help?
 - Report issues on [GitHub](https://github.com/nvidia/g-assist)
