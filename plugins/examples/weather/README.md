@@ -70,7 +70,7 @@ Partly cloudy, 15 degrees Celsius, Humidity: 65%
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\weather_plugin.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\weather\weather-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

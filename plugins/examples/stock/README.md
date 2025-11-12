@@ -88,10 +88,19 @@ Found ticker for 'NVIDIA Corporation' on NASDAQ: NVDA
   - Verify your API key in config.json
   - Check if you've exceeded your API limit
 
+## First-Time Setup
+When you first try to use the Stock plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it about a stock price, and it will:
+1. Display setup instructions
+2. Guide you to get a free Twelve Data API key (no credit card required)
+3. Help you configure the API key
+4. Verify your configuration
+
+The setup takes about 1 minute and is completely free!
+
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\stock_plugin.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\stock\stock-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

@@ -135,10 +135,19 @@ The plugin includes these main functions:
 - `spotify_queue_track`: Add a track to queue
 - `spotify_get_user_playlists`: List your playlists
 
+## First-Time Setup
+When you first try to use the Spotify plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to play music, and it will:
+1. Display setup instructions
+2. Guide you to create a Spotify app
+3. Help you authorize the connection
+4. Verify your configuration
+
+The plugin will open your browser automatically and guide you through each step!
+
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\spotify-plugin.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\spotify-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

@@ -84,6 +84,15 @@ When a streamer is offline:
 shroud is OFFLINE
 ```
 
+## First-Time Setup
+When you first try to use the Twitch plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to check a streamer's status, and it will:
+1. Display setup instructions
+2. Guide you to create a Twitch app
+3. Help you configure your credentials
+4. Verify your configuration
+
+The setup takes about 3 minutes and guides you through the entire process!
+
 ## Troubleshooting Tips
 
 ### Authentication Issues
@@ -93,7 +102,7 @@ shroud is OFFLINE
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\twitch.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\twitch\twitch-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 
