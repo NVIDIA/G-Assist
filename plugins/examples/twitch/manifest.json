@@ -3,6 +3,8 @@
   "executable": "g-assist-plugin-twitch.exe",
   "persistent": false,
   "passthrough": false,
+  "name": "twitch",
+  "description": "Check Twitch stream status and get live stream information.",
   "functions": [
     {
       "name": "check_twitch_live_status",

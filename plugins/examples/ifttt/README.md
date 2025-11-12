@@ -33,10 +33,21 @@ build.bat
 ```
 
 ### Step 4: Install the Plugin
-Copy the `dist/ifttt` folder to the proper directory: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins`
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `ifttt` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
 
-### Step 5: Configure RSS Feeds (Optional)
-Edit the `config.json` file in the plugin directory to customize your RSS feed sources:
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-ifttt.exe`)
+- `manifest.json`
+- `config.json` (you'll need to update this with your IFTTT credentials)
+
+### Step 5: Configure Your IFTTT Webhook
+1. Get your IFTTT Webhook key from [https://ifttt.com/maker_webhooks](https://ifttt.com/maker_webhooks)
+2. Open `config.json` in the plugin directory
+3. Add your webhook key and configure the settings:
 ```json
 {
   "webhook_key": "YOUR_WEBHOOK_KEY",
@@ -46,10 +57,11 @@ Edit the `config.json` file in the plugin directory to customize your RSS feed s
 }
 ```
 
-### How to Use
-- `Hey IFTTT, it's game time!`
-
-- `/ifttt what applets do I have?`
+## How to Use
+Once everything is set up, you can trigger your IFTTT applets through G-Assist! Try these commands:
+- "Hey IFTTT, it's game time!"
+- "Activate my gaming setup"
+- "Start my game routine"
 
 ## game_routine Components
 ### 1. Spotify 

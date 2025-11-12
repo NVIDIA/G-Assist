@@ -36,9 +36,10 @@ git clone <repo link>
 cd gemini-plugin
 ```
 
-### Step 2: Set Up Python Packages
+### Step 2: Set Up Python Environment
+Run the setup script to create a virtual environment and install dependencies:
 ```bash
-python -m pip install -r requirements.txt
+setup.bat
 ```
 
 ### Step 3: Get Your FREE Google AI API Key
@@ -70,17 +71,17 @@ This will create a `dist\google` folder containing all the required files for th
 
 
 ### Step 5: Install the Plugin
-1. Create a new folder here (if it doesn't exist):
-   ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini
-   ```
-   💡 **Tip**: Copy and paste this path into File Explorer's address bar!
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `google` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
 
-2. Copy these files to the folder you just created:
-   - `g-assist-plugin-google.exe` (from the `dist\google` folder)
-   - `manifest.json`
-   - `config.json`
-   - `google.key.txt` (rename to `google.key` after adding your API key)
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-google.exe`)
+- `manifest.json`
+- `config.json`
+- `google.key.txt` (rename to `google.key` after adding your API key)
 
 ### Step 6: Configure the Model (Optional)
 You can customize which Gemini model to use by editing `config.json`:
@@ -95,12 +96,14 @@ Available models: `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`
 Once installed, you can use Gemini through G-Assist! Try these examples:
 
 ### Basic Text Generation
-- Hey Google, tell me about artificial intelligence.
-- /google Explain ray tracing using a real-world analogy in one sentence. ELI5
+- "Hey Google, tell me about artificial intelligence"
+- "Explain ray tracing using a real-world analogy in one sentence. ELI5"
+- "What is machine learning?"
 
-### Search
-- Hey Google, what's the weather in Santa Clara, CA?
-- /google What are the top five features in the latest major patch of RUST?
+### Search & Real-time Information
+- "Hey Google, what's the weather in Santa Clara, CA?"
+- "What are the top five features in the latest major patch of RUST?"
+- "What's the latest news about GPUs?"
 
 ## Limitations
 - Requires active internet connection
