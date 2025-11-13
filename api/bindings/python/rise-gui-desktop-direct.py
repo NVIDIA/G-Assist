@@ -1653,7 +1653,7 @@ def get_html():
             <button class="dropdown-item" id="settingsMenuItem">Settings</button>
             <div class="dropdown-divider"></div>
             <div class="dropdown-version">
-                <span>Version 0.0.6</span>
+                <span>Version 0.0.7</span>
             </div>
         </div>
     </header>
@@ -3325,7 +3325,7 @@ def get_splash_html():
         <div class="logo">G-ASSIST</div>
         <div class="message">Launching G-Assist...</div>
         <div class="spinner"></div>
-        <div class="version">Version 0.0.6</div>
+        <div class="version">Version 0.0.7</div>
     </div>
 </body>
 </html>
