@@ -128,12 +128,13 @@ def execute_shutdown_command() -> Response:
     logger.info("Shutting down plugin...")
     return generate_success_response("shutdown success.")
 
-def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -> Response:
+def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_, send_status_callback=None) -> Response:
     """Get stock ticker symbol from company name.
     
     Args:
         params (Dict[str, Any], optional): Parameters containing company_name.
         *_ : Additional unused arguments.
+        send_status_callback (callable, optional): Callback to send status updates.
     
     Returns:
         Response: Success response with ticker symbol or failure response.
@@ -142,6 +143,11 @@ def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -
     if not name:
         logger.error("No company name provided.")
         return generate_failure_response("Missing company_name.")
+    
+    # Send status update
+    if send_status_callback:
+        send_status_callback(generate_status_update(f"Looking up ticker for {name}..."))
+    
     url = f"https://api.twelvedata.com/symbol_search?symbol={name}&apikey={API_KEY}"
     try:
         response = requests.get(url).json()
@@ -156,12 +162,13 @@ def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -
         logger.error(f"Error in get_ticker_from_company: {str(e)}")
         return generate_failure_response("Failed to get ticker from company name.")
 
-def execute_get_stock_price_command(params: Dict[str, Any] = None, *_) -> Response:
+def execute_get_stock_price_command(params: Dict[str, Any] = None, *_, send_status_callback=None) -> Response:
     """Get current stock price for a given ticker or company name.
     
     Args:
         params (Dict[str, Any], optional): Parameters containing ticker or company_name.
         *_ : Additional unused arguments.
+        send_status_callback (callable, optional): Callback to send status updates.
     
     Returns:
         Response: Success response with stock price or failure response.
@@ -170,6 +177,11 @@ def execute_get_stock_price_command(params: Dict[str, Any] = None, *_) -> Respon
     if not query:
         logger.error("No query provided.")
         return generate_failure_response("Provide either ticker or company_name.")
+    
+    # Send status update
+    if send_status_callback:
+        send_status_callback(generate_status_update(f"Fetching stock price for {query}..."))
+    
     url = f"https://api.twelvedata.com/quote?symbol={query}&apikey={API_KEY}"
     try:
         data = requests.get(url).json()
@@ -219,6 +231,20 @@ def generate_success_response(message: str = None) -> Response:
         Response: Success response with message.
     """
     return {'success': True, 'message': message or "Command succeeded."}
+
+def generate_status_update(message: str) -> Dict[str, Any]:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    
+    Args:
+        message (str): Status message to display to user.
+    
+    Returns:
+        Dict: Status update with message only.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 def read_command() -> Dict[str, Any] | None:
     """Read command from stdin pipe.
@@ -359,7 +385,7 @@ def main() -> int:
                                 params = tool_call.get(PARAMS_PROPERTY, {})
                                 context = input.get(CONTEXT_PROPERTY)
                                 system_info = input.get(SYSTEM_INFO_PROPERTY)
-                                response = commands[cmd](params, context, system_info)
+                                response = commands[cmd](params, context, system_info, send_status_callback=write_response)
                     else:
                         logger.error(f'Unknown command: {cmd}')
                         response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')

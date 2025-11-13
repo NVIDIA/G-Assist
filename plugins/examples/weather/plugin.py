@@ -62,13 +62,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_weather_info(params: dict = None) -> dict:
+def get_weather_info(params: dict = None, send_status_callback=None) -> dict:
     """
     Retrieves weather information for a specified city using the wttr.in service.
     
     Args:
         params (dict, optional): Dictionary containing parameters. Must include 'city' key.
             Example: {"city": "London"}
+        send_status_callback (callable, optional): Callback function to send status updates
         
     Returns:
         dict: A dictionary containing:
@@ -91,6 +92,10 @@ def get_weather_info(params: dict = None) -> dict:
     
     city = params["city"]
     url = f"https://wttr.in/{city}?format=j1"
+    
+    # Send status update before making API call
+    if send_status_callback:
+        send_status_callback({"status": "in_progress", "message": f"Checking weather for {city}..."})
     
     try:
         response = requests.get(url, timeout=10)  # Add timeout for better reliability
@@ -191,7 +196,7 @@ def main():
                 response = commands.get(INITIALIZE_COMMAND, lambda _: {"success": False, "message": "Unknown command"})(params)
             elif func == GET_WEATHER_INFO_COMMAND:
                 logging.info(f"Getting weather info for {params}")
-                response = get_weather_info(params)
+                response = get_weather_info(params, send_status_callback=write_response)
                 logging.info(f"Weather info: {response}")
             elif func == SHUTDOWN_COMMAND:
                 response = commands.get(SHUTDOWN_COMMAND, lambda _: {"success": False, "message": "Unknown command"})(params)

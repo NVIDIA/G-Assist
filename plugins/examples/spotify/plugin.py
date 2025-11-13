@@ -252,7 +252,7 @@ def main():
                         # If we have valid tokens, execute the command
                         try:
                             logging.info(f'Executing command: {cmd} {tool_call}')
-                            response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {})
+                            response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, send_status_callback=write_response)
                         except Exception as e:
                             response = generate_failure_response({'message': f'Spotify Error: {e}'})
                 else:
@@ -263,7 +263,7 @@ def main():
                 cmd = original_command[FUNCTION_PROPERTY]
                 logging.info(f'Retrying original command after auth: {cmd}')
                 try:
-                    response = commands[cmd](original_command[PARAMS_PROPERTY] if PARAMS_PROPERTY in original_command else {})
+                    response = commands[cmd](original_command[PARAMS_PROPERTY] if PARAMS_PROPERTY in original_command else {}, send_status_callback=write_response)
                 except Exception as e:
                     response = generate_failure_response({'message': f'Spotify Error: {e}'})
         else:
@@ -583,6 +583,14 @@ def generate_success_response(body:dict=None) -> dict:
     response = body.copy() if body is not None else dict()
     response['success'] = True
     return response
+
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 def call_spotify_api(url: str, request_method: str, data) -> Response:
     """ Makes authenticated requests to the Spotify Web API.
@@ -918,7 +926,7 @@ def execute_auth_command(params) -> dict:
         })
     
 
-def execute_play_command(params: dict) -> dict:
+def execute_play_command(params: dict, send_status_callback=None) -> dict:
     """ Starts or resumes Spotify playback.
     
     Can play specific tracks, albums, playlists or resume current playback.
@@ -928,6 +936,7 @@ def execute_play_command(params: dict) -> dict:
             - type (str): Content type ('track', 'album', 'playlist')
             - name (str): Name of content to play
             - artist (str, optional): Artist name for better search matching
+        send_status_callback (callable, optional): Callback to send status updates
             
     Returns:
         dict: Response containing:
@@ -938,6 +947,14 @@ def execute_play_command(params: dict) -> dict:
         {'type': 'track', 'name': 'Yesterday', 'artist': 'The Beatles'}
     """
     try:
+        # Send status update
+        if send_status_callback:
+            if params and params != {}:
+                content_name = params.get('name', 'content')
+                send_status_callback(generate_status_update(f"Starting playback of {content_name}..."))
+            else:
+                send_status_callback(generate_status_update("Resuming playback..."))
+        
         device = get_device_id()
         uri = None
         response = None
@@ -969,14 +986,19 @@ def execute_play_command(params: dict) -> dict:
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
-def execute_pause_command(params: dict) -> dict:
+def execute_pause_command(params: dict, send_status_callback=None) -> dict:
     ''' Command handler for `spotify_start_playback` function
 
     @param[in] params  function parameters
+    @param[in] send_status_callback  callback to send status updates
 
     @return function response
     '''
     try:
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update("Pausing playback..."))
+        
         device = get_device_id()
         url = f"/me/player/pause?device_id={device}"
         response = call_spotify_api(url=url, request_method='PUT', data=None)    
