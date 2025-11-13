@@ -139,7 +139,7 @@ def execute_shutdown_command() -> dict:
     logger.info('Shutting down Discord plugin')
     return generate_success_response('Shutdown success.')
 
-def send_message_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
+def send_message_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
     """Send a text message to Discord channel."""
     try:
         if not BOT_TOKEN or not CHANNEL_ID:
@@ -148,6 +148,10 @@ def send_message_to_discord_channel(params: dict = None, context: dict = None, s
         text = params.get('message', '')
         if not text:
             return generate_failure_response('No message provided.')
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update("Sending message to Discord..."))
         
         logger.info(f'Sending message to Discord channel: {CHANNEL_ID}')
         
@@ -183,17 +187,25 @@ def find_latest_file(directory: str, extension: str) -> Optional[str]:
         logger.error(f'Error finding latest file: {str(e)}')
         return None
 
-def send_latest_chart_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
+def send_latest_chart_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
     """Send latest performance chart (CSV) to Discord."""
     try:
         if not BOT_TOKEN or not CHANNEL_ID:
             return generate_failure_response('Discord bot not configured.')
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update("Finding latest chart..."))
             
         caption = params.get('caption', '') if params else ''
         file_path = find_latest_file(CSV_DIRECTORY, '.csv')
 
         if not file_path:
             return generate_failure_response('No CSV file found.')
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update("Uploading chart to Discord..."))
 
         url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
         headers = {"Authorization": f"Bot {BOT_TOKEN}"}
@@ -287,6 +299,14 @@ def generate_success_response(message: str = None) -> Response:
     if message:
         response['message'] = message
     return response
+
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 def read_command() -> dict | None:
     """Read command from stdin pipe."""
@@ -402,7 +422,7 @@ def main():
                                 context = input.get(CONTEXT_PROPERTY, {})
                                 system_info = input.get(SYSTEM_INFO_PROPERTY, {})
                                 logger.info(f'Executing command: {cmd}')
-                                response = commands[cmd](params, context, system_info)
+                                response = commands[cmd](params, context, system_info, send_status_callback=write_response)
                     else:
                         logger.warning(f'Unknown command: {cmd}')
                         response = generate_failure_response(f'Unknown command: {cmd}')

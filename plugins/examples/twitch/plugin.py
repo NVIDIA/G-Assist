@@ -232,11 +232,20 @@ def generate_response(success: bool, message: Optional[str] = None) -> Response:
         response['message'] = message
     return response
 
-def check_twitch_live_status(params: Dict[str, str]) -> Response:
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
+
+def check_twitch_live_status(params: Dict[str, str], send_status_callback=None) -> Response:
     """Check if a Twitch user is currently live.
     
     Args:
         params (Dict[str, str]): Dictionary containing 'username' key with Twitch username.
+        send_status_callback (callable, optional): Callback to send status updates.
     
     Returns:
         Response: Dictionary containing:
@@ -262,6 +271,10 @@ def check_twitch_live_status(params: Dict[str, str]) -> Response:
     
     if not username:
         return generate_response(False, "Missing required parameter: username")
+    
+    # Send status update
+    if send_status_callback:
+        send_status_callback(generate_status_update(f"Checking if {username} is live..."))
     
     if not oauth_token:
         oauth_token = get_oauth_token()
@@ -469,7 +482,7 @@ def main() -> None:
             if func == "initialize":
                 response = initialize()
             elif func == "check_twitch_live_status":
-                response = check_twitch_live_status(params)
+                response = check_twitch_live_status(params, send_status_callback=write_response)
             elif func == "shutdown":
                 response = shutdown()
                 write_response(response)

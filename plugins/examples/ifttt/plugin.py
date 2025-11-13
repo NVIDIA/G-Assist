@@ -167,12 +167,13 @@ def fetch_ign_gaming_news() -> List[str]:
         logger.error(f'Error fetching IGN gaming news: {str(e)}')
         return []
 
-def execute_run_applet_command(params: dict = None) -> dict:
+def execute_run_applet_command(params: dict = None, send_status_callback=None) -> dict:
     """
     Triggers an IFTTT webhook applet with IGN gaming news.
     
     Args:
         params: Optional parameters (currently unused)
+        send_status_callback (callable, optional): Callback to send status updates
     
     Returns:
         Success or failure response
@@ -183,6 +184,10 @@ def execute_run_applet_command(params: dict = None) -> dict:
         return generate_failure_response('IFTTT webhook not configured.')
     
     try:
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Fetching gaming news..."))
+        
         webhook_url = f'https://maker.ifttt.com/trigger/{EVENT_NAME}/with/key/{IFTTT_WEBHOOK_KEY}'
         
         # initialize webhook data
@@ -198,6 +203,10 @@ def execute_run_applet_command(params: dict = None) -> dict:
                 webhook_data[f'value{i}'] = headline
                 
             logger.info(f'Including {len(headlines)} news headlines in webhook')
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Triggering IFTTT applet {EVENT_NAME}..."))
         
         # Send the webhook request with data if we have any, otherwise send without data
         if webhook_data:
@@ -228,6 +237,14 @@ def generate_success_response(message: str = None) -> Response:
     if message:
         response['message'] = message
     return response
+
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 def read_command() -> dict or None:
     """Read command from stdin pipe."""
@@ -336,7 +353,7 @@ def main():
                                 response = execute_setup_wizard()
                             else:
                                 params = tool_call.get(PARAMS_PROPERTY, {})
-                                response = commands[cmd](params)
+                                response = commands[cmd](params, send_status_callback=write_response)
                     else:
                         logger.warning(f'Unknown command: {cmd}')
                         response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')

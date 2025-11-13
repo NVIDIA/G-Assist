@@ -183,13 +183,14 @@ def execute_shutdown_command() -> Response:
     return generate_success_response() if is_success else generate_failure_response()
 
 
-def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> Response:
+def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None, send_status_callback=None) -> Response:
     ''' Command handler for "nanoleaf_change_room_lights" function
 
     Parameters:
         nl: Nanoleaf device.
         params: Function parameters.
         context: Function context.
+        send_status_callback: Callback to send status updates.
 
     Returns:
         Function response
@@ -205,6 +206,10 @@ def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> R
 
     try:
         color = params['color'].upper()
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Changing Nanoleaf lights to {color.lower()}..."))
         if color == RAINBOW:
             # this is temporary until the model adds a 'change profile' function
             return execute_profile_command(nl, { 'profile': 'Northern Lights' })
@@ -217,13 +222,14 @@ def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> R
         return generate_failure_response(f'{ERROR_MESSAGE} {str(e)}')
 
 
-def execute_profile_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> Response:
+def execute_profile_command(nl:Nanoleaf, params:dict=None, context:dict=None, send_status_callback=None) -> Response:
     ''' Command handler for "nanoleaf_change_profile" function.
 
     Parameters:
         nl: Nanoleaf device.
         params: Function parameters.
         context: Function context.
+        send_status_callback: Callback to send status updates.
     Returns:
         Function response
     '''
@@ -239,6 +245,10 @@ def execute_profile_command(nl:Nanoleaf, params:dict=None, context:dict=None) ->
             return generate_failure_response(ERROR_MESSAGE)
 
         profile = params['profile']
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Changing Nanoleaf profile to {profile}..."))
         try:
             index = [ s.upper() for s in effects ].index(profile.upper())
             nl.set_effect(effects[index])
@@ -362,6 +372,14 @@ def generate_success_response(message:str=None) -> Response:
     if message:
         response['message'] = message
     return response
+
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 
 def generate_command_handlers() -> dict:
@@ -527,9 +545,9 @@ def main():
                                 if NL is None:
                                     response = generate_failure_response(f'{ERROR_MESSAGE} There is no Nanoleaf device connected. Check the IP address in the configuration file.')
                                 else:
-                                    response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context)
+                                    response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context, send_status_callback=write_response)
                             else:
-                                response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context)
+                                response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context, send_status_callback=write_response)
                     else:
                         response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')
                 else:

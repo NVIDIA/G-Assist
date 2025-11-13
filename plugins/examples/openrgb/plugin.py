@@ -110,7 +110,8 @@ def main():
                                 response = commands[cmd](
                                     tool_call.get(PARAMS_PROPERTY, {}),
                                     input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in input else None,
-                                    input[SYSTEM_INFO_PROPERTY] if SYSTEM_INFO_PROPERTY in input else None  # Pass system_info directly
+                                    input[SYSTEM_INFO_PROPERTY] if SYSTEM_INFO_PROPERTY in input else None,  # Pass system_info directly
+                                    send_status_callback=write_response
                                 )
                         else:
                             logging.warning(f'Unknown command: {cmd}')
@@ -247,6 +248,14 @@ def generate_success_response(message:str=None) -> Response:
         response['message'] = message
     return response
 
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
+
 
 def execute_initialize_command() -> dict:
     ''' Command handler for `initialize` function
@@ -328,7 +337,7 @@ def execute_list_devices(params:dict=None, context:dict=None, system_info:dict=N
     except Exception as e:
         return generate_failure_response(f'{ERROR_MESSAGE} {e}')
 
-def execute_set_color(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
+def execute_set_color(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
     SUCCESS_MESSAGE = 'Lighting for '
     ERROR_MESSAGE = 'Failed to set lighting to color for OpenRGB.'
     logging.info(f'Executing execute_set_color')
@@ -341,6 +350,13 @@ def execute_set_color(params: dict = None, context: dict = None, system_info: di
         
         device_name = params.get('device_name')
         logging.info(f'Device Name: {device_name}')
+        
+        # Send status update
+        if send_status_callback:
+            if device_name and "all" not in device_name.lower():
+                send_status_callback(generate_status_update(f"Setting {device_name} to {color}..."))
+            else:
+                send_status_callback(generate_status_update(f"Setting all devices to {color}..."))
         try:
             # Look up color in our map
             color = color.lower()
@@ -385,11 +401,15 @@ def execute_set_color(params: dict = None, context: dict = None, system_info: di
     except Exception as e:
         return generate_failure_response(f'{ERROR_MESSAGE} {e}')
 
-def execute_disable_lighting(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
+def execute_disable_lighting(params:dict=None, context:dict=None, system_info:dict=None, send_status_callback=None) -> dict:
     SUCCESS_MESSAGE = 'SignalRGB lighting disabled.'
     ERROR_MESSAGE = 'Failed to disable lighting for SignalRGB.'
     logging.info(f'Executing execute_disable_lighting')
-    try:    
+    try:
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update("Disabling RGB lighting..."))
+        
         global CLI
         for device in CLI.devices:
             device.set_mode('off')

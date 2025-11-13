@@ -177,3 +177,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# Sensitive keys (use *.key.sample for templates)
+*.key
