@@ -2,11 +2,18 @@
     "manifestVersion": 1,
     "executable": "g-assist-plugin-spotify.exe",
     "persistent": true,
+    "tethered": true,
+    "tether_config": {
+        "heartbeat_interval": 5,
+        "heartbeat_timeout": 20,
+        "onboarding_timeout": 300,
+        "allow_passthrough": true
+    },
     "functions": [
         {
             "name": "spotify_start_playback",
-            "description": "Starts the playback of Spotify device. If no parameters are provided, playback will start on the device with the current track. If parameters are provided, Spotify will search for the item using the type, name and artist parameters, and begin playing the first item that is returned from the search.",
-            "tags": [ "music" ],
+            "description": "Plays music on Spotify - resumes current track if paused, or searches and plays specific songs, albums, or artists by name. Use when user wants to play/resume music, start a song, or play something by an artist.",
+            "tags": [ "music", "play", "resume", "start" ],
             "properties": {
                 "type": {
                     "type": "string",
@@ -24,23 +31,23 @@
         },
         {
             "name": "spotify_pause_playback",
-            "description": "Pause the playback of Spotify device.",
-            "tags": [ "music" ]
+            "description": "Pauses currently playing music on Spotify. Use when user wants to pause, stop, or halt music playback.",
+            "tags": [ "music", "pause", "stop" ]
         },
         {
             "name": "spotify_next_track",
-            "description": "Skip user's playback to next track.",
-            "tags": [ "music" ]
+            "description": "Skips to the next song in the queue. Use when user wants to skip this song, go to next track, or play the next song.",
+            "tags": [ "music", "skip", "next" ]
         },
         {
             "name": "spotify_previous_track",
-            "description": "Skip user's playback to previous track.",
-            "tags": [ "music" ]
+            "description": "Goes back to the previous song. Use when user wants to replay the last song, go back, or hear the previous track again.",
+            "tags": [ "music", "previous", "back", "replay" ]
         },
         {
             "name": "spotify_shuffle_playback",
-            "description": "Toggle shuffle on or off for user's playback.",
-            "tags": [ "music" ],
+            "description": "Turns shuffle mode on or off for playback. Use when user wants to enable/disable random song order, shuffle their playlist, or turn shuffle on/off.",
+            "tags": [ "music", "shuffle", "random" ],
             "properties": {
                 "state": {
                     "type": "boolean",
@@ -50,8 +57,8 @@
         },
         {
             "name": "spotify_set_volume",
-            "description": "Set playback volume to the level specified by the user.",
-            "tags": [ "music" ],
+            "description": "Adjusts Spotify playback volume to a specific level (0-100%). Use when user wants to change music volume, make it louder/quieter, or set volume to a percentage.",
+            "tags": [ "music", "volume", "louder", "quieter" ],
             "properties": {
                 "volume_percent ": {
                     "type": "number",
@@ -61,13 +68,13 @@
         },
         {
             "name": "spotify_get_currently_playing",
-            "description": "Get the object currently being played on the user's Spotify account.",
-            "tags": [ "music" ]
+            "description": "Shows what song is currently playing on Spotify, including track name, artist, and album. Use when user asks what's playing, what song is this, or who's the artist.",
+            "tags": [ "music", "current", "playing", "now" ]
         },
         {
             "name": "spotify_queue_track",
-            "description": "Add an item to the end of the user's current playback queue.",
-            "tags": [ "music" ],
+            "description": "Adds a song, album, or artist to the playback queue to play next or later. Use when user wants to queue a song, add to queue, play something after current track, or line up music.",
+            "tags": [ "music", "queue", "add", "next" ],
             "properties": {
                 "type": {
                     "type": "string",
@@ -85,8 +92,8 @@
         }, 
         {
             "name": "spotify_get_user_playlists",
-            "description": "Get a list of the top playlists owned or followed by a Spotify user. A user can specify the number of playlists they want to see or if not, the function will return the top ten playlists.",
-            "tags": [ "music" ],
+            "description": "Lists user's Spotify playlists (top 10 or custom limit). Use when user asks to show/list their playlists, see their music collections, or browse their saved playlists.",
+            "tags": [ "music", "playlist", "list", "show" ],
             "properties": {
                 "limit": {
                     "type": "number",

@@ -1,21 +1,28 @@
 {
   "manifestVersion": 1,
-  "executable": "g-assist-plugin-google.exe",
-  "persistent": false,
+  "executable": "g-assist-plugin-gemini.exe",
+  "persistent": true,
   "passthrough": true,
+  "tethered": true,
+  "tether_config": {
+    "heartbeat_interval": 5,
+    "heartbeat_timeout": 20,
+    "onboarding_timeout": 60,
+    "allow_passthrough": true
+  },
   "functions": [
     {
       "name": "query_gemini",
-      "description": "Google/Gemini tool search for real time access of general topic queries including but not limited to gaming wiki queries, weather, news, food, etc.",
-      "tags": ["gemini", "google", "chat", "question", "answers", "query", "knowledge", "queries"],
+      "description": "**GOOGLE SEARCH via Gemini AI** - Search the internet using Google's Gemini AI with grounded search capabilities. Use this to get real-time information from the web including: current news, live sports scores, stock prices, weather updates, latest game patch notes, trending topics, product reviews, how-to guides, and any other information that requires up-to-date internet data. This function performs actual Google searches and returns current, web-grounded results. Use ONLY for queries requiring internet search. DO NOT use for: local system settings, GPU info, game performance queries, or topics that RISE handles locally.",
+      "tags": ["google", "google_search", "web_search", "internet", "search", "external_info", "fallback", "gemini"],
       "properties": {
-        "input": {
+        "query": {
           "type": "string",
-          "description": "the user's input"
+          "description": "The complete user question or search query to send to Google Gemini. This should be the user's exact question or a rephrased version that captures their intent. Examples: 'Who won the basketball game last night?', 'What are the best settings for Cyberpunk 2077?', 'How do I make chicken tikka masala?', 'What's the capital of Mongolia?'"
         },
-        "game": {
+        "context": {
           "type": "string",
-          "description": "an optional parameter that specifies which game is currently being played"
+          "description": "[OPTIONAL] Additional contextual information that might help provide better results. Can include: current game being played, user's location, time of day, or any other relevant background information. Examples: 'playing Elden Ring', 'Los Angeles', 'evening gaming session'. Leave empty if no specific context is needed."
         }
       }
     }

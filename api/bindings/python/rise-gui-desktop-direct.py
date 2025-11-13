@@ -2976,8 +2976,15 @@ def get_html():
                     if (window.pywebview && window.pywebview.api) {
                         console.log('Starting streaming API call...');
                         
+                        // Read assistant identifier and custom system prompt from settings
+                        var assistantId = document.getElementById('assistantIdentifierInput').value || '';
+                        var systemPrompt = document.getElementById('customSystemPromptInput').value || '';
+                        
+                        console.log('Assistant ID:', assistantId);
+                        console.log('System Prompt:', systemPrompt ? systemPrompt.substring(0, 50) + '...' : '(empty)');
+                        
                         // Start the streaming request first
-                        window.pywebview.api.send_message_stream_start(message, '', '', window.thinkingEnabled || false).then(function(result) {
+                        window.pywebview.api.send_message_stream_start(message, assistantId, systemPrompt, window.thinkingEnabled || false).then(function(result) {
                             console.log('Stream started:', result);
                             
                             // Start polling for updates immediately
