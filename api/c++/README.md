@@ -2,16 +2,16 @@
 
 A comprehensive C++ console application demonstrating how to use the RISE (Runtime Inference System Engine) API for **LLM (Large Language Model)** and **ASR (Automatic Speech Recognition)** streaming.
 
-## 🎯 What This Demo Shows
+## What This Demo Shows
 
-- ✅ Registering RISE callbacks for asynchronous response handling
-- ✅ Sending LLM text requests with real-time streaming responses
-- ✅ Sending ASR audio chunks for speech recognition
-- ✅ Thread-safe synchronization between requests and callbacks
-- ✅ Interactive chat interface with streaming output
-- ✅ Audio streaming for ASR demonstrations
+- Registering RISE callbacks for asynchronous response handling
+- Sending LLM text requests with real-time streaming responses
+- Sending ASR audio chunks for speech recognition
+- Thread-safe synchronization between requests and callbacks
+- Interactive chat interface with streaming output
+- Audio streaming for ASR demonstrations
 
-## 📋 Prerequisites
+## Prerequisites
 
 ### 1. Development Environment
 - **Visual Studio 2022** (or Visual Studio 2019)
@@ -53,7 +53,7 @@ Invoke-WebRequest -Uri "$base/amd64/nvapi64.lib" -OutFile "nvapi64.lib"
 ### 3. RISE Engine
 - G-Assist / RISE engine must be installed and running on your system
 
-## 🔧 Building the Project
+## Building the Project
 
 ### Visual Studio GUI
 
@@ -79,7 +79,7 @@ msbuild rise_demo_client.sln /p:Configuration=Release /p:Platform=x64
 - Debug: `x64\Debug\rise_demo_client.exe`
 - Release: `x64\Release\rise_demo_client.exe`
 
-## 🚀 Running the Application
+## Running the Application
 
 ```batch
 cd x64\Debug
@@ -89,10 +89,10 @@ rise_demo_client.exe
 ### Expected Output
 
 ```
-╔═══════════════════════════════════════════════════════════════╗
-║           RISE C++ Demo Client v1.0                           ║
-║     Demonstrating LLM and ASR Streaming Capabilities          ║
-╚═══════════════════════════════════════════════════════════════╝
+===============================================================
+           RISE C++ Demo Client v1.0                          
+     Demonstrating LLM and ASR Streaming Capabilities         
+===============================================================
 
 === Initializing RISE Client ===
 [OK] NVAPI Initialized
@@ -101,19 +101,18 @@ rise_demo_client.exe
 [RISE] System is READY!
 [OK] RISE Client Initialized Successfully!
 
-╔═══════════════════════════════════════════════════════════════╗
-║              RISE C++ Demo Client - Main Menu                 ║
-╚═══════════════════════════════════════════════════════════════╝
+===============================================================
+              RISE C++ Demo Client - Main Menu                
+===============================================================
 
 1. LLM Chat Demo (Interactive Streaming)
-2. ASR Streaming Demo (Simulated Audio)
-3. Show API Capabilities
-4. Exit
+2. ASR Streaming Demo (WAV File)
+3. Exit
 
 Choice:
 ```
 
-## 📖 Feature Demonstrations
+## Feature Demonstrations
 
 ### 1. LLM Chat Demo
 
@@ -124,7 +123,8 @@ Interactive chat with streaming AI responses. Type your questions and receive re
 [YOU]: What is my GPU?
 
 === Sending LLM Request ===
-Your GPU is an NVIDIA GeForce RTX 5090 with Driver version 572.83.
+[Example Response]
+Your GPU is an NVIDIA GeForce RTX 4090 with Driver version 572.83.
 
 [COMPLETE] Response finished
 ```
@@ -133,108 +133,16 @@ Type "exit" to return to main menu.
 
 ### 2. ASR Streaming Demo
 
-Streams audio chunks for speech recognition, showing interim transcriptions in real-time with a progress spinner.
+Streams audio chunks from a WAV file for speech recognition, showing interim transcriptions in real-time with a progress spinner.
 
 **Features:**
+- Loads and processes WAV audio files
 - Real-time transcription display
 - Progress spinner during processing
 - Clean in-place updates
 - Final transcription after all chunks
 
-### 3. API Capabilities
-
-Displays a comprehensive overview of RISE API features and content types.
-
-## 🔑 Key API Functions
-
-### Initialize RISE Client
-
-```cpp
-// Initialize NVAPI
-NvAPI_Initialize();
-
-// Register callback
-NV_RISE_CALLBACK_SETTINGS_V1 callbackSettings = { 0 };
-callbackSettings.version = NV_RISE_CALLBACK_SETTINGS_VER1;
-callbackSettings.callback = RiseCallbackHandler;
-NvAPI_RegisterRiseCallback(&callbackSettings);
-
-// Wait for READY signal
-```
-
-### Send LLM Request
-
-```cpp
-// Build JSON: {"prompt": "...", "context_assist": {}, "client_config": {}}
-NV_REQUEST_RISE_SETTINGS_V1 requestSettings = { 0 };
-requestSettings.version = NV_REQUEST_RISE_SETTINGS_VER1;
-requestSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
-strncpy_s(requestSettings.content, jsonRequest.c_str(), jsonRequest.length());
-requestSettings.completed = 1;  // Single request
-
-NvAPI_RequestRise(&requestSettings);
-```
-
-### Send ASR Audio Chunk
-
-```cpp
-// Format: "CHUNK:<id>:<sample_rate>:<base64_data>"
-std::string payload = "CHUNK:" + std::to_string(chunkId) + ":16000:" + audioBase64;
-
-NV_REQUEST_RISE_SETTINGS_V1 requestSettings = { 0 };
-requestSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
-strncpy_s(requestSettings.content, payload.c_str(), payload.length());
-requestSettings.completed = 0;  // More chunks coming
-
-NvAPI_RequestRise(&requestSettings);
-```
-
-### Handle Callback
-
-```cpp
-void RiseCallbackHandler(NV_RISE_CALLBACK_DATA_V1* pData) {
-    switch (pData->contentType) {
-        case NV_RISE_CONTENT_TYPE_TEXT:
-            // Handle LLM/ASR text response
-            std::cout << pData->content << std::flush;
-            if (pData->completed) {
-                responseCompleteSemaphore.release();
-            }
-            break;
-            
-        case NV_RISE_CONTENT_TYPE_READY:
-            systemReady = true;
-            break;
-    }
-}
-```
-
-## 📊 Content Types
-
-| Content Type | Value | Description |
-|--------------|-------|-------------|
-| `TEXT` | 1 | LLM chat, ASR transcriptions |
-| `GRAPH` | 2 | Graphical/chart data |
-| `PROGRESS_UPDATE` | 6 | Progress percentage |
-| `READY` | 7 | System ready signal |
-
-## 🎤 Real-World ASR Integration
-
-For production use with actual audio:
-
-1. **Capture Audio** from microphone using Windows Audio APIs (WASAPI, DirectSound)
-2. **Convert to PCM** format (16-bit, 16kHz is common)
-3. **Encode to Base64** for transmission
-4. **Send Chunks** every 500ms - 1 second of audio
-5. **Handle Interim Results** for real-time feedback
-6. **Finalize with STOP** when user stops speaking
-
-Example libraries for audio capture:
-- **PortAudio** - Cross-platform audio I/O
-- **RtAudio** - Real-time audio I/O
-- **Windows WASAPI** - Native Windows audio
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Build Errors
 
@@ -262,7 +170,7 @@ Example libraries for audio capture:
 - Check that the callback is registered before sending requests
 - Verify thread-safety of callback code
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 api/c++/
@@ -280,6 +188,8 @@ api/c++/
 ├── rise_demo_client.vcxproj    # Visual Studio project
 │
 ├── README.md                   # This file
+├── INTEGRATION.md              # Integration guide for developers
+├── API_REFERENCE.md            # Complete API reference
 │
 └── x64/
     ├── Debug/
@@ -288,12 +198,17 @@ api/c++/
         └── rise_demo_client.exe
 ```
 
-## 🔗 Related Projects
+## Documentation
+
+- **[INTEGRATION.md](INTEGRATION.md)** - Comprehensive guide for integrating RISE into your own applications
+- **[API_REFERENCE.md](API_REFERENCE.md)** - Complete API reference with functions, structures, and content types
+
+## Related Projects
 
 - **Python Binding** (`G-Assist/api/bindings/python/`): Python wrapper for RISE API
 - **Plugin Examples** (`G-Assist/plugins/examples/`): Example plugins for G-Assist
 
-## 💡 Development Tips
+## Development Tips
 
 1. **Start Simple**: Run the LLM demo first to verify basic connectivity
 2. **Check Callbacks**: Add logging to callback handler to see all events
@@ -301,7 +216,7 @@ api/c++/
 4. **Monitor Threads**: Use Visual Studio's thread window to track async behavior
 5. **Test Incrementally**: Build one feature at a time
 
-## 🚀 Next Steps
+## Next Steps
 
 After running this demo, you can:
 
@@ -311,12 +226,14 @@ After running this demo, you can:
 4. **Add Error Recovery**: Retry logic, timeout handling
 5. **Profile Performance**: Measure latency, throughput
 
-## 📄 License
+**Ready to integrate RISE into your own app?** See **[INTEGRATION.md](INTEGRATION.md)** for architectural guidance and implementation patterns.
+
+## License
 
 This project follows the same license as the parent G-Assist project.
 
 ---
 
-**Happy Coding!** 🎉
+**Happy Coding!**
 
 For questions or issues, please refer to the main G-Assist documentation.
