@@ -37,6 +37,8 @@ chart = ''
 response_done = False
 ready = False
 progress_bar = None
+ttft_timestamp = None  # Time to first token timestamp
+api_start_timestamp = None  # API call start time
 
 
 class NV_RISE_CONTENT_TYPE(IntEnum):
@@ -118,8 +120,9 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
         response_done: Flags when a response is complete
         ready: Indicates RISE system readiness
         progress_bar: Manages download/installation progress visualization
+        ttft_timestamp: Tracks time to first token
     """
-    global response, response_done, ready, progress_bar, chart
+    global response, response_done, ready, progress_bar, chart, ttft_timestamp
 
     data = data_ptr.contents
     if data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_READY:
@@ -131,7 +134,10 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
            return
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
-        chunk = data.content.decode('utf-8')
+        chunk = data.content.decode('utf-8', errors='replace')
+        # Track time to first token
+        if ttft_timestamp is None and chunk and not chunk.startswith('ASR_'):
+            ttft_timestamp = time.time()
         # For ASR responses: REPLACE (don't accumulate) since each callback is a complete message
         # For LLM responses: APPEND (accumulate chunks)
         if chunk:
@@ -142,21 +148,21 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
             else:
                 # LLM responses are chunked - append
                 response += chunk
-                print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
+                # print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
     
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR:
-        chunk = data.content.decode('utf-8')
+        chunk = data.content.decode('utf-8', errors='replace')
         response += chunk
-        print(f"[Callback] Received CUSTOM_BEHAVIOR chunk: '{chunk}' (completed={data.completed})", flush=True)
+        # print(f"[Callback] Received CUSTOM_BEHAVIOR chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
     
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR_RESULT:
-        chunk = data.content.decode('utf-8')
+        chunk = data.content.decode('utf-8', errors='replace')
         response += chunk
-        print(f"[Callback] Received CUSTOM_BEHAVIOR_RESULT chunk: '{chunk}' (completed={data.completed})", flush=True)
+        # print(f"[Callback] Received CUSTOM_BEHAVIOR_RESULT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
     
@@ -255,7 +261,7 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
     Raises:
         AttributeError: If there's an error accessing the RISE API
     """
-    global nvapi, response_done, response, chart
+    global nvapi, response_done, response, chart, ttft_timestamp, api_start_timestamp
 
     try:
         command_obj = {
@@ -281,6 +287,10 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
         content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
         content.completed = 1
 
+        # Reset timing trackers
+        ttft_timestamp = None
+        api_start_timestamp = time.time()
+
         ret = nvapi.request_rise(content)
         if ret != 0:
             print(f'Send RISE command failed with {ret}')
@@ -289,12 +299,23 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
         while not response_done:
             time.sleep(1)
 
+        api_end_timestamp = time.time()
         response_done = False
         completed_response = response
         completed_chart = chart
         response = ''
         chart = ''
-        return {'completed_response': completed_response,'completed_chart': completed_chart}
+        
+        # Calculate timing metrics
+        ttft_ms = (ttft_timestamp - api_start_timestamp) * 1000 if ttft_timestamp else 0
+        api_time_ms = (api_end_timestamp - api_start_timestamp) * 1000
+        
+        return {
+            'completed_response': completed_response,
+            'completed_chart': completed_chart,
+            'ttft_ms': ttft_ms,
+            'api_time_ms': api_time_ms
+        }
 
     except AttributeError as e:
         print(f"An error occurred: {e}")
