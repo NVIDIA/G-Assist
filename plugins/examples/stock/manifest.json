@@ -1,36 +1,51 @@
 {
-    "manifestVersion": 1,
-    "executable": "./g-assist-stock-plugin.exe",
-    "persistent": true,
-    "name": "stock",
-    "description": "Retrieve stock prices and ticker symbols.",
-    "functions": [
-      {
-        "name": "get_stock_price",
-        "description": "Get the current stock price using a ticker or company name.",
-        "tags": ["stocks", "finance", "price"],
-        "properties": {
-          "ticker": {
-            "type": "string",
-            "description": "The stock ticker symbol (e.g., NVDA). Optional if company_name is provided."
-          },
-          "company_name": {
-            "type": "string",
-            "description": "The company name to search for (e.g., NVIDIA). Optional if ticker is provided."
-          }
-        }
-      },
-      {
-        "name": "get_ticker_from_company",
-        "description": "Get a ticker symbol by company name.",
-        "tags": ["stocks", "lookup", "ticker"],
-        "properties": {
-          "company_name": {
-            "type": "string",
-            "description": "The full or partial company name (e.g., GameStop)."
-          }
+  "manifestVersion": 1,
+  "executable": "./g-assist-stock-plugin.exe",
+  "persistent": true,
+  "passthrough": true,
+  "name": "stock",
+  "description": "Retrieve stock prices and ticker symbols.",
+  "functions": [
+    {
+      "name": "get_stock_price",
+      "description": "Get the current stock price using a ticker or company name.",
+      "tags": [
+        "stocks",
+        "finance",
+        "price"
+      ],
+      "properties": {
+        "ticker": {
+          "type": "string",
+          "description": "The stock ticker symbol (e.g., NVDA). Optional if company_name is provided."
+        },
+        "company_name": {
+          "type": "string",
+          "description": "The company name to search for (e.g., NVIDIA). Optional if ticker is provided."
         }
       }
-    ]
+    },
+    {
+      "name": "get_ticker_from_company",
+      "description": "Get a ticker symbol by company name.",
+      "tags": [
+        "stocks",
+        "lookup",
+        "ticker"
+      ],
+      "properties": {
+        "company_name": {
+          "type": "string",
+          "description": "The full or partial company name (e.g., GameStop)."
+        }
+      }
+    }
+  ],
+  "tethered": true,
+  "tether_config": {
+    "heartbeat_interval": 5,
+    "heartbeat_timeout": 20,
+    "onboarding_timeout": 60,
+    "allow_passthrough": true
   }
-  
+}

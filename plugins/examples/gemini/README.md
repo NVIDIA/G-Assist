@@ -5,28 +5,17 @@ Transform your G-Assist experience with the power of Google's Gemini AI! This pl
 ## What Can It Do?
 - Generate human-like text responses using Gemini
 - Hold context-aware conversations that remember previous interactions
-- Perform real-time web searches with Google Search integration
 - Built-in safety settings for content filtering
 - Real-time streaming responses
 - Seamless integration with G-Assist
 
-## ✨ **NEW: Revolutionary Onboarding Experience!**
-This plugin now features the **easiest setup of any G-Assist plugin**:
-- 🌐 **Auto-opens** the API key page in your browser
-- 📝 **Auto-opens** the config file in Notepad (not minimized!)
-- 📋 **Step-by-step** instructions displayed right in G-Assist
-- 🚀 **No restart required** - works immediately after setup
-- ⚡ **Takes only 90 seconds** from start to finish
-- 💯 **Completely FREE** - no credit card required!
-
-Just install the plugin and ask it a question - it will guide you through everything and open all the windows you need!
-
 ## Before You Start
 Make sure you have:
 - Python 3.8 or higher
+- Google Cloud API key with Gemini access
 - G-Assist installed on your system
 
-💡 **Good News**: Getting a Google AI API key is **FREE** and takes less than 2 minutes! The plugin will guide you through the process automatically.
+💡 **Tip**: You'll need a Google Cloud API key specifically enabled for Gemini. Get one from the [Google AI Studio](https://aistudio.google.com/apikey)!
 
 ## Installation Guide
 
@@ -41,35 +30,29 @@ cd gemini-plugin
 python -m pip install -r requirements.txt
 ```
 
-### Step 3: Get Your FREE Google AI API Key
-Don't worry - the plugin will guide you through this automatically! When you first use it:
+### Step 3: Configure Your API Key
+1. Create a file named `gemini.key` in the root directory
+2. Add your API key to the file:
+```gemini.key
+your_api_key_here
+```
 
-**🚀 Automatic Setup Flow:**
-1. The plugin automatically opens **TWO windows** for you:
-   - Your browser → Google AI Studio (to get the key)
-   - Notepad → google.key file (to paste the key)
-2. Click **"Create API key"** in your browser (sign in with Google if needed)
-3. Copy the generated API key
-4. Switch to the Notepad window, delete the template, and paste your key
-5. Save (Ctrl+S) and close Notepad
-6. **Just ask your question again** - No restart needed! 🎉
+### Step 4: Configure the Model (Optional)
+Adjust `config.json` to your needs:
+```json
+{
+  "model": "gemini-2.0-flash"
+}
+```
 
-That's it! The whole process takes about 90 seconds and G-Assist automatically detects your new API key.
-
-**Manual Setup (if you prefer):**
-1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Create an API key (it's free!)
-3. Open `google.key.txt` and paste your key on the first line
-4. Save and close the file
-
-### Step 4: Build the Plugin
+### Step 5: Build the Plugin
 ```bash
 build.bat
 ```
 This will create a `dist\google` folder containing all the required files for the plugin.
 
 
-### Step 5: Install the Plugin
+### Step 6: Install the Plugin
 1. Create a new folder here (if it doesn't exist):
    ```
    %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini
@@ -77,19 +60,10 @@ This will create a `dist\google` folder containing all the required files for th
    💡 **Tip**: Copy and paste this path into File Explorer's address bar!
 
 2. Copy these files to the folder you just created:
-   - `g-assist-plugin-google.exe` (from the `dist\google` folder)
+   - `gemini-plugin.exe` (from the `dist` folder)
    - `manifest.json`
    - `config.json`
-   - `google.key.txt` (rename to `google.key` after adding your API key)
-
-### Step 6: Configure the Model (Optional)
-You can customize which Gemini model to use by editing `config.json`:
-```json
-{
-  "model": "gemini-2.0-flash"
-}
-```
-Available models: `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`
+   - `gemini.key`
 
 ## How to Use
 Once installed, you can use Gemini through G-Assist! Try these examples:
@@ -116,27 +90,10 @@ The plugin logs all activity to:
 Check this file for detailed error messages and debugging information.
 
 ## Troubleshooting Tips
-
-### First Time Setup Issues
-- **Browser didn't open?** Manually visit https://aistudio.google.com/app/apikey
-- **Can't find the key file?** The plugin displays the exact path - copy it to File Explorer
-- **File is read-only?** Right-click → Properties → Uncheck "Read-only" → OK
-
-### API Key Issues
-- **API Key Not Working?** Make sure you copied the ENTIRE key (no spaces or line breaks)
-- **Invalid key error?** Generate a new key at https://aistudio.google.com/app/apikey
-- **Key file location:** `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\google\google.key`
-
-### Other Issues
+- **API Key Not Working?** Verify your API key is correctly copied to `gemini.key`
 - **Commands Not Working?** Ensure all files are in the correct plugin directory
-- **Unexpected Responses?** Check the model configuration in `config.json`
-- **Still having trouble?** Check `%USERPROFILE%\gemini.log` for detailed error logs
-
-### Quick Reset
-If all else fails, try these steps:
-1. Delete the `google.key` file
-2. Try using the plugin again - it will automatically re-run the setup guide and open the windows for you
-3. No restart needed!
+- **Unexpected Responses?** Check the configuration in `config.json`
+- **Logs**: Check `%USERPROFILE%\gemini.log` for detailed logs
 
 ## Developer Documentation
 

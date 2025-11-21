@@ -1,128 +1,285 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-import ctypes
 import json
+import logging
 import os
-import sys
-
+import threading
+import time
 from ctypes import byref, windll, wintypes
 from ipaddress import ip_address
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from nanoleafapi import Nanoleaf
 
+STD_INPUT_HANDLE = -10
+STD_OUTPUT_HANDLE = -11
 
-# Globals
-# The plugin's configuration file.
-CONFIG_FILE = os.path.join(os.getcwd(), 'config.json')
+PLUGIN_NAME = "nanoleaf"
+PROGRAM_DATA = os.environ.get("PROGRAMDATA", ".")
+PLUGIN_DIR = os.path.join(
+    PROGRAM_DATA, "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
 
-# By default, logging is turned off. To enable logging, update the following
-# with a path the plugin is allowed to write to.
-LOG_FILE = os.path.join(os.environ.get('USERPROFILE', '.'), 'nanoleaf.log')
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "ip": "",
+    "features": {
+        "enable_passthrough": False,
+        "stream_chunk_size": 240,
+        "use_setup_wizard": True,
+    },
+}
+
+STATE: Dict[str, Any] = {
+    "config": DEFAULT_CONFIG.copy(),
+    "awaiting_input": False,
+    "wizard_active": False,
+    "heartbeat_active": False,
+    "heartbeat_thread": None,
+    "heartbeat_message": "",
+    "nanoleaf": None,
+}
 
 
-# Data Types
-Response = dict[str, bool | Optional[str]]
-Color = tuple[int, int, int]
+def ensure_directories() -> None:
+    os.makedirs(PLUGIN_DIR, exist_ok=True)
 
 
-# Globals
-NL: Nanoleaf | None = None
+def setup_logging() -> None:
+    ensure_directories()
+    if logging.getLogger().handlers:
+        return
+    logging.basicConfig(
+        filename=LOG_FILE,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
 
 
-def main():
-    ''' Main entry point.
+def apply_config_defaults(raw: Dict[str, Any]) -> Dict[str, Any]:
+    merged = DEFAULT_CONFIG.copy()
+    merged.update({k: v for k, v in raw.items() if k != "features"})
+    merged_features = DEFAULT_CONFIG["features"].copy()
+    merged_features.update(raw.get("features", {}))
+    merged["features"] = merged_features
+    return merged
 
-    Sits in a loop listening to a pipe, waiting for commands to be issued. After
-    receiving the command, it is processed and the result returned. The loop
-    continues until the "shutdown" command is issued.
+
+def execute_shutdown_command() -> Response:
+    ''' Command handler for "shutdown" function
 
     Returns:
-        Zero if no errors occurred during execution, otherwise a non-zero value
+        Function response
     '''
     global NL
 
-    TOOL_CALLS_PROPERTY = 'tool_calls'
-    CONTEXT_PROPERTY = 'context'
-    FUNCTION_PROPERTY = 'func'
-    PARAMS_PROPERTY = 'properties'
-    INITIALIZE_COMMAND = 'initialize'
-    SHUTDOWN_COMMAND = 'shutdown'
-
-    ERROR_MESSAGE = 'Failed to update lighting for Nanoleaf device(s).'
-
-    # Generate command handler mapping
-    commands = generate_command_handlers()
-    cmd = ''
-
-    write_log('Starting plugin.')
-    while True:
-        response = None
-        input = read_command()
-        context = input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in cmd else None
-
-        write_log(f'Input Received: {input}')
-        if input is None:
-            # Error reading command; continue
-            continue
-        if TOOL_CALLS_PROPERTY in input:
-            tool_calls = input[TOOL_CALLS_PROPERTY]
-            for tool_call in tool_calls:
-                if FUNCTION_PROPERTY in tool_call:
-                    cmd = tool_call[FUNCTION_PROPERTY].lower()
-
-                    if cmd in commands:
-                        if(cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND):
-                            response = commands[cmd]()
-                        else:
-                            response = execute_initialize_command()
-
-                            if NL is None:
-                                response = generate_failure_response(f'{ERROR_MESSAGE} There is no Nanoleaf device connected. Check the IP address in the configuration file.')
-                            else:
-                                response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context)
-                    else:
-                        response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')
-                else:
-                    response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
-        else:
-            response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
-
-        write_log(f'Sending Response: {response}')
-        write_response(response)
-        if cmd == SHUTDOWN_COMMAND:
-            break
-    return 0
+    is_success = True
+    if NL:
+        try:
+            is_success = NL.power_off()
+        except Exception as e:
+            write_log(f'Error powering off Nanoleaf: {str(e)}')
+            is_success = False
+    NL = None
+    return generate_success_response() if is_success else generate_failure_response()
 
 
-def write_log(line: str) -> None:
-    ''' Writes a line to the log file.
+def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None, send_status_callback=None) -> Response:
+    ''' Command handler for "nanoleaf_change_room_lights" function
 
     Parameters:
-        line: The line to write
+        nl: Nanoleaf device.
+        params: Function parameters.
+        context: Function context.
+        send_status_callback: Callback to send status updates.
+
+    Returns:
+        Function response
     '''
-    global LOG_FILE
+    SUCCESS_MESSAGE = 'Nanoleaf lighting updated.'
+    ERROR_MESSAGE = 'Failed to update lighting for the Nanoleaf device.'
+
+    COMMANDS = [ 'OFF', 'BRIGHT_UP', 'BRIGHT_DOWN' ]
+    RAINBOW = 'RAINBOW'
+
+    if params is None or 'color' not in params:
+        return generate_failure_response(f'{ERROR_MESSAGE} Missing color.')
 
     try:
-        if LOG_FILE is not None:
-            with open(LOG_FILE, 'a') as file:
-                file.write(f'{line}\n')
-                file.flush()
-    except Exception:
-        # Error writing to the log
-        pass
+        color = params['color'].upper()
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Changing Nanoleaf lights to {color.lower()}..."))
+        if color == RAINBOW:
+            # this is temporary until the model adds a 'change profile' function
+            return execute_profile_command(nl, { 'profile': 'Northern Lights' })
+        if color in COMMANDS:
+            return adjust_brightness(nl, color)
+        else:
+            return generate_success_response(SUCCESS_MESSAGE) if change_color(nl, color) else generate_failure_response()
+    except Exception as e:
+        write_log(f'Error in execute_color_command: {str(e)}')
+        return generate_failure_response(f'{ERROR_MESSAGE} {str(e)}')
+
+
+def execute_profile_command(nl:Nanoleaf, params:dict=None, context:dict=None, send_status_callback=None) -> Response:
+    ''' Command handler for "nanoleaf_change_profile" function.
+
+    Parameters:
+        nl: Nanoleaf device.
+        params: Function parameters.
+        context: Function context.
+        send_status_callback: Callback to send status updates.
+    Returns:
+        Function response
+    '''
+    SUCCESS_MESSAGE = 'Nanoleaf profile updated.'
+    ERROR_MESSAGE = 'Failed to update profile for the Nanoleaf device.'
+    
+    if nl is None:
+        return generate_failure_response(f'{ERROR_MESSAGE} Device not connected.')
+    
+    try:
+        effects = nl.list_effects()
+        if params is None or 'profile' not in params:
+            return generate_failure_response(ERROR_MESSAGE)
+
+        profile = params['profile']
+        
+        # Send status update
+        if send_status_callback:
+            send_status_callback(generate_status_update(f"Changing Nanoleaf profile to {profile}..."))
+        try:
+            index = [ s.upper() for s in effects ].index(profile.upper())
+            nl.set_effect(effects[index])
+            return generate_success_response(SUCCESS_MESSAGE)
+        except ValueError:
+            return generate_failure_response(f'{ERROR_MESSAGE} Unknown profile: {profile}.')
+    except Exception as e:
+        write_log(f'Error in execute_profile_command: {str(e)}')
+        return generate_failure_response(f'{ERROR_MESSAGE} {str(e)}')
+
+
+def adjust_brightness(nl: Nanoleaf, command: str) -> bool:
+    ''' Adjusts the brightness of the Nanoleaf device.
+
+    Parameters:
+        nl: Nanoleaf device.
+        command:
+            The bright adjustment command. It must be one of the following:
+            "BRIGHT_UP", "BRIGHT_DOWN", "OFF".
+
+    Returns:
+        True if successful, otherwise False
+    '''
+    LEVEL = 10
+
+    try:
+        match command.upper():
+            case 'OFF':
+                return nl.power_off()
+            case 'BRIGHT_UP':
+                return nl.increment_brightness(LEVEL)
+            case 'BRIGHT_DOWN':
+                return nl.increment_brightness(-LEVEL)
+            case _:
+                return False
+    except Exception as e:
+        write_log(f'Error adjusting brightness: {str(e)}')
+        return False
+
+
+def change_color(nl:Nanoleaf, color:str) -> dict:
+    ''' Changes the color of the Nanoleaf device.
+
+    Parameters:
+        nl: Nanoleaf device.
+        color: Predefined color value.
+
+    Returns:
+        Boolean indicating if the color was updated.
+    '''
+    try:
+        rgb_value = get_rgb_code(color)
+        return nl.set_color(rgb_value) if rgb_value else False
+    except Exception as e:
+        write_log(f'Error changing color: {str(e)}')
+        return False
+
+
+def get_rgb_code(color:str) -> Color | None:
+    ''' Get the RGB value for a predefined color value.
+
+    Parameters:
+        color: Predefined color value.
+
+    Returns:
+        RGB tuple value if the predefined color value is recognized, otherwise
+        None.
+    '''
+    key = color.upper()
+    rgb_values = {
+        'RED': (255, 0, 0),
+        'GREEN': (0, 255, 0),
+        'BLUE': (0, 0, 255),
+        'CYAN': (0, 255, 255),
+        'MAGENTA': (255, 0, 255),
+        'YELLOW': (255, 255, 0),
+        'BLACK': (0, 0, 0),
+        'WHITE': (255, 255, 255),
+        'GREY': (128, 128, 128),
+        'GRAY': (128, 128, 128),
+        'ORANGE': (255, 165, 0),
+        'PURPLE': (128, 0, 128),
+        'VIOLET': (128, 0, 128),
+        'PINK': (255, 192, 203),
+        'TEAL': (0, 128, 128),
+        'BROWN': (165, 42, 42),
+        'ICE_BLUE': (173, 216, 230),
+        'CRIMSON': (220, 20, 60),
+        'GOLD': (255, 215, 0),
+        'NEON_GREEN': (57, 255, 20)
+    }
+
+    return rgb_values[key] if key in rgb_values else None
+
+
+def generate_failure_response(message:str=None) -> Response:
+    ''' Generates a response indicating failure.
+
+    Parameters:
+        message: String to be returned in the response (optional)
+
+    Returns:
+        A failure response with the attached message
+    '''
+    response = { 'success': False }
+    if message:
+        response['message'] = message
+    return response
+
+
+def generate_success_response(message:str=None) -> Response:
+    ''' Generates a response indicating success.
+
+    Parameters:
+        message: String to be returned in the response (optional)
+
+    Returns:
+        A success response with the attached massage
+    '''
+    response = { 'success': True }
+    if message:
+        response['message'] = message
+    return response
+
+def generate_status_update(message: str) -> dict:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    """
+    return {'status': 'in_progress', 'message': message}
 
 
 def generate_command_handlers() -> dict:
@@ -177,6 +334,7 @@ def read_command() -> dict | None:
 
         # Combine all chunks and parse JSON
         retval = ''.join(chunks)
+        write_log(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
 
     except json.JSONDecodeError:
@@ -200,256 +358,129 @@ def write_response(response:Response) -> None:
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
         message_len = len(message_bytes)
+        
+        write_log(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
 
         bytes_written = wintypes.DWORD()
         success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
             message_len,
-            bytes_written,
+            byref(bytes_written),
             None
         )
 
-        if not success:
-            write_log('Error writing to response pipe')
+        if success:
+            write_log(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        else:
+            write_log(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
 
     except Exception as e:
         write_log(f'Exception in write_response(): {str(e)}')
 
 
-def generate_failure_response(message:str=None) -> Response:
-    ''' Generates a response indicating failure.
+def main():
+    ''' Main entry point.
 
-    Parameters:
-        message: String to be returned in the response (optional)
-
-    Returns:
-        A failure response with the attached message
-    '''
-    response = { 'success': False }
-    if message:
-        response['message'] = message
-    return response
-
-
-def generate_success_response(message:str=None) -> Response:
-    ''' Generates a response indicating success.
-
-    Parameters:
-        message: String to be returned in the response (optional)
+    Sits in a loop listening to a pipe, waiting for commands to be issued. After
+    receiving the command, it is processed and the result returned. The loop
+    continues until the "shutdown" command is issued.
 
     Returns:
-        A success response with the attached massage
-    '''
-    response = { 'success': True }
-    if message:
-        response['message'] = message
-    return response
-
-
-def execute_initialize_command() -> Response:
-    ''' Command handler for "initialize" function
-
-    The parameters are present to conform to the command handler interface.
-
-    Parameters:
-        nl: Nanoleaf device
-        params: function parameters
-
-    Returns:
-        Function response
-    '''
-    global NL
-    global CONFIG_FILE
-
-    ip = get_ip_address(CONFIG_FILE)
-    if ip is None:
-        return generate_failure_response(f'Error reading configuration file: {os.path.abspath(CONFIG_FILE)}')
-
-    try:
-        NL = Nanoleaf(ip)
-        NL.power_on()
-        NL.set_color(get_rgb_code('BLACK'))
-        return generate_success_response()
-    except Exception as e:
-        write_log(f'Error connecting to Nanoleaf device: {str(e)}')
-        NL = None
-        return generate_failure_response('Error initializing Nanoleaf device')
-
-
-def get_ip_address(config_file:str) -> str | None:
-    ''' Loads the IP address from the configuration file.
-
-    Parameters:
-        config_file: Path to the configuration file.
-
-    Returns:
-        The IP address of the Nanoleaf device or `None` if an IP address cannot
-        be determined.
-    '''
-    ip = None
-    try:
-        if os.path.exists(config_file):
-            with open(config_file, 'r') as file:
-                data = json.load(file)
-                if 'ip' in data and ip_address(data['ip']):
-                    ip = data['ip']
-    except json.JSONDecodeError:
-        # malformed json; return None
-        pass
-
-    return ip
-
-
-def execute_shutdown_command() -> Response:
-    ''' Command handler for "shutdown" function
-
-    Parameters:
-        nl: Nanoleaf device
-        params: function parameters
-
-    Returns:
-        Function response
+        Zero if no errors occurred during execution, otherwise a non-zero value
     '''
     global NL
 
-    is_success = True
-    if NL:
-        is_success = NL.power_off()
-    NL = None
-    return generate_success_response() if is_success else generate_failure_response()
+    TOOL_CALLS_PROPERTY = 'tool_calls'
+    CONTEXT_PROPERTY = 'context'
+    FUNCTION_PROPERTY = 'func'
+    PARAMS_PROPERTY = 'properties'
+    INITIALIZE_COMMAND = 'initialize'
+    SHUTDOWN_COMMAND = 'shutdown'
 
+    ERROR_MESSAGE = 'Failed to update lighting for Nanoleaf device(s).'
 
-def execute_color_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> Response:
-    ''' Command handler for "nanoleaf_change_room_lights" function
+    # Generate command handler mapping
+    commands = generate_command_handlers()
+    cmd = ''
+    read_failures = 0
+    MAX_READ_FAILURES = 3
 
-    Parameters:
-        nl: Nanoleaf device.
-        params: Function parameters.
-        context: Function context.
+    write_log('Starting Nanoleaf plugin.')
+    while True:
+        response = None
+        input = read_command()
+        
+        if input is None:
+            read_failures += 1
+            write_log(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                write_log('Too many read failures, exiting')
+                break
+            continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
+        context = input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in input else None
 
-    Returns:
-        Function response
-    '''
-    SUCCESS_MESSAGE = 'Nanoleaf lighting updated.'
-    ERROR_MESSAGE = 'Failed to update lighting for the Nanoleaf device.'
+        write_log(f'Input Received: {input}')
+        
+        # Handle user input passthrough messages (for setup wizard interaction)
+        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+            user_input_text = input.get('content', '')
+            write_log(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+            
+            # Check if setup is needed
+            global SETUP_COMPLETE, NANOLEAF_IP
+            if not SETUP_COMPLETE:
+                write_log("[WIZARD] User input during setup - checking config")
+                response = execute_setup_wizard()
+                write_response(response)
+                continue
+            else:
+                # Setup already complete, acknowledge the input
+                write_log("[INPUT] Setup already complete, acknowledging user input")
+                response = generate_success_response("Got it! The Nanoleaf plugin is ready to use.")
+                write_response(response)
+                continue
+        
+        if TOOL_CALLS_PROPERTY in input:
+            tool_calls = input[TOOL_CALLS_PROPERTY]
+            for tool_call in tool_calls:
+                if FUNCTION_PROPERTY in tool_call:
+                    cmd = tool_call[FUNCTION_PROPERTY].lower()
 
-    COMMANDS = [ 'OFF', 'BRIGHT_UP', 'BRIGHT_DOWN' ]
-    RAINBOW = 'RAINBOW'
+                    if cmd in commands:
+                        if(cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND):
+                            response = commands[cmd]()
+                        else:
+                            # Check if setup is needed before executing Nanoleaf functions
+                            if not SETUP_COMPLETE or not NANOLEAF_IP:
+                                write_log('[COMMAND] Nanoleaf not configured - starting setup wizard')
+                                response = execute_setup_wizard()
+                            elif NL is None:
+                                # Try to initialize if not already connected
+                                init_response = execute_initialize_command()
+                                if NL is None:
+                                    response = generate_failure_response(f'{ERROR_MESSAGE} There is no Nanoleaf device connected. Check the IP address in the configuration file.')
+                                else:
+                                    response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context, send_status_callback=write_response)
+                            else:
+                                response = commands[cmd](NL, tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, context, send_status_callback=write_response)
+                    else:
+                        response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')
+                else:
+                    response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
+        else:
+            response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
 
-    if params is None or 'color' not in params:
-        return generate_failure_response(f'{ERROR_MESSAGE} Missing color.')
-
-    color = params['color'].upper()
-    if color == RAINBOW:
-        # this is temporary until the model adds a 'change profile' function
-        return execute_profile_command(nl, { 'profile': 'Northern Lights' })
-    if color in COMMANDS:
-        return adjust_brightness(nl, color)
-    else:
-        return generate_success_response(SUCCESS_MESSAGE) if change_color(nl, color) else generate_failure_response()
-
-
-def execute_profile_command(nl:Nanoleaf, params:dict=None, context:dict=None) -> Response:
-    ''' Command handler for "nanoleaf_change_profile" function.
-
-    Parameters:
-        nl: Nanoleaf device.
-        params: Function parameters.
-        context: Function context.
-    Returns:
-        Function response
-    '''
-    SUCCESS_MESSAGE = 'Nanoleaf profile updated.'
-    ERROR_MESSAGE = 'Failed to update profile for the Nanoleaf device.'
-    if nl is not None:
-        effects = nl.list_effects()
-        if params is None or 'profile' not in params:
-            return generate_failure_response(ERROR_MESSAGE)
-
-        profile = params['profile']
-        try:
-            index = [ s.upper() for s in effects ].index(profile.upper())
-            nl.set_effect(effects[index])
-            return generate_success_response(SUCCESS_MESSAGE)
-        except ValueError:
-            return generate_failure_response(f'{ERROR_MESSAGE} Unknown profile: {profile}.')
-
-
-def adjust_brightness(nl: Nanoleaf, command: str) -> bool:
-    ''' Adjusts the brightness of the Nanoleaf device.
-
-    Parameters:
-        nl: Nanoleaf device.
-        command:
-            The bright adjustment command. It must be one of the following:
-            "BRIGHT_UP", "BRIGHT_DOWN", "OFF".
-
-    Returns:
-        True if successful, otherwise False
-    '''
-    LEVEL = 10
-
-    match command.upper():
-        case 'OFF':
-            return nl.power_off()
-        case 'BRIGHT_UP':
-            return nl.increment_brightness(LEVEL)
-        case 'BRIGHT_DOWN':
-            return nl.increment_brightness(-LEVEL)
-        case _:
-            return False
-
-
-def change_color(nl:Nanoleaf, color:str) -> dict:
-    ''' Changes the color of the Nanoleaf device.
-
-    Parameters:
-        nl: Nanoleaf device.
-        color: Predefined color value.
-
-    Returns:
-        Boolean indicating if the color was updated.
-    '''
-    rgb_value = get_rgb_code(color)
-    return nl.set_color(rgb_value) if rgb_value else False
-
-
-def get_rgb_code(color:str) -> Color | None:
-    ''' Get the RGB value for a predefined color value.
-
-    Parameters:
-        color: Predefined color value.
-
-    Returns:
-        RGB tuple value if the predefined color value is recognized, otherwise
-        None.
-    '''
-    key = color.upper()
-    rgb_values = {
-        'RED': (255, 0, 0),
-        'GREEN': (0, 255, 0),
-        'BLUE': (0, 0, 255),
-        'CYAN': (0, 255, 255),
-        'MAGENTA': (255, 0, 255),
-        'YELLOW': (255, 255, 0),
-        'BLACK': (0, 0, 0),
-        'WHITE': (255, 255, 255),
-        'GREY': (128, 128, 128),
-        'GRAY': (128, 128, 128),
-        'ORANGE': (255, 165, 0),
-        'PURPLE': (128, 0, 128),
-        'VIOLET': (128, 0, 128),
-        'PINK': (255, 192, 203),
-        'TEAL': (0, 128, 128),
-        'BROWN': (165, 42, 42),
-        'ICE_BLUE': (173, 216, 230),
-        'CRIMSON': (220, 20, 60),
-        'GOLD': (255, 215, 0),
-        'NEON_GREEN': (57, 255, 20)
-    }
-
-    return rgb_values[key] if key in rgb_values else None
+        write_log(f'Sending Response: {response}')
+        write_response(response)
+        if cmd == SHUTDOWN_COMMAND:
+            break
+    
+    write_log('Nanoleaf plugin stopped.')
+    return 0
 
 
 if __name__ == '__main__':

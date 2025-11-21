@@ -12,6 +12,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+dist/
 build_env/
 develop-eggs/
 downloads/
@@ -36,6 +37,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+plugins/examples/logiled/nlohmann/
 
 # Installer logs
 pip-log.txt
@@ -177,3 +179,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# Sensitive keys (use *.key.sample for templates)
+*.key

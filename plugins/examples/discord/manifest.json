@@ -2,6 +2,14 @@
   "manifestVersion": 1,
   "executable": "./g-assist-plugin-discord.exe",
   "persistent": true,
+  "passthrough": true,
+  "tethered": true,
+  "tether_config": {
+    "heartbeat_interval": 5,
+    "heartbeat_timeout": 20,
+    "onboarding_timeout": 60,
+    "allow_passthrough": true
+  },
   "name": "discord",
   "description": "Send messages, charts, screenshots, and more to Discord channels.",
   "functions": [

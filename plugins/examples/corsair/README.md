@@ -63,8 +63,9 @@ mkdir json && tar -xf path\to\include.zip -C json
 ## How to Use
 Once everything is set up, you can control your Corsair devices through G-Assist! Try these commands:
 - "Hey Corsair, set my keyboard to red"
-- "/fc Change my Corsair lights to rainbow"
-- "/corsair set all devices to blue"
+- "Change my Corsair lights to rainbow"
+- "Set my Corsair mouse to blue"
+- "Set my Corsair headset to green"
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
 

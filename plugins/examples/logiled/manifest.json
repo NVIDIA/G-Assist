@@ -2,6 +2,8 @@
   "manifestVersion": 1,
   "executable": "g-assist-plugin-logiled.exe",
   "persistent": true,
+  "name": "logiled",
+  "description": "Control Logitech RGB lighting devices.",
   "functions": [
     {
       "name": "logi_change_keyboard_lights",

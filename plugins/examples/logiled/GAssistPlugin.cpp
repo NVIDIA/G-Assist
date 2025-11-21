@@ -60,6 +60,16 @@ int GAssistPlugin::run()
             continue;
         }
 
+        if (input.contains("msg_type") && input["msg_type"].is_string())
+        {
+            const std::string msgType = toLowerCase(input["msg_type"]);
+            if (msgType == "user_input")
+            {
+                handleUserInput(input);
+                continue;
+            }
+        }
+
         if (hasRequiredProperties(input))
         {
             json toolCalls = input[TOOL_CALLS_PROPERTY];
@@ -123,16 +133,21 @@ void GAssistPlugin::message(const std::string& message)
     writeResponse(response);
 }
 
-void GAssistPlugin::success(const std::string& message)
+void GAssistPlugin::success(const std::string& message, bool awaitingInput)
 {
-    json response = createNotification(true, message);
+    json response = createNotification(true, message, awaitingInput);
     writeResponse(response);
 }
 
-void GAssistPlugin::failure(const std::string& message)
+void GAssistPlugin::failure(const std::string& message, bool awaitingInput)
 {
-    json response = createNotification(false, message);
+    json response = createNotification(false, message, awaitingInput);
     writeResponse(response);
+}
+
+void GAssistPlugin::handleUserInput(const json& message)
+{
+    failure("This plugin does not accept user input.", false);
 }
 
 bool GAssistPlugin::hasRequiredProperties(const json& input)
@@ -164,11 +179,15 @@ json GAssistPlugin::createMessage(const std::string& message)
     return response;
 }
 
-json GAssistPlugin::createNotification(bool isSuccess, const std::string& message)
+json GAssistPlugin::createNotification(bool isSuccess, const std::string& message, bool awaitingInput)
 {
     json response;
     response = createMessage(message);
     response[SUCCESS_PROPERTY] = isSuccess;
+    if (awaitingInput)
+    {
+        response["awaiting_input"] = true;
+    }
     return response;
 }
 

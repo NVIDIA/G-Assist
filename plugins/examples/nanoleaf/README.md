@@ -53,29 +53,39 @@ build.bat
 ```
 
 ### Step 5: Install the Plugin
-1. Create a new folder here (if it doesn't exist):
-   ```
-   %programdata%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf
-   ```
-   💡 **Tip**: You can copy this path and paste it into File Explorer's address bar!
+1. Navigate to the `dist` folder created by the build script
+2. Copy the `nanoleaf` folder to:
+```bash
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+```
 
-2. Copy these three files from the `dist\nanoleaf` folder to the folder you just created:
-   - `g-assist-plugin-nanoleaf.exe`
-   - `manifest.json`
-   - `config.json`
+💡 **Tip**: Make sure all files are copied, including:
+- The executable (`g-assist-plugin-nanoleaf.exe`)
+- `manifest.json`
+- `config.json` (with your Nanoleaf IP address configured)
 
 ## How to Use
-Once everything is set up, you can control your Nanoleaf panels through G-Assist! Try these commands (either by voice or text):
+Once everything is set up, you can control your Nanoleaf panels through G-Assist! Try these commands:
 - "Change my room lights to blue"
-- "Hey nanoleaf, set my lights to rainbow"
-- "/nanoleaf set my lights to red"
+- "Hey Nanoleaf, set my lights to rainbow"
+- "Set my Nanoleaf to red"
+- "Activate my gaming profile on Nanoleaf"
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist - whatever works best for you!
+
+## First-Time Setup
+When you first try to use the Nanoleaf plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to change your lights, and it will:
+1. Display setup instructions
+2. Guide you to find your Nanoleaf IP address
+3. Walk you through pairing your device
+4. Verify your configuration
+
+No manual config editing required unless you prefer it!
 
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\nanoleaf.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf\nanoleaf-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

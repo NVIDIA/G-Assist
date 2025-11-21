@@ -4,6 +4,8 @@ import os
 from ctypes import byref, windll, wintypes
 from typing import Optional, Dict, Any
 import requests
+import threading
+import time
 
 # Type definitions
 Response = Dict[bool, Optional[str]]
@@ -18,8 +20,13 @@ INITIALIZE_COMMAND = 'initialize'
 SHUTDOWN_COMMAND = 'shutdown'
 ERROR_MESSAGE = 'Plugin Error!'
 
-# Configure logging
-LOG_FILE = os.path.join(os.path.expanduser("~"), 'stock_plugin.log')
+# Get the directory where the plugin is deployed
+PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "stock")
+CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
+
+# Save log in plugin directory for better organization
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+LOG_FILE = os.path.join(PLUGIN_DIR, 'stock-plugin.log')
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.DEBUG,
@@ -27,10 +34,104 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load API Key from config file
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
-API_KEY = config.get("TWELVE_DATA_API_KEY")
+# Load API Key from config file using absolute path
+SETUP_COMPLETE = False
+try:
+    with open(CONFIG_FILE, "r") as config_file:
+        config = json.load(config_file)
+    API_KEY = config.get("TWELVE_DATA_API_KEY", "")
+    if API_KEY and len(API_KEY) > 10:
+        SETUP_COMPLETE = True
+        logger.info(f"Successfully loaded API key from {CONFIG_FILE}")
+    else:
+        logger.warning(f"API key is empty or invalid in {CONFIG_FILE}")
+        API_KEY = None
+except FileNotFoundError:
+    logger.error(f"Config file not found at {CONFIG_FILE}")
+    API_KEY = None
+except Exception as e:
+    logger.error(f"Error loading config: {e}")
+
+# Tethered mode support
+heartbeat_thread = None
+heartbeat_active = False
+
+def send_heartbeat(state="ready"):
+    """Send silent heartbeat to engine (not visible to user)."""
+    try:
+        heartbeat_msg = {
+            "type": "heartbeat",
+            "state": state,
+            "timestamp": time.time()
+        }
+        write_response(heartbeat_msg)
+        logger.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
+    except Exception as e:
+        logger.error(f"[HEARTBEAT] Failed to send heartbeat: {e}")
+
+def heartbeat_loop():
+    """Background thread that sends periodic heartbeats."""
+    global heartbeat_active
+    logger.info("[HEARTBEAT] Heartbeat thread started")
+    while heartbeat_active:
+        send_heartbeat(state="ready")
+        time.sleep(5)  # Send heartbeat every 5 seconds
+    logger.info("[HEARTBEAT] Heartbeat thread stopped")
+    API_KEY = None
+
+def execute_setup_wizard() -> Response:
+    """Guide user through API key setup.
+    
+    Returns:
+        Response: Message response with setup instructions.
+    """
+    global SETUP_COMPLETE, API_KEY
+    
+    # Check if API key was added
+    try:
+        with open(CONFIG_FILE, "r") as config_file:
+            config = json.load(config_file)
+        new_key = config.get("TWELVE_DATA_API_KEY", "")
+        if new_key and len(new_key) > 10:
+            API_KEY = new_key
+            SETUP_COMPLETE = True
+            logger.info("API key successfully configured!")
+            return {
+                'success': True,
+                'message': "✓ API key configured! You can now ask about stock prices. Try: 'What's the price of NVDA?'",
+                'awaiting_input': False
+            }
+    except:
+        pass
+    
+    # Show setup instructions
+    message = f"""
+STOCK PLUGIN - FIRST TIME SETUP
+================================
+
+Welcome! Let's get your free Twelve Data API key. This takes about 1 minute.
+
+YOUR TASK - Get Your Free API Key:
+   1. Visit: https://twelvedata.com/pricing
+   2. Click "Get Free API Key" (no credit card required)
+   3. Sign up with your email
+   4. Copy your API key from the dashboard
+   5. Open this file: {CONFIG_FILE}
+   6. Replace the empty quotes with your API key:
+      {{"TWELVE_DATA_API_KEY": "your_key_here"}}
+   7. Save the file
+
+After saving, send me ANY message (like "done") and I'll verify it!
+
+Note: The free tier includes 800 API calls per day - plenty for personal use!
+"""
+    
+    logger.info("Showing setup wizard to user")
+    return {
+        'success': True,
+        'message': message,
+        'awaiting_input': True
+    }
 
 def execute_initialize_command() -> Response:
     """Initialize the plugin.
@@ -39,7 +140,21 @@ def execute_initialize_command() -> Response:
         Response: Success response indicating plugin initialization.
     """
     logger.info("Initializing plugin...")
-    return generate_success_response("initialize success.")
+    
+    
+    # Start heartbeat thread
+    global heartbeat_thread, heartbeat_active
+    if not heartbeat_active:
+        heartbeat_active = True
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
+        logger.info("[HEARTBEAT] Started heartbeat thread")
+    
+    # Check if setup is needed
+    if not SETUP_COMPLETE or not API_KEY:
+        return execute_setup_wizard()
+    
+    return generate_success_response("Stock plugin initialized successfully.")
 
 def execute_shutdown_command() -> Response:
     """Shutdown the plugin.
@@ -48,14 +163,24 @@ def execute_shutdown_command() -> Response:
         Response: Success response indicating plugin shutdown.
     """
     logger.info("Shutting down plugin...")
+    
+    # Stop heartbeat thread
+    global heartbeat_active, heartbeat_thread
+    if heartbeat_active:
+        heartbeat_active = False
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=1)
+        logger.info("[HEARTBEAT] Stopped heartbeat thread")
+    
     return generate_success_response("shutdown success.")
 
-def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -> Response:
+def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_, send_status_callback=None) -> Response:
     """Get stock ticker symbol from company name.
     
     Args:
         params (Dict[str, Any], optional): Parameters containing company_name.
         *_ : Additional unused arguments.
+        send_status_callback (callable, optional): Callback to send status updates.
     
     Returns:
         Response: Success response with ticker symbol or failure response.
@@ -64,6 +189,11 @@ def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -
     if not name:
         logger.error("No company name provided.")
         return generate_failure_response("Missing company_name.")
+    
+    # Send status update
+    if send_status_callback:
+        send_status_callback(generate_status_update(f"Looking up ticker for {name}..."))
+    
     url = f"https://api.twelvedata.com/symbol_search?symbol={name}&apikey={API_KEY}"
     try:
         response = requests.get(url).json()
@@ -78,12 +208,13 @@ def execute_get_ticker_from_company_command(params: Dict[str, Any] = None, *_) -
         logger.error(f"Error in get_ticker_from_company: {str(e)}")
         return generate_failure_response("Failed to get ticker from company name.")
 
-def execute_get_stock_price_command(params: Dict[str, Any] = None, *_) -> Response:
+def execute_get_stock_price_command(params: Dict[str, Any] = None, *_, send_status_callback=None) -> Response:
     """Get current stock price for a given ticker or company name.
     
     Args:
         params (Dict[str, Any], optional): Parameters containing ticker or company_name.
         *_ : Additional unused arguments.
+        send_status_callback (callable, optional): Callback to send status updates.
     
     Returns:
         Response: Success response with stock price or failure response.
@@ -92,6 +223,11 @@ def execute_get_stock_price_command(params: Dict[str, Any] = None, *_) -> Respon
     if not query:
         logger.error("No query provided.")
         return generate_failure_response("Provide either ticker or company_name.")
+    
+    # Send status update
+    if send_status_callback:
+        send_status_callback(generate_status_update(f"Fetching stock price for {query}..."))
+    
     url = f"https://api.twelvedata.com/quote?symbol={query}&apikey={API_KEY}"
     try:
         data = requests.get(url).json()
@@ -142,6 +278,20 @@ def generate_success_response(message: str = None) -> Response:
     """
     return {'success': True, 'message': message or "Command succeeded."}
 
+def generate_status_update(message: str) -> Dict[str, Any]:
+    """Generate a status update (not a final response).
+    
+    Status updates are intermediate messages that don't end the plugin execution.
+    They should NOT include 'success' field to avoid being treated as final responses.
+    
+    Args:
+        message (str): Status message to display to user.
+    
+    Returns:
+        Dict: Status update with message only.
+    """
+    return {'status': 'in_progress', 'message': message}
+
 def read_command() -> Dict[str, Any] | None:
     """Read command from stdin pipe.
     
@@ -153,21 +303,35 @@ def read_command() -> Dict[str, Any] | None:
     try:
         STD_INPUT_HANDLE = -10
         pipe = windll.kernel32.GetStdHandle(STD_INPUT_HANDLE)
+
         chunks = []
         while True:
             BUFFER_SIZE = 4096
             message_bytes = wintypes.DWORD()
             buffer = bytes(BUFFER_SIZE)
-            success = windll.kernel32.ReadFile(pipe, buffer, BUFFER_SIZE, byref(message_bytes), None)
+            success = windll.kernel32.ReadFile(
+                pipe,
+                buffer,
+                BUFFER_SIZE,
+                byref(message_bytes),
+                None
+            )
+
             if not success:
+                logger.error('Error reading from command pipe')
                 return None
+
             chunk = buffer.decode('utf-8')[:message_bytes.value]
             chunks.append(chunk)
+
             if message_bytes.value < BUFFER_SIZE:
                 break
+
         retval = ''.join(chunks)
+        logger.info(f'[PIPE] Read {len(retval)} bytes from pipe')
         return json.loads(retval)
-    except:
+    except Exception as e:
+        logger.error(f'Error in read_command: {e}')
         return None
 
 def write_response(response: Response) -> None:
@@ -184,20 +348,32 @@ def write_response(response: Response) -> None:
         Example: {"success":true,"message":"Plugin initialized successfully"}<<END>>
     """
     try:
-        pipe = windll.kernel32.GetStdHandle(-11)
+        STD_OUTPUT_HANDLE = -11
+        pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
+        message_len = len(message_bytes)
         
+        # Log what we're sending
+        msg_type = response.get('success', 'unknown') if isinstance(response, dict) else 'unknown'
+        logger.info(f"[PIPE] Writing message: success={msg_type}, length={message_len} bytes")
+
         bytes_written = wintypes.DWORD()
-        windll.kernel32.WriteFile(
+        success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
-            len(message_bytes),
+            message_len,
             bytes_written,
             None
         )
+        
+        if success:
+            logger.info(f"[PIPE] Write OK - success={msg_type}, bytes={bytes_written.value}/{message_len}")
+        else:
+            logger.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
     except Exception as e:
-        logging.error(f'Error writing response: {e}')
+        logger.error(f'Error writing response: {e}')
 
 def main() -> int:
     """Main plugin entry point.
@@ -219,14 +395,44 @@ def main() -> int:
 
     cmd = ''
     logger.info('Plugin started')
+    read_failures = 0
+    MAX_READ_FAILURES = 3
+    
     while cmd != SHUTDOWN_COMMAND:
         response = None
         input = read_command()
         if input is None:
-            logger.error('Error reading command')
+            read_failures += 1
+            logger.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
+            if read_failures >= MAX_READ_FAILURES:
+                logger.error('Too many read failures, exiting')
+                break
             continue
+        
+        # Reset failure counter on successful read
+        read_failures = 0
 
         logger.info(f'Received input: {input}')
+        
+        # Handle user input passthrough messages (for setup wizard interaction)
+        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+            user_input_text = input.get('content', '')
+            logger.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+            
+            # Check if setup is needed
+            global SETUP_COMPLETE, API_KEY
+            if not SETUP_COMPLETE:
+                logger.info("[WIZARD] User input during setup - checking API key")
+                response = execute_setup_wizard()
+                write_response(response)
+                continue
+            else:
+                # Setup already complete, acknowledge the input
+                logger.info("[INPUT] Setup already complete, acknowledging user input")
+                response = generate_success_response("Got it! The stock plugin is ready to use.")
+                write_response(response)
+                continue
+        
         if TOOL_CALLS_PROPERTY in input:
             for tool_call in input[TOOL_CALLS_PROPERTY]:
                 if FUNCTION_PROPERTY in tool_call:
@@ -236,10 +442,15 @@ def main() -> int:
                         if cmd in ['initialize', 'shutdown']:
                             response = commands[cmd]()
                         else:
-                            params = tool_call.get(PARAMS_PROPERTY, {})
-                            context = input.get(CONTEXT_PROPERTY)
-                            system_info = input.get(SYSTEM_INFO_PROPERTY)
-                            response = commands[cmd](params, context, system_info)
+                            # Check if setup is needed before executing stock functions
+                            if not SETUP_COMPLETE or not API_KEY:
+                                logger.info('[COMMAND] API key not configured - starting setup wizard')
+                                response = execute_setup_wizard()
+                            else:
+                                params = tool_call.get(PARAMS_PROPERTY, {})
+                                context = input.get(CONTEXT_PROPERTY)
+                                system_info = input.get(SYSTEM_INFO_PROPERTY)
+                                response = commands[cmd](params, context, system_info, send_status_callback=write_response)
                     else:
                         logger.error(f'Unknown command: {cmd}')
                         response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')

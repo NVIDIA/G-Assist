@@ -30,11 +30,13 @@ Make sure you have:
 ### Step 2: Create Your Spotify App
 1. Go to https://developer.spotify.com/dashboard
 2. Click "Create App" and enter:
-   - App Name: My App
-   - App Description: This is my first Spotify app
-   - Redirect URI: "https://open.spotify.com"
+   - App Name: G-Assist Spotify Plugin
+   - App Description: Spotify integration for G-Assist
+   - Redirect URI: "http://127.0.0.1:8888/callback"
    - Select "Web API" in Permissions
 3. Accept the Developer Terms of Service and create the app
+
+💡 **Important**: The Redirect URI MUST be exactly `http://127.0.0.1:8888/callback` (use IP address, not "localhost")!
 
 ### Step 3: Configure the Plugin
 Create a `config.json` file with your app credentials:
@@ -88,36 +90,32 @@ Once installed, you can control Spotify through G-Assist. Try these commands:
 - Get top playlists: `Hey Spotify, what are my top 5 playlists`
 
 ### Authentication Flow
-The plugin uses OAuth 2.0 for authentication with Spotify. Here's how it works:
+The plugin uses **fully automated OAuth 2.0** authentication. No manual steps required!
 
 1. **First-time Setup**
    - Run any Spotify command (e.g., `Hey Spotify, what are my top playlists?`)
    - A browser window will open automatically
    - Log in to Spotify and authorize the app
-   - You'll be redirected to a URL - copy the ENTIRE URL from your browser
-   - Create or edit the file at `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
-   - Add the URL in this format:
-     ```json
-     {
-       "auth_url": "YOUR_COPIED_URL"
-     }
-     ```
-   - Save the file
-   - The plugin will automatically:
-     - Process the authorization URL
-     - Save your access and refresh tokens
+   - **That's it!** The plugin automatically:
+     - Catches the OAuth callback on localhost:8888
+     - Exchanges the code for access/refresh tokens
+     - Saves tokens to `auth.json`
+     - Retries your original command
+   
+   💡 **No URL copying needed!** The plugin handles everything automatically.
 
 2. **Subsequent Uses**
    - The plugin automatically uses your saved tokens
    - If tokens expire, they are automatically refreshed
-   - No manual intervention needed after initial setup
+   - No manual intervention needed
 
 3. **Troubleshooting Authentication**
-   - If you see authentication errors, try deleting the `auth.json` file
-   - The plugin will prompt you to re-authenticate on next use
+   - If you see authentication errors, delete `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
+   - The plugin will re-authenticate automatically on next use
    - Check the log file at `%USERPROFILE%\spotify-plugin.log` for detailed error messages
+   - Make sure port 8888 is not blocked by firewall
 
-💡 **Tip**: The plugin automatically handles token refresh and command retry, so you only need to authenticate once!
+💡 **Tip**: The entire OAuth flow is automated - just authorize once in the browser and you're done!
 
 ## Available Functions
 The plugin includes these main functions:
