@@ -30,11 +30,13 @@ Make sure you have:
 ### Step 2: Create Your Spotify App
 1. Go to https://developer.spotify.com/dashboard
 2. Click "Create App" and enter:
-   - App Name: My App
-   - App Description: This is my first Spotify app
-   - Redirect URI: "https://open.spotify.com"
+   - App Name: G-Assist Spotify Plugin
+   - App Description: Spotify integration for G-Assist
+   - Redirect URI: "http://127.0.0.1:8888/callback"
    - Select "Web API" in Permissions
 3. Accept the Developer Terms of Service and create the app
+
+💡 **Important**: The Redirect URI MUST be exactly `http://127.0.0.1:8888/callback` (use IP address, not "localhost")!
 
 ### Step 3: Configure the Plugin
 Create a `config.json` file with your app credentials:
@@ -59,69 +61,61 @@ build.bat
 This will create a `dist\spotify` folder containing all the required files for the plugin.
 
 ### Step 6: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `spotify` folder to:
-```bash
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
-```
+1. Copy the entire `dist\spotify` folder to:
+   ```
+   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\
+   ```
 
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-plugin-spotify.exe`)
-- `manifest.json`
-- `config.json` (with your Spotify credentials configured)
+💡 **Tip**: Make sure all G-Assist clients are closed when copying files!
 
 ## How to Use
 Once installed, you can control Spotify through G-Assist. Try these commands:
 
 ### Play Music
-- Start Playback: "Hey Spotify, play my music!"
-- Play a song: "Hey Spotify, play Life Itself by Glass Animals"
-- Play an album: "Hey Spotify, play reputation by Taylor Swift"
-- Play a playlist: "Hey Spotify play my Gametime Music playlist"
+- Start Playback: `Hey Spotify, play my music!`
+- Play a song: `Hey Spotify, play Life Itself by Glass Animals`
+- Play an album: `Hey Spotify, play reputation by Taylor Swift`
+- Play a playlist: `Hey Spotify play my Gametime Music playlist`
 
-### Playback Control
-- Pause playback: "Hey Spotify, pause it"
-- Skip track: "Hey Spotify, go to the next song"
-- Skip to previous track: "Hey Spotify, go to the previous song"
-- Toggle shuffle: "Hey Spotify, turn shuffle on"
-- Volume control: "Hey Spotify, set the volume to 30"
-- Queue a track: "Hey Spotify, add Heat Waves by Glass Animals to the queue"
+### Playback
+- Pause playback: `Hey Spotify, pause it`
+- Skip track: `Hey Spotify, go to the next song`
+- Skip to previous track: `Hey Spotify, go to the previous song`
+- Toggle shuffle: `Hey Spotify, turn shuffle [on/off]`
+- Volume control: `Hey Spotify, set the volume to 30`
+- Queue a track: `Hey Spotify, add Heat Waves by Glass Animals to the queue`
 
-### Get Information
-- Get current playback: "Hey Spotify, what song is playing?"
-- Get top playlists: "Hey Spotify, what are my top 5 playlists"
+### Reading Spotify Info
+- Get current playback: `Hey Spotify, what song is playing?`
+- Get top playlists: `Hey Spotify, what are my top 5 playlists`
 
 ### Authentication Flow
-The plugin uses OAuth 2.0 for authentication with Spotify. Here's how it works:
+The plugin uses **fully automated OAuth 2.0** authentication. No manual steps required!
 
 1. **First-time Setup**
    - Run any Spotify command (e.g., `Hey Spotify, what are my top playlists?`)
    - A browser window will open automatically
    - Log in to Spotify and authorize the app
-   - You'll be redirected to a URL - copy the ENTIRE URL from your browser
-   - Create or edit the file at `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
-   - Add the URL in this format:
-     ```json
-     {
-       "auth_url": "YOUR_COPIED_URL"
-     }
-     ```
-   - Save the file
-   - The plugin will automatically:
-     - Process the authorization URL
-     - Save your access and refresh tokens
+   - **That's it!** The plugin automatically:
+     - Catches the OAuth callback on localhost:8888
+     - Exchanges the code for access/refresh tokens
+     - Saves tokens to `auth.json`
+     - Retries your original command
+   
+   💡 **No URL copying needed!** The plugin handles everything automatically.
 
 2. **Subsequent Uses**
    - The plugin automatically uses your saved tokens
    - If tokens expire, they are automatically refreshed
-   - No manual intervention needed after initial setup
+   - No manual intervention needed
 
 3. **Troubleshooting Authentication**
-   - If you see authentication errors, try deleting the `auth.json` file
-   - The plugin will prompt you to re-authenticate on next use
+   - If you see authentication errors, delete `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
+   - The plugin will re-authenticate automatically on next use
    - Check the log file at `%USERPROFILE%\spotify-plugin.log` for detailed error messages
+   - Make sure port 8888 is not blocked by firewall
 
-💡 **Tip**: The plugin automatically handles token refresh and command retry, so you only need to authenticate once!
+💡 **Tip**: The entire OAuth flow is automated - just authorize once in the browser and you're done!
 
 ## Available Functions
 The plugin includes these main functions:
@@ -135,19 +129,10 @@ The plugin includes these main functions:
 - `spotify_queue_track`: Add a track to queue
 - `spotify_get_user_playlists`: List your playlists
 
-## First-Time Setup
-When you first try to use the Spotify plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to play music, and it will:
-1. Display setup instructions
-2. Guide you to create a Spotify app
-3. Help you authorize the connection
-4. Verify your configuration
-
-The plugin will open your browser automatically and guide you through each step!
-
 ### Logging
 The plugin logs all activity to:
 ```
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\spotify-plugin.log
+%USERPROFILE%\spotify-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 

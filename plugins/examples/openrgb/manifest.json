@@ -2,6 +2,7 @@
   "manifestVersion": 1,
   "executable": "./g-assist-plugin-openrgb.exe",
   "persistent": true,
+  "passthrough": false,
   "name": "openrgb",
   "description": "Control OpenRGB devices.",
   "functions": [
@@ -63,5 +64,12 @@
         }
       }
     }
-  ]
+  ],
+  "tethered": true,
+  "tether_config": {
+    "heartbeat_interval": 5,
+    "heartbeat_timeout": 20,
+    "onboarding_timeout": 60,
+    "allow_passthrough": true
+  }
 }

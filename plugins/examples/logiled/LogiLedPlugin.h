@@ -15,23 +15,35 @@
  * limitations under the License.
  */
 #pragma once
+#include <atomic>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "GAssistPlugin.h"
 #include "LogitechLEDLib.h"
 
 
- /**
-  * Specifies a color in its RGB components.
-  *
-  * The values of each component must be between 0 and 255, inclusive.
-  */
+/**
+ * Specifies a color in its RGB components.
+ *
+ * The values of each component must be between 0 and 255, inclusive.
+ */
 struct Color
 {
     int red;
     int green;
     int blue;
+};
+
+struct PluginConfig
+{
+    bool useSetupWizard = false;
+    bool setupComplete = true;
+    bool restoreOnShutdown = true;
+    bool allowKeyboard = true;
+    bool allowMouse = true;
+    bool allowHeadset = true;
 };
 
 
@@ -65,13 +77,9 @@ protected:
      */
     void shutdown() override;
 
+    void handleUserInput(const json& message) override;
+
 private:
-    /**
-     * Flag specifying if the LogitechLED SDK has been initialized.
-     */
-    bool m_isInitialized;
-
-
     /**
      * Command handler for the "logi_change_headphone_lights" command.
      *
@@ -156,4 +164,19 @@ private:
      * @return `true` if the lighting was updated; `false` otherwise
      */
     bool doLightingChange(const LogiLed::DeviceType device, const Color& color);
+
+    void startHeartbeat(int intervalSeconds = 5);
+    void stopHeartbeat();
+    bool configRequiresSetup() const;
+    std::string buildSetupInstructions(const std::string& reason = "") const;
+    bool completeInitialization(std::string& failureReason);
+    void reloadConfiguration();
+    bool deviceAllowed(LogiLed::DeviceType type) const;
+
+    PluginConfig m_config;
+    bool m_isInitialized;
+    bool m_wizardActive;
+    bool m_pendingInitialization;
+    std::atomic<bool> m_heartbeatActive;
+    std::thread m_heartbeatThread;
 };

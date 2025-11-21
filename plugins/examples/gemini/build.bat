@@ -16,9 +16,20 @@ set PYTHON=python3
 
 :: Verify the setup script has been run
 :build
+
+:: Validate manifest.json before building
+echo Validating manifest.json...
+%PYTHON% -m json.tool manifest.json >nul 2>&1
+if ERRORLEVEL 1 (
+	echo ERROR: manifest.json is not valid JSON!
+	echo Please fix the JSON syntax errors before building.
+	exit /b 1
+)
+echo manifest.json is valid.
+
 set VENV=.venv
 set DIST_DIR=dist
-set PLUGIN_NAME=google
+set PLUGIN_NAME=gemini
 set GOOGLE_DIR=%DIST_DIR%\%PLUGIN_NAME%
 if exist %VENV% (
 	call %VENV%\Scripts\activate.bat
@@ -26,7 +37,7 @@ if exist %VENV% (
 	:: Ensure google subfolder exists
 	if not exist "%GOOGLE_DIR%" mkdir "%GOOGLE_DIR%"
 
-	pyinstaller --onefile --name g-assist-plugin-%PLUGIN_NAME% --distpath "%GOOGLE_DIR%" plugin.py
+	pyinstaller --distpath "%GOOGLE_DIR%" g-assist-plugin-gemini.spec
 	if exist manifest.json (
 		copy /y manifest.json "%GOOGLE_DIR%\manifest.json"
 		echo manifest.json copied successfully.
@@ -46,10 +57,10 @@ if exist %VENV% (
 		echo config.json copied successfully.
 	)
 	
-	echo ^<insert your API key here from https://aistudio.google.com/app/apikey^> > google.key
-	echo Created a blank google.key file. ACTION REQUIRED: Please populate it with your Google Gemini key.
-	copy /y google.key "%GOOGLE_DIR%\google.key"
-	echo google.key copied successfully.
+	echo ^<insert your API key here from https://aistudio.google.com/app/apikey^> > gemini.key
+	echo Created a blank gemini.key file. ACTION REQUIRED: Please populate it with your Google Gemini key.
+	copy /y gemini.key "%GOOGLE_DIR%\gemini.key"
+	echo gemini.key copied successfully.
 	
 	call %VENV%\Scripts\deactivate.bat
 	echo Executable can be found in the "%GOOGLE_DIR%" directory

@@ -16,6 +16,17 @@ set PYTHON=python3
 
 :: Verify the setup script has been run
 :build
+
+:: Validate manifest.json before building
+echo Validating manifest.json...
+%PYTHON% -m json.tool manifest.json >nul 2>&1
+if ERRORLEVEL 1 (
+	echo ERROR: manifest.json is not valid JSON!
+	echo Please fix the JSON syntax errors before building.
+	exit /b 1
+)
+echo manifest.json is valid.
+
 set VENV=.venv
 set DIST_DIR=dist
 set PLUGIN_NAME=nanoleaf

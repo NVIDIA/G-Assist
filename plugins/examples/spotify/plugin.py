@@ -4,19 +4,129 @@ import requests
 import sys
 import webbrowser
 import logging
-import os
 from urllib.parse import urlencode, urlparse, parse_qs
 from ctypes import byref, windll, wintypes
 from requests import Response
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+import time
 
-# Get the directory where the plugin is deployed
-PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify")
-os.makedirs(PLUGIN_DIR, exist_ok=True)
-LOG_FILE = os.path.join(PLUGIN_DIR, 'spotify-plugin.log')
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+PLUGIN_NAME = "spotify"
+PROGRAM_DATA = os.environ.get("PROGRAMDATA", ".")
+PLUGIN_DIR = os.path.join(
+    PROGRAM_DATA, "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
+AUTH_FILE = os.path.join(PLUGIN_DIR, "auth.json")
+STATE_FILE = os.path.join(PLUGIN_DIR, "setup_state.json")
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
 
-REDIRECT_URI="https://open.spotify.com"
+DEFAULT_CONFIG = {
+    "client_id": "",
+    "client_secret": "",
+    "username": "",
+    "redirect_port": 8888,
+    "features": {
+        "enable_passthrough": False,
+        "stream_chunk_size": 240,
+        "use_setup_wizard": True,
+    },
+}
+
+STATE = {
+    "config": DEFAULT_CONFIG.copy(),
+    "awaiting_input": False,
+    "wizard_active": False,
+    "heartbeat_active": False,
+    "heartbeat_thread": None,
+    "heartbeat_message": "",
+}
+
+def ensure_directories() -> None:
+    os.makedirs(PLUGIN_DIR, exist_ok=True)
+    logging.basicConfig(
+        filename=LOG_FILE,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+
+
+def apply_config_defaults(raw: dict) -> dict:
+    merged = DEFAULT_CONFIG.copy()
+    merged.update({k: v for k, v in raw.items() if k != "features"})
+
+    merged_features = DEFAULT_CONFIG["features"].copy()
+    merged_features.update(raw.get("features", {}))
+    merged["features"] = merged_features
+    return merged
+
+
+def save_config(data: dict) -> None:
+    ensure_directories()
+    with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    STATE["config"] = data
+
+
+def load_config() -> dict:
+    ensure_directories()
+    if not os.path.isfile(CONFIG_FILE):
+        save_config(DEFAULT_CONFIG)
+        return DEFAULT_CONFIG.copy()
+
+    with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    merged = apply_config_defaults(data)
+    if merged != data:
+        save_config(merged)
+    else:
+        STATE["config"] = merged
+
+    global CLIENT_ID, CLIENT_SECRET, USERNAME
+    CLIENT_ID = merged.get("client_id", "")
+    CLIENT_SECRET = merged.get("client_secret", "")
+    USERNAME = merged.get("username", "")
+    return merged
+
+
+def validate_config(data: dict) -> tuple[bool, str | None]:
+    if not data.get("client_id"):
+        return False, "client_id is missing from config.json"
+    if not data.get("client_secret"):
+        return False, "client_secret is missing from config.json"
+    if not data.get("username"):
+        return False, "username is missing from config.json"
+    return True, None
+
+
+def build_setup_instructions(error: str | None = None) -> str:
+    header = "[SPOTIFY SETUP]\n========================\n"
+    error_section = f"⚠️ {error}\n\n" if error else ""
+    body = (
+        f"1. Open config file:\n   {CONFIG_FILE}\n"
+        "2. Paste your Spotify client ID, secret, and username (from developer dashboard).\n"
+        "3. Save the file.\n"
+        "4. Return here and type 'done' once credentials are saved.\n"
+    )
+    return header + error_section + body
+
+
+def config_needs_setup(config: dict, valid: bool) -> bool:
+    return config["features"].get("use_setup_wizard", True) and not valid
+
+
+def start_setup_wizard(error: str | None) -> dict:
+    STATE["wizard_active"] = True
+    STATE["awaiting_input"] = True
+    send_status_message(build_setup_instructions(error))
+    return execute_setup_wizard_interactive()
+
+
+def get_redirect_uri() -> str:
+    port = STATE["config"].get("redirect_port", DEFAULT_CONFIG["redirect_port"])
+    return f"http://127.0.0.1:{port}/callback"
+
 SCOPE = "user-library-read user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
 
 # Spotify API endpoints
@@ -28,6 +138,197 @@ AUTH_STATE = None
 ACCESS_TOKEN = None
 REFRESH_TOKEN = None
 
+# Spotify app credentials (loaded from config.json in main())
+CLIENT_ID = None
+CLIENT_SECRET = None
+USERNAME = None
+
+# OAuth callback server state
+oauth_callback_code = None
+oauth_callback_error = None
+oauth_server_running = False
+
+# Setup state machine
+class SetupState:
+    """Persistent setup state machine for plugin configuration"""
+    UNCONFIGURED = "unconfigured"                    # No app credentials
+    WAITING_APP_CREATION = "waiting_app_creation"    # User creating Spotify app
+    WAITING_CREDENTIALS = "waiting_credentials"       # User entering credentials
+    NEED_USER_AUTH = "need_user_auth"                # Need OAuth tokens
+    WAITING_OAUTH = "waiting_oauth"                  # User authorizing in browser
+    CONFIGURED = "configured"                         # Fully set up
+    
+    def __init__(self, state_file):
+        self.state_file = state_file
+        self.current_state = self.UNCONFIGURED
+        self.completed_steps = []
+        self.last_error = None
+        self.retry_count = 0
+        self.timestamp = None
+        self.load()
+    
+    def load(self):
+        """Load state from disk"""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r') as f:
+                    data = json.load(f)
+                    self.current_state = data.get('current_state', self.UNCONFIGURED)
+                    self.completed_steps = data.get('completed_steps', [])
+                    self.last_error = data.get('last_error')
+                    self.retry_count = data.get('retry_count', 0)
+                    self.timestamp = data.get('timestamp')
+                    logging.info(f"[STATE] Loaded state: {self.current_state}")
+        except Exception as e:
+            logging.error(f"[STATE] Error loading state: {e}")
+    
+    def save(self):
+        """Save state to disk"""
+        try:
+            import time
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            data = {
+                'current_state': self.current_state,
+                'completed_steps': self.completed_steps,
+                'last_error': self.last_error,
+                'retry_count': self.retry_count,
+                'timestamp': time.time()
+            }
+            with open(self.state_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            logging.info(f"[STATE] Saved state: {self.current_state}")
+        except Exception as e:
+            logging.error(f"[STATE] Error saving state: {e}")
+    
+    def advance(self, new_state, completed_step=None):
+        """Advance to new state"""
+        self.current_state = new_state
+        if completed_step and completed_step not in self.completed_steps:
+            self.completed_steps.append(completed_step)
+        self.retry_count = 0
+        self.last_error = None
+        self.save()
+    
+    def record_error(self, error):
+        """Record error and increment retry count"""
+        self.last_error = error
+        self.retry_count += 1
+        self.save()
+    
+    def reset(self):
+        """Reset to unconfigured state"""
+        self.current_state = self.UNCONFIGURED
+        self.completed_steps = []
+        self.last_error = None
+        self.retry_count = 0
+        self.save()
+
+# Global setup state
+SETUP_STATE = None
+
+# Helper response generators (defined early for use throughout the code)
+def generate_message_response(message: str, awaiting_input: bool = False) -> dict:
+    """
+    Generate a message response.
+    
+    PHASE 3: Tethered Mode Protocol
+    - awaiting_input=True: Plugin needs more user interaction, stay in passthrough
+    - awaiting_input=False: Plugin is done, exit passthrough mode
+    """
+    return {
+        'success': True,  # Always include success for protocol compliance
+        'message': message,
+        'awaiting_input': awaiting_input
+    }
+
+def generate_success_response(body: dict = None, awaiting_input: bool = False) -> dict:
+    """Generate a success response with optional data"""
+    response = body.copy() if body is not None else dict()
+    response['success'] = True
+    response['awaiting_input'] = awaiting_input  # PHASE 3
+    return response
+
+def generate_failure_response(body: dict = None) -> dict:
+    """Generate a failure response with optional data"""
+    response = body.copy() if body is not None else dict()
+    response['success'] = False
+    response['awaiting_input'] = False  # PHASE 3: Always exit on failure
+    return response
+
+# PHASE 1: Tethered Mode - Heartbeat and Status Messages
+def send_heartbeat(state="ready"):
+    """Send silent heartbeat to engine (not visible to user)"""
+    try:
+        heartbeat_msg = {
+            "type": "heartbeat",
+            "state": state,
+            "timestamp": time.time()
+        }
+        write_response(heartbeat_msg)
+        logging.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
+    except Exception as e:
+        logging.error(f"[HEARTBEAT] Error: {e}")
+
+def send_status_message(message):
+    """Send status update visible to user"""
+    try:
+        status_msg = {
+            "type": "status",
+            "message": message
+        }
+        write_response(status_msg)
+        logging.info(f"[STATUS] Sent: {message[:50]}...")
+    except Exception as e:
+        logging.error(f"[STATUS] Error: {e}")
+
+def send_state_change(new_state):
+    """Notify engine of state transition"""
+    try:
+        state_msg = {
+            "type": "state_change",
+            "new_state": new_state
+        }
+        write_response(state_msg)
+        logging.info(f"[STATE] Changed to: {new_state}")
+    except Exception as e:
+        logging.error(f"[STATE] Error: {e}")
+
+def start_continuous_heartbeat(state="ready", interval=5, show_dots=True):
+    """
+    Start background thread that sends periodic heartbeats.
+    
+    Args:
+        state: Heartbeat state ("onboarding" or "ready")
+        interval: Seconds between heartbeats
+        show_dots: If True, send visible status dots. If False, send silent heartbeats only.
+    """
+    stop_continuous_heartbeat()
+
+    STATE["heartbeat_message"] = state
+    STATE["heartbeat_active"] = True
+
+    def heartbeat_loop():
+        while STATE["heartbeat_active"]:
+            time.sleep(interval)
+            if STATE["heartbeat_active"]:
+                send_heartbeat(STATE["heartbeat_message"])
+                if show_dots:
+                    send_status_message(".")
+
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    STATE["heartbeat_thread"] = thread
+    thread.start()
+    logging.info(f"[HEARTBEAT] Started continuous heartbeat: state={state}, interval={interval}s, show_dots={show_dots}")
+
+def stop_continuous_heartbeat():
+    """Stop background heartbeat thread"""
+    STATE["heartbeat_active"] = False
+    thread = STATE.get("heartbeat_thread")
+    if thread and thread.is_alive():
+        thread.join(timeout=1)
+    STATE["heartbeat_thread"] = None
+    logging.info("[HEARTBEAT] Stopped continuous heartbeat")
+
 
 def get_spotify_auth_url():
     """
@@ -36,7 +337,7 @@ def get_spotify_auth_url():
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": get_redirect_uri(),
         "scope": SCOPE,
     }
     return f"{AUTHORIZATION_URL}?{urlencode(params)}"
@@ -58,7 +359,7 @@ def get_access_token(auth_code):
         data={
             "grant_type": "authorization_code",
             "code": auth_code,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": get_redirect_uri(),
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
         },
@@ -71,10 +372,207 @@ def get_access_token(auth_code):
     token_data = token_response.json()
     return token_data
 
+class OAuthCallbackHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for OAuth callbacks - catches the authorization code"""
+    
+    def do_GET(self):
+        """Handle GET request from OAuth provider"""
+        global oauth_callback_code, oauth_callback_error, oauth_server_running
+        
+        # Parse the URL to extract code or error
+        parsed = urlparse(self.path)
+        query_params = parse_qs(parsed.query)
+        
+        if 'code' in query_params:
+            # Success! Got authorization code
+            oauth_callback_code = query_params['code'][0]
+            logging.info(f"[OAuth] Received authorization code: {oauth_callback_code[:20]}...")
+            
+            # Send success page to browser
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            success_html = """
+            <html>
+            <head><title>Authentication Successful</title></head>
+            <body style="font-family: Arial; text-align: center; padding: 50px; background: #0a0a0f; color: #76b900;">
+                <h1>✓ Authentication Successful!</h1>
+                <p>You have successfully authenticated with Spotify.</p>
+                <p>You can close this window and return to G-Assist.</p>
+            </body>
+            </html>
+            """
+            self.wfile.write(success_html.encode())
+            
+        elif 'error' in query_params:
+            # Error from OAuth provider
+            oauth_callback_error = query_params['error'][0]
+            logging.error(f"[OAuth] Error from provider: {oauth_callback_error}")
+            
+            # Send error page to browser
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            error_html = f"""
+            <html>
+            <head><title>Authentication Failed</title></head>
+            <body style="font-family: Arial; text-align: center; padding: 50px; background: #0a0a0f; color: #ff3d00;">
+                <h1>✗ Authentication Failed</h1>
+                <p>Error: {oauth_callback_error}</p>
+                <p>Please try again or check your plugin configuration.</p>
+            </body>
+            </html>
+            """
+            self.wfile.write(error_html.encode())
+        
+        # Signal that we received a response (success or error)
+        oauth_server_running = False
+    
+    def log_message(self, format, *args):
+        """Suppress default HTTP server logging to avoid cluttering logs"""
+        pass
+
+
+def start_oauth_callback_server(port: int | None = None, timeout=120):
+    """
+    Start a local HTTP server to catch OAuth callbacks.
+    Uses 127.0.0.1 instead of localhost for better Spotify compatibility.
+    
+    Args:
+        port: Port to listen on (defaults to redirect_port in config)
+        timeout: Max seconds to wait for callback (default 120)
+    
+    Returns:
+        tuple: (auth_code, error) - either auth_code or error will be set
+    """
+    global oauth_callback_code, oauth_callback_error, oauth_server_running
+    if port is None:
+        port = STATE["config"].get("redirect_port", DEFAULT_CONFIG["redirect_port"])
+    
+    # Reset state
+    oauth_callback_code = None
+    oauth_callback_error = None
+    oauth_server_running = True
+    
+    # Create HTTP server on 127.0.0.1 (Spotify allows this for local dev)
+    server = HTTPServer(('127.0.0.1', port), OAuthCallbackHandler)
+    logging.info(f"[OAuth] Starting HTTP callback server on http://127.0.0.1:{port}")
+    
+    # Run server in background thread with timeout
+    def run_server():
+        start_time = time.time()
+        while oauth_server_running and (time.time() - start_time) < timeout:
+            server.handle_request()  # Handle one request then check flag
+        logging.info("[OAuth] Callback server stopped")
+    
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    
+    # Wait for callback or timeout
+    start_time = time.time()
+    while oauth_server_running and (time.time() - start_time) < timeout:
+        if oauth_callback_code or oauth_callback_error:
+            break
+        time.sleep(0.1)
+    
+    # Cleanup
+    oauth_server_running = False
+    server_thread.join(timeout=2)
+    
+    return oauth_callback_code, oauth_callback_error
+
+
+def authorize_user_automated():
+    """
+    Fully automated OAuth flow using local callback server.
+    Opens browser, catches callback automatically, saves tokens.
+    
+    Returns:
+        dict: Success or failure response with message
+    """
+    global ACCESS_TOKEN, REFRESH_TOKEN, CLIENT_ID, CLIENT_SECRET
+    
+    # Verify credentials are loaded
+    if not CLIENT_ID or not CLIENT_SECRET:
+        error_msg = "CLIENT_ID or CLIENT_SECRET not loaded. Please check config.json in plugin folder contains:\n"
+        error_msg += '{\n  "client_id": "your_spotify_client_id",\n  "client_secret": "your_spotify_client_secret",\n  "username": "your_spotify_username"\n}'
+        logging.error(f"[OAuth] {error_msg}")
+        return generate_failure_response(error_msg)
+    
+    logging.info("[OAuth] Starting automated authorization flow...")
+    logging.info(f"[OAuth] Using CLIENT_ID: {CLIENT_ID[:20]}...")
+    redirect_port = STATE["config"].get("redirect_port", DEFAULT_CONFIG["redirect_port"])
+
+    try:
+        # Step 1: Start local callback server in background
+        logging.info(f"[OAuth] Step 1: Starting local callback server on port {redirect_port}...")
+        server_thread = threading.Thread(
+            target=lambda: start_oauth_callback_server(port=redirect_port, timeout=120),
+            daemon=True
+        )
+        server_thread.start()
+        
+        # Give server time to start
+        time.sleep(0.5)
+        
+        # Step 2: Open browser to OAuth URL
+        auth_url = get_spotify_auth_url()
+        logging.info(f"[OAuth] Step 2: Opening browser to: {auth_url}")
+        webbrowser.open(auth_url)
+        
+        logging.info("[OAuth] Waiting for user to authorize in browser...")
+        logging.info("[OAuth] (Browser should open automatically)")
+        
+        # Step 3: Wait for callback server to receive code (with periodic heartbeats)
+        wait_time = 0
+        heartbeat_interval = 10  # Send heartbeat every 10 seconds
+        while wait_time < 120:  # Total timeout: 2 minutes
+            server_thread.join(timeout=heartbeat_interval)
+            if not server_thread.is_alive() or oauth_callback_code or oauth_callback_error:
+                break
+            wait_time += heartbeat_interval
+            send_status_message(f"Still waiting for browser authorization... ({wait_time}s elapsed)")
+        
+        # Step 4: Check results
+        if oauth_callback_code:
+            logging.info("[OAuth] Step 3: Authorization code received!")
+            
+            # Step 5: Exchange code for tokens
+            logging.info("[OAuth] Step 4: Exchanging code for access token...")
+            token_data = get_access_token(oauth_callback_code)
+            
+            ACCESS_TOKEN = token_data['access_token']
+            REFRESH_TOKEN = token_data['refresh_token']
+            
+            # Step 6: Save tokens
+            logging.info("[OAuth] Step 5: Saving tokens to auth.json...")
+            save_auth_state(ACCESS_TOKEN, REFRESH_TOKEN)
+            
+            logging.info("[OAuth] ✓ Authorization complete! Tokens saved.")
+            return generate_success_response({"message": "Successfully authenticated with Spotify! You're all set."})
+            
+        elif oauth_callback_error:
+            error_msg = f"Authorization failed: {oauth_callback_error}"
+            logging.error(f"[OAuth] {error_msg}")
+            return generate_failure_response({"message": error_msg})
+        else:
+            error_msg = "Authorization timeout - no response from browser after 2 minutes"
+            logging.error(f"[OAuth] {error_msg}")
+            return generate_failure_response({"message": error_msg})
+            
+    except Exception as e:
+        error_msg = f"Authorization error: {str(e)}"
+        logging.error(f"[OAuth] {error_msg}")
+        logging.exception("[OAuth] Full traceback:")
+        return generate_failure_response({"message": error_msg})
+
+
 def authorize_user():
 
     """
     Authorize the user using Spotify's API and return access/refresh tokens.
+    LEGACY METHOD - Opens browser but requires manual URL copying.
+    Use authorize_user_automated() for fully automated flow.
     """
     # Open the Spotify login page in the browser
     auth_url = get_spotify_auth_url()
@@ -120,7 +618,7 @@ def complete_auth_user(callback_url):
         logging.error(f"Error in complete_auth_user: {str(e)}")
         return generate_failure_response({ 'message': f'Authorization failed: {str(e)}' })
 
-def main():
+def legacy_main():
     """ Main entry point for the Spotify G-Assist plugin.
     
     Listens for commands on a pipe and processes them in a loop until shutdown.
@@ -145,19 +643,47 @@ def main():
     AUTH_FILE = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
 
     try:
-        # Read the configuration file
+        # Read the IP from the configuration file
+        logging.info(f'Loading configuration from: {CONFIG_FILE}')
         CLIENT_ID = get_client_id(CONFIG_FILE)
         CLIENT_SECRET = get_client_secret(CONFIG_FILE)
         USERNAME = get_username(CONFIG_FILE)
+        
         if CLIENT_ID is None or CLIENT_SECRET is None:
-            logging.error('CLIENT_ID or CLIENT_SECRET not found in config file - setup wizard will be triggered')
+            logging.error('Unable to read the configuration file. CLIENT_ID or CLIENT_SECRET is None')
+            logging.error(f'Config file path: {CONFIG_FILE}')
+            logging.error(f'Config file exists: {os.path.exists(CONFIG_FILE)}')
+        else:
+            logging.info(f'Configuration loaded successfully - CLIENT_ID: {CLIENT_ID[:20]}...')
     except Exception as e:
         logging.error(f'Error reading configuration file: {e}')
+        logging.exception('Full traceback:')
 
     # Generate command handler mapping
     commands = generate_command_handlers()
 
     logging.info('Starting plugin.')
+    
+    # Initialize setup state machine
+    global SETUP_STATE
+    state_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "setup_state.json")
+    SETUP_STATE = SetupState(state_file)
+    logging.info(f'[STATE] Initialized setup state machine: {SETUP_STATE.current_state}')
+    
+    # Validate configuration on startup
+    if SETUP_STATE.current_state == SetupState.CONFIGURED:
+        # We think we're configured, but verify credentials still valid
+        if not CLIENT_ID or not CLIENT_SECRET or len(CLIENT_ID) < 10:
+            logging.warning("[STATE] Previously configured but credentials now invalid, resetting state")
+            SETUP_STATE.reset()
+        else:
+            logging.info("[STATE] Configuration validated")
+    
+    # PHASE 1: Start heartbeat thread (tethered mode)
+    # Determine initial state based on configuration
+    initial_state = "ready" if SETUP_STATE.current_state == SetupState.CONFIGURED else "onboarding"
+    start_continuous_heartbeat(state=initial_state, interval=5)
+    logging.info(f'[TETHER] Started heartbeat thread with state={initial_state}')
 
     # Try to load existing tokens first
     try:
@@ -177,25 +703,118 @@ def main():
         ACCESS_TOKEN = None
         REFRESH_TOKEN = None
 
-    read_failures = 0
-    MAX_READ_FAILURES = 3
-    
     while True:
         function = ''
         response = None
         input = read_command()
         if input is None:
-            read_failures += 1
-            logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
-            if read_failures >= MAX_READ_FAILURES:
-                logging.error('Too many read failures, exiting')
-                break
             continue
         
-        # Reset failure counter on successful read
-        read_failures = 0
         logging.info(f'Command: "{input}"')
+        
+        # PHASE 3: Handle user input passthrough messages
+        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+            user_input_text = input.get('content', '')
+            logging.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+            
+            # Handle during setup wizard
+            if SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED:
+                logging.info(f"[WIZARD] User input during setup: '{user_input_text}'")
+                
+                # Check for help request
+                if 'help' in user_input_text.lower():
+                    logging.info("[WIZARD] User requested help during setup")
+                    try:
+                        webbrowser.open("https://developer.spotify.com/dashboard")
+                        config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+                        if os.path.exists(config_file):
+                            os.startfile(config_file)
+                        response = generate_message_response("[OK] Re-opened dashboard and config file for you!\n\nContinue where you left off, then send me another message.")
+                        write_response(response)
+                        continue
+                    except Exception as e:
+                        logging.error(f"[WIZARD] Error opening help files: {e}")
+                
+                # Advance wizard with user input
+                try:
+                    response = execute_setup_wizard()
+                    logging.info(f"[WIZARD] Got response from wizard: {str(response)[:200] if response else 'None'}")
+                    
+                    if response:
+                        write_response(response)
+                        logging.info(f"[WIZARD] Sent response to user input, length: {len(str(response))}")
+                        
+                        # PHASE 3: If response is awaiting more input, restart heartbeat WITHOUT dots
+                        # Plugin is now quietly waiting for user - no need for visual dots
+                        if response.get('awaiting_input', False):
+                            start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+                            logging.info("[WIZARD] Restarted heartbeat without dots (awaiting user input)")
+                    else:
+                        logging.error("[WIZARD] execute_setup_wizard() returned None/False!")
+                except Exception as e:
+                    logging.error(f"[WIZARD] Exception during user_input wizard execution: {e}")
+                    logging.exception("Full traceback:")
+                    
+                continue
+            else:
+                # Plugin is configured - user input could be for other purposes
+                logging.info(f"[INPUT] User input received (plugin configured): {user_input_text}")
+                # For now, just acknowledge
+                response = generate_message_response(f"Received: {user_input_text}")
+                write_response(response)
+                continue
+        
+        # PHASE 3: Handle termination messages
+        if isinstance(input, dict) and input.get('msg_type') == 'terminate':
+            logging.info('[TERMINATE] Received termination request from engine')
+            reason = input.get('reason', 'unknown')
+            response = generate_message_response(f"[OK] Plugin terminating ({reason})")
+            write_response(response)
+            stop_continuous_heartbeat()
+            break  # Exit main loop
+        
+        # Don't stop heartbeat if we're in setup mode - keep it running!
+        # Only stop heartbeat for regular commands when configured
+        if SETUP_STATE and SETUP_STATE.current_state == SetupState.CONFIGURED:
+            stop_continuous_heartbeat()
+            logging.info("[TETHER] Stopped heartbeat (plugin configured)")
 
+        # Check if we're in setup mode - ANY user message advances the wizard
+        if isinstance(input, dict) and SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED:
+            # Extract user message if present
+            user_message = ""
+            if 'messages' in input and len(input['messages']) > 0:
+                user_message = input['messages'][-1].get('content', '').lower()
+            
+            # Handle "help" request
+            if 'help' in user_message:
+                logging.info("[WIZARD] User requested help during setup")
+                try:
+                    webbrowser.open("https://developer.spotify.com/dashboard")
+                    config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+                    if os.path.exists(config_file):
+                        os.startfile(config_file)
+                    response = generate_message_response("[OK] Re-opened dashboard and config file for you!\n\nContinue where you left off, then send me another message.")
+                    write_response(response)
+                    continue
+                except Exception as e:
+                    logging.error(f"[WIZARD] Error opening help files: {e}")
+            
+            # If user sent ANY message during setup (not just tool calls), advance wizard
+            if user_message or not input.get(TOOL_CALLS_PROPERTY):
+                logging.info(f"[WIZARD] User sent message during setup: '{user_message}'")
+                response = execute_setup_wizard()
+                if response:
+                    write_response(response)
+                    logging.info(f"[WIZARD] Sent response, length: {len(str(response))}")
+                    
+                    # PHASE 3: If response is awaiting more input, restart heartbeat WITHOUT dots
+                    if response.get('awaiting_input', False):
+                        start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+                        logging.info("[WIZARD] Restarted heartbeat without dots (awaiting user input)")
+                    
+                continue
+        
         if TOOL_CALLS_PROPERTY in input:
             tool_calls = input[TOOL_CALLS_PROPERTY]
             logging.info(f'tool_calls: "{tool_calls}"')
@@ -212,7 +831,32 @@ def main():
                         logging.info(f'cmd: "{cmd}"')
                         response = commands[cmd]()
                     else:
-                        # For all other commands, check if we need authorization
+                        # For all other commands, check if we're in setup mode first
+                        if SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED:
+                            logging.info(f'[COMMAND] In setup mode (state={SETUP_STATE.current_state}), starting interactive wizard')
+                            response = execute_setup_wizard_interactive()
+                            logging.info(f'[COMMAND] Interactive wizard completed: {str(response)[:200]}...')
+                            
+                            # PHASE 3: If wizard response is awaiting input, restart heartbeat WITHOUT dots
+                            if response and response.get('awaiting_input', False):
+                                start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+                                logging.info("[WIZARD] Restarted heartbeat without dots (awaiting user input)")
+                            
+                            break
+                        
+                        # Check if app credentials are configured
+                        if not CLIENT_ID or not CLIENT_SECRET:
+                            logging.error('[COMMAND] CLIENT_ID or CLIENT_SECRET missing - starting interactive setup wizard')
+                            response = execute_setup_wizard_interactive()
+                            
+                            # PHASE 3: If wizard response is awaiting input, restart heartbeat WITHOUT dots
+                            if response and response.get('awaiting_input', False):
+                                start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+                                logging.info("[WIZARD] Restarted heartbeat without dots (awaiting user input)")
+                            
+                            break
+                        
+                        # Check if we need user authorization (OAuth tokens)
                         if ACCESS_TOKEN is None or REFRESH_TOKEN is None:
                             # Check if we have an auth_url in the file
                             try:
@@ -230,29 +874,27 @@ def main():
                                 logging.error(f'Error checking auth file: {e}')
                             
                             # If we get here, we need to start new authorization
-                            logging.info('Starting new authorization process')
-                            authorize_user()
-                            response = generate_success_response({
-                                "message": "Please follow these steps:\n"
-                                          "1. A browser window has opened - log in to Spotify and authorize the app\n"
-                                          "2. After authorizing, you'll be redirected to a URL\n"
-                                          "3. Copy the ENTIRE URL from your browser\n"
-                                          "4. Create or edit the file at this location:\n"
-                                          f"   `{AUTH_FILE}`\n"
-                                          "5. Add the URL to the file in this format:\n"
-                                          "   ```\n"
-                                          "   {\n"
-                                          "     \"auth_url\": \"YOUR_COPIED_URL\"\n"
-                                          "   }\n"
-                                          "    \n"
-                                          "6. Save the file and try your command again"
-                            })
+                            logging.info('Starting AUTOMATED authorization process...')
+                            response = authorize_user_automated()
+                            
+                            # If authorization succeeded, retry the original command
+                            if response.get('success'):
+                                logging.info('Authorization successful, retrying original command...')
+                                # Retry the command that failed due to auth
+                                CONTEXT_PROPERTY = 'messages'
+                                SYSTEM_INFO_PROPERTY = 'system_info'
+                                if cmd in commands:
+                                    response = commands[cmd](
+                                        input[PARAMS_PROPERTY] if PARAMS_PROPERTY in input else None,
+                                        input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in input else None,
+                                        input[SYSTEM_INFO_PROPERTY] if SYSTEM_INFO_PROPERTY in input else None
+                                    )
                             break
                         
                         # If we have valid tokens, execute the command
                         try:
                             logging.info(f'Executing command: {cmd} {tool_call}')
-                            response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {}, send_status_callback=write_response)
+                            response = commands[cmd](tool_call[PARAMS_PROPERTY] if PARAMS_PROPERTY in tool_call else {})
                         except Exception as e:
                             response = generate_failure_response({'message': f'Spotify Error: {e}'})
                 else:
@@ -263,7 +905,7 @@ def main():
                 cmd = original_command[FUNCTION_PROPERTY]
                 logging.info(f'Retrying original command after auth: {cmd}')
                 try:
-                    response = commands[cmd](original_command[PARAMS_PROPERTY] if PARAMS_PROPERTY in original_command else {}, send_status_callback=write_response)
+                    response = commands[cmd](original_command[PARAMS_PROPERTY] if PARAMS_PROPERTY in original_command else {})
                 except Exception as e:
                     response = generate_failure_response({'message': f'Spotify Error: {e}'})
         else:
@@ -389,96 +1031,6 @@ def get_username(config_file: str) -> str | None:
 
     return username
 
-def execute_setup_wizard() -> dict:
-    """Guide user through Spotify app setup.
-    
-    Returns:
-        dict: Response with setup instructions
-    """
-    config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
-    
-    # Check if config was updated
-    try:
-        if os.path.exists(config_file):
-            with open(config_file, 'r') as file:
-                data = json.load(file)
-            new_client_id = data.get('client_id', '')
-            new_client_secret = data.get('client_secret', '')
-            
-            if new_client_id and len(new_client_id) > 20 and new_client_secret and len(new_client_secret) > 20:
-                global CLIENT_ID, CLIENT_SECRET
-                CLIENT_ID = new_client_id
-                CLIENT_SECRET = new_client_secret
-                logging.info("Spotify app configured successfully!")
-                return generate_success_response({
-                    'message': "✓ Spotify app configured! Now authorizing with Spotify...",
-                    'awaiting_input': False
-                })
-    except:
-        pass
-    
-    # Show setup instructions
-    message = f"""
-SPOTIFY PLUGIN - FIRST TIME SETUP
-==================================
-
-Welcome! Let's set up your Spotify app. This takes about 10 minutes.
-
-STEP 1 - Create Spotify App:
-   1. Visit: https://developer.spotify.com/dashboard
-   2. Log in with your Spotify account
-   3. Click "Create app"
-   4. Fill in the form:
-      - App name: "G-Assist Plugin"
-      - App description: "Control Spotify via G-Assist"
-      - Redirect URI: "https://open.spotify.com"
-      - Check "Web API" checkbox
-   5. Click "Save"
-
-STEP 2 - Get Credentials:
-   1. On your app's dashboard, click "Settings"
-   2. Copy your "Client ID"
-   3. Click "View client secret" and copy it
-
-STEP 3 - Configure Plugin:
-   1. Open this file: {config_file}
-   2. Replace the values:
-      {{"client_id": "your_client_id_here",
-       "client_secret": "your_client_secret_here",
-       "username": "your_spotify_username"}}
-   3. Save the file
-
-After saving, send me ANY message (like "done") and I'll start the authorization!
-
-Note: Keep your client secret private - don't share it!
-"""
-    
-    logging.info("Showing Spotify setup wizard to user")
-    return generate_success_response({
-        'message': message,
-        'awaiting_input': True
-    })
-
-def generate_command_handlers() -> dict:
-    ''' Generates the mapping of commands to their handlers.
-
-    @return dictionay where the commands is the key and the handler is the value
-    '''
-    commands = dict()
-    commands['initialize'] = execute_initialize_command
-    commands['shutdown'] = execute_shutdown_command
-    commands['authorize'] = execute_auth_command
-    commands['spotify_start_playback'] = execute_play_command
-    commands['spotify_pause_playback'] = execute_pause_command
-    commands['spotify_next_track'] = execute_next_track_command
-    commands['spotify_previous_track'] = execute_previous_track_command
-    commands['spotify_shuffle_playback'] = execute_shuffle_command
-    commands['spotify_set_volume'] = execute_volume_command
-    commands['spotify_get_currently_playing'] = execute_currently_playing_command
-    commands['spotify_queue_track'] = execute_queue_track_command
-    commands['spotify_get_user_playlists'] = execute_get_user_playlists_command
-    return commands
-
 def read_command() -> dict | None:
     ''' Reads a command from the communication pipe.
 
@@ -517,7 +1069,12 @@ def read_command() -> dict | None:
 
         # Combine all chunks and parse JSON
         retval = ''.join(chunks)
-        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
+        
+        # Remove <<END>> token if present
+        END_TOKEN = '<<END>>'
+        if retval.endswith(END_TOKEN):
+            retval = retval[:-len(END_TOKEN)]
+        
         return json.loads(retval)
 
     except json.JSONDecodeError:
@@ -540,57 +1097,31 @@ def write_response(response:Response) -> None:
         json_message = json.dumps(response) + '<<END>>'
         message_bytes = json_message.encode('utf-8')
         message_len = len(message_bytes)
-
-        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
         
+        # Log message type for debugging
+        msg_type = response.get('type', 'response') if isinstance(response, dict) else 'unknown'
+        logging.info(f'[PIPE] Writing message: type={msg_type}, length={message_len} bytes')
+
         bytes_written = wintypes.DWORD()
         success = windll.kernel32.WriteFile(
             pipe,
             message_bytes,
             message_len,
-            byref(bytes_written),
+            bytes_written,
             None
         )
 
-        if success:
-            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        if not success:
+            error_code = windll.kernel32.GetLastError()
+            logging.error(f'[PIPE] Write FAILED - type={msg_type}, error={error_code}')
         else:
-            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
+            logging.info(f'[PIPE] Write OK - type={msg_type}, bytes={bytes_written.value}/{message_len}')
 
     except Exception as e:
         logging.error(f'Exception in write_response(): {str(e)}')
 
-def generate_failure_response(body:dict=None) -> dict:
-    ''' Generates a response indicating failure.
-
-    @param[in] data  information to be attached to the response
-
-    @return dictionary response (to be converted to JSON when writing to the
-    communications pipe)
-    '''
-    response = body.copy() if body is not None else dict()
-    response['success'] = False
-    return response
-
-def generate_success_response(body:dict=None) -> dict:
-    ''' Generates a response indicating success.
-
-    @param[in] data  information to be attached to the response
-
-    @return dictionary response (to be converted to JSON when writing to the
-    communications pipe)
-    '''
-    response = body.copy() if body is not None else dict()
-    response['success'] = True
-    return response
-
-def generate_status_update(message: str) -> dict:
-    """Generate a status update (not a final response).
-    
-    Status updates are intermediate messages that don't end the plugin execution.
-    They should NOT include 'success' field to avoid being treated as final responses.
-    """
-    return {'status': 'in_progress', 'message': message}
+# generate_failure_response and generate_success_response moved to top of file (line 134-138)
+# to be available for heartbeat function
 
 def call_spotify_api(url: str, request_method: str, data) -> Response:
     """ Makes authenticated requests to the Spotify Web API.
@@ -808,6 +1339,293 @@ def get_generic_uri(params: dict) -> str:
 
 # COMMANDS
 
+def execute_setup_wizard_interactive():
+    """
+    NON-BLOCKING setup wizard that advances state and returns immediately.
+    Relies on background heartbeat thread and user re-triggering for next step.
+    
+    Returns:
+        dict: Immediate response with current step instructions
+    """
+    global SETUP_STATE, CLIENT_ID, CLIENT_SECRET
+    
+    # Initialize state machine if needed
+    if SETUP_STATE is None:
+        state_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "setup_state.json")
+        SETUP_STATE = SetupState(state_file)
+    
+    logging.info(f"[WIZARD] Executing setup wizard step")
+    logging.info(f"[WIZARD] Current state: {SETUP_STATE.current_state}")
+    
+    # Execute current state logic ONCE
+    result = execute_setup_wizard_state_once()
+    
+    # Check if setup is complete
+    if SETUP_STATE.current_state == SetupState.CONFIGURED:
+        send_state_change("ready")  # Notify engine setup is done
+        stop_continuous_heartbeat()  # No longer need heartbeats
+        logging.info("[WIZARD] Setup wizard complete - plugin configured")
+        return generate_success_response({"message": "[OK] Spotify plugin is now configured and ready!"}, awaiting_input=False)  # PHASE 3: Exit passthrough
+    
+    # Not complete yet - return current step message
+    # Heartbeat thread keeps connection alive
+    # User will send another message to advance
+    return result if result else generate_success_response({"message": "Please complete the current step and send another message."}, awaiting_input=True)  # PHASE 3: Stay in passthrough
+
+
+def execute_setup_wizard_state_once() -> dict:
+    """
+    Execute ONE iteration of the current setup state.
+    Checks conditions and advances state if ready.
+    
+    Returns:
+        dict: Response message or None
+    """
+    global SETUP_STATE, CLIENT_ID, CLIENT_SECRET
+    
+    logging.info(f"[WIZARD] Executing state: {SETUP_STATE.current_state}")
+    
+    # State machine logic
+    state = SETUP_STATE.current_state
+    
+    # STATE: UNCONFIGURED - Need to start setup process
+    if state == SetupState.UNCONFIGURED:
+        # Send initial status
+        send_status_message("Starting Spotify plugin setup wizard...")
+        
+        redirect_uri = get_redirect_uri()
+        message = f"""
+SPOTIFY PLUGIN - FIRST TIME SETUP
+====================================
+
+Welcome! Let's get your Spotify plugin configured. This takes about 2 minutes.
+
+I'm opening the Spotify Developer Dashboard in your browser right now...
+
+YOUR TASK - Create a Spotify App:
+   1. Click "Create App" button
+   2. Fill in these EXACT values:
+      - App Name: G-Assist Spotify
+      - Redirect URI: {redirect_uri}  [CRITICAL - use IP not localhost!]
+      - Select "Web API" checkbox
+   3. Click "Create"
+
+When you're done creating the app, just send me ANY message (like "done" or "next")
+and I'll guide you through the next step!
+
+Opening dashboard now...
+"""
+        try:
+            send_status_message("Opening Spotify Developer Dashboard...")
+            import webbrowser
+            # Force browser window to foreground on Windows
+            if sys.platform == 'win32':
+                webbrowser.get('windows-default').open("https://developer.spotify.com/dashboard", new=2, autoraise=True)
+            else:
+                webbrowser.open("https://developer.spotify.com/dashboard")
+            
+            SETUP_STATE.advance(SetupState.WAITING_APP_CREATION, "opened_dashboard")
+            logging.info("[WIZARD] Opened dashboard, advanced to WAITING_APP_CREATION")
+            
+            # Heartbeat managed by interactive wizard polling loop
+        except Exception as e:
+            SETUP_STATE.record_error(str(e))
+            message += f"\nError opening browser: {e}\nPlease manually visit: https://developer.spotify.com/dashboard"
+        
+        return generate_message_response(message, awaiting_input=True)  # PHASE 3: Stay in passthrough
+    
+    # STATE: WAITING_APP_CREATION - User is creating the app
+    elif state == SetupState.WAITING_APP_CREATION:
+        # Send status
+        send_status_message("[OK] Dashboard opened. Now guiding you to get credentials...")
+        
+        message = """
+STEP 2 - Get Your App Credentials
+=====================================
+
+Great! Now let's get your credentials.
+
+In the Spotify Dashboard:
+   1. Click on your app name (the one you just created)
+   2. Click "Settings" button
+   3. You'll see:
+      - Client ID - Copy this!
+      - Client Secret - Click "View client secret", then copy it!
+
+I'm opening your config file in Notepad right now...
+
+YOUR TASK - Paste Your Credentials:
+   Replace the empty strings with what you copied:
+   
+   {
+     "client_id": "PASTE_CLIENT_ID_HERE",
+     "client_secret": "PASTE_CLIENT_SECRET_HERE",
+     "username": "your_spotify_username"
+   }
+   
+   SAVE the file!
+
+After saving, send me ANY message (like "done") and I'll verify your credentials!
+
+Opening config.json in Notepad...
+"""
+        try:
+            send_status_message("Opening config.json for editing...")
+            config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+            os.makedirs(os.path.dirname(config_file), exist_ok=True)
+            
+            # Create config file if it doesn't exist
+            if not os.path.exists(config_file):
+                with open(config_file, 'w') as f:
+                    json.dump({"client_id": "", "client_secret": "", "username": ""}, f, indent=2)
+            
+            # Force Notepad to foreground
+            os.startfile(config_file)
+            time.sleep(0.5)
+            # Try to bring window to front (Windows only)
+            if sys.platform == 'win32':
+                try:
+                    import win32gui
+                    import win32con
+                    # Find Notepad window
+                    def enum_callback(hwnd, results):
+                        if 'config.json' in win32gui.GetWindowText(hwnd):
+                            win32gui.SetForegroundWindow(hwnd)
+                    win32gui.EnumWindows(enum_callback, None)
+                except:
+                    pass  # win32gui not available, skip focus forcing
+            
+            SETUP_STATE.advance(SetupState.WAITING_CREDENTIALS, "opened_config")
+            logging.info("[WIZARD] Opened config.json, advanced to WAITING_CREDENTIALS")
+            
+            # Heartbeat managed by interactive wizard polling loop
+        except Exception as e:
+            SETUP_STATE.record_error(str(e))
+            message += f"\nError opening config: {e}"
+        
+        return generate_message_response(message, awaiting_input=True)  # PHASE 3: Stay in passthrough
+    
+    # STATE: WAITING_CREDENTIALS - Verify credentials were entered
+    elif state == SetupState.WAITING_CREDENTIALS:
+        # Heartbeats sent automatically by background thread
+        
+        # Try to reload config
+        config_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "config.json")
+        try:
+            reloaded_id = get_client_id(config_file)
+            reloaded_secret = get_client_secret(config_file)
+            
+            if reloaded_id and reloaded_secret and len(reloaded_id) > 10:
+                # Credentials look valid! Update globals
+                CLIENT_ID = reloaded_id
+                CLIENT_SECRET = reloaded_secret
+                
+                send_status_message("[OK] Credentials verified successfully!")
+                SETUP_STATE.advance(SetupState.NEED_USER_AUTH, "credentials_verified")
+                logging.info(f"[WIZARD] Credentials verified: CLIENT_ID={CLIENT_ID[:20]}...")
+                message = """
+[OK] CREDENTIALS VERIFIED!
+=======================
+
+Perfect! Your app credentials are saved and validated.
+
+FINAL STEP - Authorize Your Account
+=======================================
+
+Now I need permission to access YOUR Spotify account.
+
+Send me ANY message (like "authorize" or "go") and I'll:
+   1. Open Spotify login in your browser
+   2. You log in and click "Accept"
+   3. I automatically catch the response
+   4. DONE! You can start using Spotify commands!
+
+This is the last step!
+"""
+                logging.info("[WIZARD] Credentials verified, ready for OAuth")
+                return generate_message_response(message, awaiting_input=True)  # PHASE 3: Stay in passthrough
+            else:
+                # Still empty or invalid
+                retry_msg = f" (Retry #{SETUP_STATE.retry_count})" if SETUP_STATE.retry_count > 0 else ""
+                message = f"""
+[WARNING] CREDENTIALS NOT FOUND{retry_msg}
+=====================================
+
+I checked the config file but the credentials are still empty or invalid.
+
+Please make sure you:
+   [x] Opened: C:\\ProgramData\\NVIDIA Corporation\\nvtopps\\rise\\plugins\\spotify\\config.json
+   [x] Pasted your Client ID and Client Secret
+   [x] SAVED the file!
+
+Current values I see:
+   - Client ID: {reloaded_id if reloaded_id else '(empty)'}
+   - Client Secret: {reloaded_secret[:10] + '...' if reloaded_secret and len(reloaded_secret) > 10 else '(empty or too short)'}
+
+After you save the config file, send me ANY message to verify again.
+
+Need help? I can re-open the files for you - just say "help"
+"""
+                SETUP_STATE.record_error("credentials_empty")
+                # Heartbeat managed by interactive wizard polling loop
+                return generate_message_response(message, awaiting_input=True)  # PHASE 3: Stay in passthrough
+        except Exception as e:
+            SETUP_STATE.record_error(str(e))
+            return generate_message_response(f"[ERROR] Error checking credentials: {e}\n\nPlease verify config.json is valid JSON.", awaiting_input=True)  # PHASE 3
+    
+    # STATE: NEED_USER_AUTH - Ready to start OAuth
+    elif state == SetupState.NEED_USER_AUTH:
+        # Send status
+        send_status_message("[OK] Credentials verified! Starting OAuth authorization...")
+        
+        SETUP_STATE.advance(SetupState.WAITING_OAUTH, "starting_oauth")
+        
+        # Start automated OAuth flow
+        send_status_message("Opening browser for Spotify login...")
+        send_status_message("Please click 'Accept' when prompted to authorize the app.")
+        send_status_message("Waiting for authorization (up to 2 minutes)...")
+        
+        oauth_result = authorize_user_automated()
+        
+        send_status_message("Processing authorization response...")
+        
+        if oauth_result.get('success'):
+            SETUP_STATE.advance(SetupState.CONFIGURED, "oauth_complete")
+            send_state_change("ready")  # Notify engine onboarding is complete
+            send_status_message("[OK] Setup complete! Plugin is ready.")
+            return generate_message_response("""
+[OK] SETUP COMPLETE!
+====================
+
+Congratulations! Your Spotify plugin is fully configured and ready to use!
+
+You can now use commands like:
+   - "Play my music on Spotify"
+   - "Skip to next song"
+   - "What's playing on Spotify?"
+   - And more!
+
+Enjoy your music!
+""", awaiting_input=False)  # PHASE 3: Setup done, exit passthrough
+        else:
+            SETUP_STATE.record_error(oauth_result.get('message', 'OAuth failed'))
+            # Make sure oauth_result has awaiting_input field
+            oauth_result['awaiting_input'] = False  # PHASE 3: OAuth failed, exit passthrough
+            return oauth_result
+    
+    # STATE: CONFIGURED - All set up
+    elif state == SetupState.CONFIGURED:
+        return generate_message_response("[OK] Spotify plugin is already configured and ready to use!", awaiting_input=False)  # PHASE 3: Exit passthrough
+    
+    # Default fallback
+    return generate_message_response("Unknown setup state. Please try again or contact support.", awaiting_input=False)  # PHASE 3: Error, exit passthrough
+
+# Alias for backwards compatibility
+def execute_setup_wizard():
+    """Legacy name - calls interactive version"""
+    return execute_setup_wizard_interactive()
+
+
 def execute_initialize_command() -> dict:
     ''' Command handler for initialize function
 
@@ -815,12 +1633,14 @@ def execute_initialize_command() -> dict:
         2. Finds active device 
     @return function response
     '''
+    global CLIENT_ID, CLIENT_SECRET
+    
+    # Check if app credentials are configured
+    if not CLIENT_ID or not CLIENT_SECRET:
+        logging.error('[INIT] CLIENT_ID or CLIENT_SECRET not configured')
+        return execute_setup_wizard_interactive()
+    
     try:
-        # Check if CLIENT_ID and CLIENT_SECRET are configured
-        if CLIENT_ID is None or CLIENT_SECRET is None:
-            logging.info('CLIENT_ID or CLIENT_SECRET not configured - starting setup wizard')
-            return execute_setup_wizard()
-        
         # Check if we have tokens in auth.json
         auth_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
         
@@ -862,24 +1682,9 @@ def execute_initialize_command() -> dict:
                 needs_auth = True
 
         if needs_auth:
-            # Start new authorization
-            authorize_user()
-            logging.info(f'Opened browser for Spotify authorization')
-            return generate_success_response({
-                "message": "Please follow these steps:\n"
-                          "1. A browser window has opened - log in to Spotify and authorize the app\n"
-                          "2. After authorizing, you'll be redirected to a URL\n"
-                          "3. Copy the ENTIRE URL from your browser\n"
-                          "4. Create or edit the file at this location:\n"
-                          f"   `{auth_file}`\n"
-                          "5. Add the URL to the file in this format:\n"
-                          "   ```\n"
-                          "   {\n"
-                          "     \"auth_url\": \"YOUR_COPIED_URL\"\n"
-                          "   }\n"
-                          "   \n"
-                          "6. Save the file and try your command again"
-            })
+            # Start AUTOMATED authorization with local callback server
+            logging.info('[OAuth] No valid tokens found, starting automated authorization...')
+            return authorize_user_automated()
     except Exception as e:
         logging.error(f'Error in initialization: {e}')
         return generate_failure_response({'message': f'Error connecting to Spotify: {e}'})
@@ -926,7 +1731,7 @@ def execute_auth_command(params) -> dict:
         })
     
 
-def execute_play_command(params: dict, send_status_callback=None) -> dict:
+def execute_play_command(params: dict) -> dict:
     """ Starts or resumes Spotify playback.
     
     Can play specific tracks, albums, playlists or resume current playback.
@@ -936,7 +1741,6 @@ def execute_play_command(params: dict, send_status_callback=None) -> dict:
             - type (str): Content type ('track', 'album', 'playlist')
             - name (str): Name of content to play
             - artist (str, optional): Artist name for better search matching
-        send_status_callback (callable, optional): Callback to send status updates
             
     Returns:
         dict: Response containing:
@@ -947,14 +1751,6 @@ def execute_play_command(params: dict, send_status_callback=None) -> dict:
         {'type': 'track', 'name': 'Yesterday', 'artist': 'The Beatles'}
     """
     try:
-        # Send status update
-        if send_status_callback:
-            if params and params != {}:
-                content_name = params.get('name', 'content')
-                send_status_callback(generate_status_update(f"Starting playback of {content_name}..."))
-            else:
-                send_status_callback(generate_status_update("Resuming playback..."))
-        
         device = get_device_id()
         uri = None
         response = None
@@ -981,32 +1777,56 @@ def execute_play_command(params: dict, send_status_callback=None) -> dict:
 
         if response is not None and (response.status_code == 204 or response.status_code == 200): 
             return generate_success_response({ 'message': 'Playback successfully started.' })
+        elif response is not None and response.status_code == 403:
+            # 403 Forbidden - provide helpful guidance
+            error_msg = """
+[ERROR] Spotify Playback Forbidden (403)
+
+This usually means one of the following:
+
+1. NO ACTIVE DEVICE
+   - You need to open Spotify (desktop app or web player)
+   - Start playing something to activate a device
+   - Then try the command again
+
+2. SPOTIFY PREMIUM REQUIRED
+   - Spotify's API requires a Premium subscription for playback control
+   - Free accounts cannot use these features
+
+3. DEVICE IN PRIVATE SESSION
+   - Check if your Spotify is in "Private Session" mode
+   - Turn it off and try again
+
+Please open Spotify, start playing, and try again!
+"""
+            return generate_failure_response({ 'message': error_msg })
+        elif response is not None and response.status_code == 404:
+            return generate_failure_response({ 'message': 'Track or device not found. Make sure Spotify is open and try again.' })
         else: 
-            return generate_failure_response({ 'message': f'Playback Error: {response}' })
+            return generate_failure_response({ 'message': f'Playback Error: Status {response.status_code if response else "No response"}' })
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
-def execute_pause_command(params: dict, send_status_callback=None) -> dict:
+def execute_pause_command(params: dict) -> dict:
     ''' Command handler for `spotify_start_playback` function
 
     @param[in] params  function parameters
-    @param[in] send_status_callback  callback to send status updates
 
     @return function response
     '''
     try:
-        # Send status update
-        if send_status_callback:
-            send_status_callback(generate_status_update("Pausing playback..."))
-        
         device = get_device_id()
         url = f"/me/player/pause?device_id={device}"
         response = call_spotify_api(url=url, request_method='PUT', data=None)    
 
         if response.status_code == 204 or response.status_code == 200: 
             return generate_success_response({ 'message': 'Playback has paused.' })
+        elif response.status_code == 403:
+            return generate_failure_response({ 'message': 'Playback Error (403): You need Spotify Premium and an active device. Open Spotify and start playing, then try again.' })
+        elif response.status_code == 404:
+            return generate_failure_response({ 'message': 'No active device found. Please open Spotify and start playing.' })
         else: 
-            return generate_failure_response({ 'message': f'Playback Error: {response}' })
+            return generate_failure_response({ 'message': f'Playback Error: Status {response.status_code}' })
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
@@ -1190,6 +2010,147 @@ def execute_get_user_playlists_command(params: dict) -> dict:
     except Exception as e:
         return generate_failure_response({ 'message': f'Playback Error: {e}' })
 
+COMMAND_HANDLER_MAP = {
+    "spotify_start_playback": execute_play_command,
+    "spotify_pause_playback": execute_pause_command,
+    "spotify_next_track": execute_next_track_command,
+    "spotify_previous_track": execute_previous_track_command,
+    "spotify_shuffle_playback": execute_shuffle_command,
+    "spotify_set_volume": execute_volume_command,
+    "spotify_get_currently_playing": execute_currently_playing_command,
+    "spotify_queue_track": execute_queue_track_command,
+    "spotify_get_user_playlists": execute_get_user_playlists_command,
+}
+
+
+def finalize_response(response: dict | None) -> dict | None:
+    if response is None:
+        return None
+    STATE["awaiting_input"] = response.get("awaiting_input", False)
+    return response
+
+
+def load_existing_tokens() -> None:
+    global ACCESS_TOKEN, REFRESH_TOKEN
+    try:
+        ACCESS_TOKEN, REFRESH_TOKEN = get_auth_state(AUTH_FILE)
+        if ACCESS_TOKEN and REFRESH_TOKEN:
+            try:
+                get_device_id()
+                logging.info("Successfully verified stored Spotify tokens")
+            except Exception as exc:
+                logging.error(f"[AUTH] Stored tokens invalid: {exc}")
+                ACCESS_TOKEN = None
+                REFRESH_TOKEN = None
+    except Exception as exc:
+        logging.error(f"[AUTH] Error loading tokens: {exc}")
+        ACCESS_TOKEN = None
+        REFRESH_TOKEN = None
+
+
+def handle_initialize() -> dict:
+    config = load_config()
+    valid, error = validate_config(config)
+    if config_needs_setup(config, valid) or (SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED):
+        start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+        return finalize_response(start_setup_wizard(error))
+
+    start_continuous_heartbeat(state="ready", interval=5, show_dots=False)
+    return finalize_response(execute_initialize_command())
+
+
+def ensure_authorized() -> dict | None:
+    if ACCESS_TOKEN is None or REFRESH_TOKEN is None:
+        auth_result = authorize_user_automated()
+        if not auth_result.get("success"):
+            return auth_result
+    return None
+
+
+def handle_tool_call(command: dict) -> dict:
+    tool_calls = command.get("tool_calls", [])
+    if not tool_calls:
+        return generate_failure_response({"message": "No tool call provided."})
+
+    response = None
+    for tool_call in tool_calls:
+        func = tool_call.get("func")
+        params = tool_call.get("params", {}) or {}
+
+        if func == "initialize":
+            response = handle_initialize()
+        elif func == "shutdown":
+            stop_continuous_heartbeat()
+            response = finalize_response(execute_shutdown_command())
+        elif func == "authorize":
+            response = finalize_response(execute_auth_command(params))
+        elif func == "spotify_setup":
+            start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+            response = finalize_response(execute_setup_wizard_interactive())
+        else:
+            handler = COMMAND_HANDLER_MAP.get(func)
+            if handler is None:
+                response = generate_failure_response({"message": f"Unknown function: {func}"})
+            else:
+                config = STATE["config"]
+                valid, error = validate_config(config)
+                if not valid:
+                    response = start_setup_wizard(error)
+                elif SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED:
+                    response = start_setup_wizard("Spotify plugin is not configured yet.")
+                else:
+                    auth_error = ensure_authorized()
+                    if auth_error:
+                        response = auth_error
+                    else:
+                        response = finalize_response(handler(params))
+
+        if response is None:
+            response = generate_failure_response({"message": "Plugin returned no response."})
+
+    return response
+
+
+def handle_user_input(message: dict) -> dict:
+    content = (message.get("content") or "").strip()
+    
+    # Check for exit commands - clear awaiting_input and exit passthrough
+    exit_commands = ["exit", "quit", "cancel", "<<esc>>"]
+    if content.lower() in exit_commands:
+        STATE["awaiting_input"] = False
+        STATE["wizard_active"] = False
+        logging.info(f"[INPUT] Exit command detected: {content}")
+        return generate_message_response("Exiting passthrough mode.", awaiting_input=False)
+    
+    if SETUP_STATE and SETUP_STATE.current_state != SetupState.CONFIGURED:
+        if "help" in content.lower():
+            try:
+                webbrowser.open("https://developer.spotify.com/dashboard")
+                if os.path.exists(CONFIG_FILE) and hasattr(os, "startfile"):
+                    os.startfile(CONFIG_FILE)
+                return finalize_response(
+                    generate_message_response(
+                        "[OK] Re-opened dashboard and config file for you!\n\nContinue where you left off, then send me another message.",
+                        awaiting_input=True,
+                    )
+                )
+            except Exception as exc:
+                logging.error(f"[WIZARD] Error opening help resources: {exc}")
+
+        response = execute_setup_wizard_interactive()
+        if response and response.get("awaiting_input", False):
+            start_continuous_heartbeat(state="onboarding", interval=5, show_dots=False)
+        return finalize_response(response)
+
+    if not STATE.get("awaiting_input"):
+        return generate_failure_response({"message": "No passthrough session is active."})
+
+    echo = content or "(blank input)"
+    return finalize_response(
+        generate_message_response(f"Received: {echo}", awaiting_input=True)
+    )
+
+
 def refresh_access_token() -> bool:
     """Refreshes the access token using the refresh token.
     
@@ -1240,7 +2201,7 @@ def save_auth_state(access_token: str, refresh_token: str) -> None:
         access_token (str): The access token to save
         refresh_token (str): The refresh token to save
     """
-    auth_file = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "spotify", "auth.json")
+    auth_file = AUTH_FILE
     try:
         # Ensure directory exists
         os.makedirs(os.path.dirname(auth_file), exist_ok=True)
@@ -1257,5 +2218,61 @@ def save_auth_state(access_token: str, refresh_token: str) -> None:
         logging.error(f"Error saving auth state: {e}")
         raise
 
+
+def main() -> int:
+    ensure_directories()
+    logging.info("Launching Spotify plugin")
+    load_config()
+
+    global SETUP_STATE
+    SETUP_STATE = SetupState(STATE_FILE)
+
+    config_valid, _ = validate_config(STATE["config"])
+    if SETUP_STATE.current_state == SetupState.CONFIGURED and not config_valid:
+        logging.warning("[STATE] Credentials invalid, resetting setup state")
+        SETUP_STATE.reset()
+
+    load_existing_tokens()
+
+    initial_state = "ready" if SETUP_STATE.current_state == SetupState.CONFIGURED else "onboarding"
+    start_continuous_heartbeat(state=initial_state, interval=5, show_dots=(initial_state != "ready"))
+
+    try:
+        while True:
+            command = read_command()
+            if command is None:
+                continue
+
+            try:
+                if "tool_calls" in command:
+                    response = handle_tool_call(command)
+                elif command.get("msg_type") == "user_input":
+                    response = handle_user_input(command)
+                elif command.get("msg_type") == "terminate":
+                    reason = command.get("reason", "unknown")
+                    response = generate_message_response(
+                        f"[OK] Spotify plugin terminating ({reason})", awaiting_input=False
+                    )
+                    write_response(response)
+                    break
+                else:
+                    response = generate_failure_response({"message": "Unsupported command payload."})
+
+                if response is not None:
+                    write_response(response)
+            except Exception as exc:
+                logging.exception("Unhandled error while processing command")
+                write_response(
+                    generate_failure_response({"message": f"Plugin error: {exc}"})
+                )
+    except KeyboardInterrupt:
+        logging.info("Spotify plugin interrupted, shutting down.")
+    finally:
+        stop_continuous_heartbeat()
+
+    logging.info("Spotify plugin exiting.")
+    return 0
+
+
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

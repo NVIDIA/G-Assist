@@ -19,6 +19,8 @@
 #include <format>
 #include <map>
 #include <vector>
+#include <chrono>
+#include <mutex>
 
 #include <Windows.h>
 #include <cfgmgr32.h>
@@ -28,46 +30,162 @@
 #include <filesystem>
 #include "LogiLedPlugin.h"
 
+namespace fs = std::filesystem;
+
+namespace {
+
+fs::path GetPluginDirectory()
+{
+    wchar_t buffer[MAX_PATH];
+    DWORD length = GetEnvironmentVariableW(L"PROGRAMDATA", buffer, MAX_PATH);
+    fs::path base = length ? fs::path(std::wstring(buffer, buffer + length)) : fs::path(L".");
+    return base / L"NVIDIA Corporation" / L"nvtopps" / L"rise" / L"plugins" / L"logiled";
+}
+
+fs::path GetConfigPath()
+{
+    return GetPluginDirectory() / "config.json";
+}
+
+fs::path GetLogPath()
+{
+    return GetPluginDirectory() / "logiled-plugin.log";
+}
+
+std::mutex g_logMutex;
+
+void LogLine(const std::string& level, const std::string& message)
+{
+    std::lock_guard<std::mutex> lock(g_logMutex);
+    fs::create_directories(GetPluginDirectory());
+    std::ofstream stream(GetLogPath(), std::ios::app);
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    stream << std::format("[{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}] [{}] {}\n",
+                           st.wYear, st.wMonth, st.wDay,
+                           st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+                           level, message);
+}
+
+void LogInfo(const std::string& message)
+{
+    LogLine("INFO", message);
+}
+
+void LogError(const std::string& message)
+{
+    LogLine("ERROR", message);
+}
+
+json BuildConfigJson(const PluginConfig& config)
+{
+    return json{
+        { "features", {
+            { "use_setup_wizard", config.useSetupWizard },
+            { "setup_complete", config.setupComplete },
+            { "restore_on_shutdown", config.restoreOnShutdown },
+            { "allow_keyboard", config.allowKeyboard },
+            { "allow_mouse", config.allowMouse },
+            { "allow_headset", config.allowHeadset }
+        }}
+    };
+}
+
+void SaveDefaultConfig()
+{
+    PluginConfig defaults;
+    fs::create_directories(GetPluginDirectory());
+    std::ofstream stream(GetConfigPath());
+    stream << BuildConfigJson(defaults).dump(2);
+}
+
+PluginConfig LoadConfig()
+{
+    PluginConfig config;
+    fs::path path = GetConfigPath();
+    if (!fs::exists(path))
+    {
+        SaveDefaultConfig();
+        return config;
+    }
+
+    try
+    {
+        std::ifstream stream(path);
+        json data = json::parse(stream, nullptr, true, true);
+        json features = data.value("features", json::object());
+        config.useSetupWizard = features.value("use_setup_wizard", false);
+        config.setupComplete = features.value("setup_complete", true);
+        config.restoreOnShutdown = features.value("restore_on_shutdown", true);
+        config.allowKeyboard = features.value("allow_keyboard", true);
+        config.allowMouse = features.value("allow_mouse", true);
+        config.allowHeadset = features.value("allow_headset", true);
+    }
+    catch (const std::exception& ex)
+    {
+        LogError(std::format("Failed to parse config.json: {}", ex.what()));
+        SaveDefaultConfig();
+        config = PluginConfig{};
+    }
+
+    return config;
+}
+
+} // namespace
+
 LogiLedPlugin::LogiLedPlugin(HANDLE commandPipe, HANDLE responsePipe)
     : GAssistPlugin(commandPipe, responsePipe)
+    , m_config(LoadConfig())
     , m_isInitialized(false)
+    , m_wizardActive(false)
+    , m_pendingInitialization(false)
+    , m_heartbeatActive(false)
 {
-    addCommand("logi_change_headphone_lights", [&](const json& params, const json& context) { this->handleHeadphoneCommand(params); });
-    addCommand("logi_change_keyboard_lights", [&](const json& params, const json& context) { this->handleKeyboardCommand(params); });
-    addCommand("logi_change_mouse_lights", [&](const json& params, const json& context) { this->handleMouseCommand(params); });
+    LogInfo("LogiLed plugin starting.");
+    addCommand("logi_change_headphone_lights", [&](const json& params, const json&) { this->handleHeadphoneCommand(params); });
+    addCommand("logi_change_keyboard_lights", [&](const json& params, const json&) { this->handleKeyboardCommand(params); });
+    addCommand("logi_change_mouse_lights", [&](const json& params, const json&) { this->handleMouseCommand(params); });
 }
 
 LogiLedPlugin::~LogiLedPlugin()
 {
+    stopHeartbeat();
 }
 
 void LogiLedPlugin::initialize()
 {
-    m_isInitialized = LogiLedInit();
-    if (!m_isInitialized)
+    reloadConfiguration();
+
+    if (configRequiresSetup())
     {
-        //
-        // At least one Logitech device was found; however, the plugin could
-        // not establish communication with Logitech G Hub. Inform the user
-        // of the issue and possible remedies the first time the function
-        // is called. All future calls will return a failure with not reason.
-        //
-        const std::string CONFIGURATION_MESSAGE =
-            "Oops! The Logitech Illumination Plugin for G-Assist couldn't update your lighting. To fix this:\n"
-            "1. Ensure Logitech G Hub is installed and running.\n"
-            "2. In G Hub, enable 'Allow programs to control lighting' (Settings > Allow Games and Applications to Control Illumination).\n"
-            "3. In Windows, go to Settings > Personalization > Dynamic Lighting and disable 'Use Dynamic Lighting on my devices.'\n\n"
-            "4. Close and reopen G-Assist.\n";
-        failure(CONFIGURATION_MESSAGE);
+        m_wizardActive = true;
+        m_pendingInitialization = true;
+        success(buildSetupInstructions(), true);
+        return;
     }
+
+    std::string failureReason;
+    if (!completeInitialization(failureReason))
+    {
+        failure(failureReason);
+        return;
+    }
+
+    m_pendingInitialization = false;
+    success("Logitech illumination ready.");
 }
 
 
 void LogiLedPlugin::shutdown()
 {
+    stopHeartbeat();
+    if (m_isInitialized && m_config.restoreOnShutdown)
+    {
+        LogiLedRestoreLighting();
+    }
     LogiLedShutdown();
     m_isInitialized = false;
-    success();
+    success("LogiLed plugin shutdown complete.");
 }
 
 void LogiLedPlugin::handleHeadphoneCommand(const json& params)
@@ -87,10 +205,20 @@ void LogiLedPlugin::handleMouseCommand(const json& params)
 
 void LogiLedPlugin::changeDeviceLighting(const LogiLed::DeviceType type, const json& params)
 {
+    if (!deviceAllowed(type))
+    {
+        success("Device control is disabled in the configuration.", false);
+        return;
+    }
 
     if (!m_isInitialized)
     {
-        initialize();
+        std::string failureReason;
+        if (!completeInitialization(failureReason))
+        {
+            failure(failureReason);
+            return;
+        }
     }
 
     const std::map<LogiLed::DeviceType, std::string> deviceStrings{
@@ -223,4 +351,135 @@ bool LogiLedPlugin::doLightingChange(const LogiLed::DeviceType device, const Col
     }
 
     return true;
+}
+
+void LogiLedPlugin::handleUserInput(const json& message)
+{
+    if (!m_wizardActive || !m_pendingInitialization)
+    {
+        success("No setup is currently in progress.", false);
+        return;
+    }
+
+    reloadConfiguration();
+    if (configRequiresSetup())
+    {
+        success(buildSetupInstructions("Configuration still incomplete."), true);
+        return;
+    }
+
+    std::string failureReason;
+    if (!completeInitialization(failureReason))
+    {
+        failure(failureReason);
+        return;
+    }
+
+    success("Setup complete! Logitech lighting control is now active.", false);
+}
+
+void LogiLedPlugin::startHeartbeat(int intervalSeconds)
+{
+    bool expected = false;
+    if (!m_heartbeatActive.compare_exchange_strong(expected, true))
+    {
+        return;
+    }
+
+    m_heartbeatThread = std::thread([this, intervalSeconds]()
+        {
+            while (m_heartbeatActive.load())
+            {
+                const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                json heartbeat = {
+                    { "type", "heartbeat" },
+                    { "timestamp", timestamp }
+                };
+                writeResponse(heartbeat);
+                std::this_thread::sleep_for(std::chrono::seconds(intervalSeconds));
+            }
+        });
+}
+
+void LogiLedPlugin::stopHeartbeat()
+{
+    if (!m_heartbeatActive.exchange(false))
+    {
+        return;
+    }
+
+    if (m_heartbeatThread.joinable())
+    {
+        m_heartbeatThread.join();
+    }
+}
+
+bool LogiLedPlugin::configRequiresSetup() const
+{
+    return m_config.useSetupWizard && !m_config.setupComplete;
+}
+
+std::string LogiLedPlugin::buildSetupInstructions(const std::string& reason) const
+{
+    std::string instructions = "LOGITECH LIGHTING SETUP\n=======================\n";
+    if (!reason.empty())
+    {
+        instructions += reason + "\n\n";
+    }
+    instructions += std::format(
+        "1. Open the configuration file:\n   {}\n"
+        "2. Ensure Logitech G Hub is installed and 'Allow programs to control lighting' is enabled.\n"
+        "3. Set \"features.setup_complete\" to true and save the file.\n"
+        "4. Type 'done' here once finished.\n",
+        GetConfigPath().string());
+    return instructions;
+}
+
+bool LogiLedPlugin::completeInitialization(std::string& failureReason)
+{
+    if (m_isInitialized)
+    {
+        return true;
+    }
+
+    m_isInitialized = LogiLedInit();
+    if (!m_isInitialized)
+    {
+        failureReason =
+            "Oops! The Logitech Illumination Plugin for G-Assist couldn't update your lighting. To fix this:\n"
+            "1. Ensure Logitech G Hub is installed and running.\n"
+            "2. In G Hub, enable 'Allow programs to control lighting' (Settings > Allow Games and Applications to Control Illumination).\n"
+            "3. In Windows, go to Settings > Personalization > Dynamic Lighting and disable 'Use Dynamic Lighting on my devices.'\n\n"
+            "4. Close and reopen G-Assist.\n";
+        LogError("Failed to initialize Logitech LED SDK.");
+        return false;
+    }
+
+    startHeartbeat();
+    m_wizardActive = false;
+    m_pendingInitialization = false;
+    LogInfo("Logitech LED SDK initialized.");
+    return true;
+}
+
+void LogiLedPlugin::reloadConfiguration()
+{
+    m_config = LoadConfig();
+    LogInfo("Configuration reloaded.");
+}
+
+bool LogiLedPlugin::deviceAllowed(LogiLed::DeviceType type) const
+{
+    switch (type)
+    {
+    case LogiLed::DeviceType::Keyboard:
+        return m_config.allowKeyboard;
+    case LogiLed::DeviceType::Mouse:
+        return m_config.allowMouse;
+    case LogiLed::DeviceType::Headset:
+        return m_config.allowHeadset;
+    default:
+        return true;
+    }
 }
