@@ -97,16 +97,29 @@ protected:
     /**
      * Send a success notification to the NVIDIA driver.
      *
-     * @param[in] message - [optional] message to include
+     * @param[in] message        - [optional] message to include
+     * @param[in] awaitingInput  - true if the driver should keep routing user input
      */
-    void success(const std::string& message = "");
+    void success(const std::string& message = "", bool awaitingInput = false);
 
     /**
      * Send a failure notification to the NVIDIA driver.
      *
-     * @param[in] message - [optional] message to include
+     * @param[in] message        - [optional] message to include
+     * @param[in] awaitingInput  - true if the driver should keep routing user input
      */
-    void failure(const std::string& message = "");
+    void failure(const std::string& message = "", bool awaitingInput = false);
+
+    /**
+     * Called when the driver routes passthrough/user-input messages to the plugin.
+     * Default implementation returns a failure indicating input is not supported.
+     */
+    virtual void handleUserInput(const json& message);
+
+    /**
+     * Writes a raw JSON response to the communication pipe.
+     */
+    void writeResponse(const json& response) const;
 
 private:
     /** Key in the command containing the function's name. */
@@ -172,7 +185,7 @@ private:
      * @param[in] message   - [optional] string to send as part of the
      *                        notification
      */
-    static json createNotification(bool isSuccess, const std::string& message = "");
+    static json createNotification(bool isSuccess, const std::string& message = "", bool awaitingInput = false);
 
     /**
      * Reads a command from the communication pipe.
@@ -183,10 +196,4 @@ private:
      */
     bool readCommand(json& input) const;
 
-    /**
-     * Writes a response to the communication pipe.
-     *
-     * @param[in] response - the JSON response
-     */
-    void writeResponse(const json& response) const;
 };

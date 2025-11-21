@@ -12,6 +12,8 @@ from xmlrpc.client import boolean
 import requests
 from typing import Optional
 from openrgb import OpenRGBClient
+import threading
+import time
 from openrgb.utils import RGBColor, DeviceType
 
 
@@ -95,6 +97,17 @@ def main():
             read_failures = 0
 
             logging.info(f'Received input: {input}')
+            
+            # Handle user input passthrough messages (for consistency with other plugins)
+            if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+                user_input_text = input.get('content', '')
+                logging.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+                
+                # OpenRGB doesn't need setup, just acknowledge
+                logging.info("[INPUT] Acknowledging user input")
+                response = generate_success_response("Got it! The OpenRGB plugin is ready to use.")
+                write_response(response)
+                continue
             
             if TOOL_CALLS_PROPERTY in input:
                 tool_calls = input[TOOL_CALLS_PROPERTY]
@@ -323,6 +336,11 @@ def execute_list_devices(params:dict=None, context:dict=None, system_info:dict=N
     logging.info(f'Executing execute_get_devices')
     global CLI 
 
+    # Check if CLI is initialized
+    if CLI is None:
+        logging.error('OpenRGB client not initialized')
+        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
+
     try:
         devices = [device.name for device in CLI.devices]
         readable_devices = '\n'.join(devices)
@@ -341,6 +359,12 @@ def execute_set_color(params: dict = None, context: dict = None, system_info: di
     SUCCESS_MESSAGE = 'Lighting for '
     ERROR_MESSAGE = 'Failed to set lighting to color for OpenRGB.'
     logging.info(f'Executing execute_set_color')
+
+    # Check if CLI is initialized
+    global CLI
+    if CLI is None:
+        logging.error('OpenRGB client not initialized')
+        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
 
     try:
         color = params.get('color_name')
@@ -405,12 +429,17 @@ def execute_disable_lighting(params:dict=None, context:dict=None, system_info:di
     SUCCESS_MESSAGE = 'SignalRGB lighting disabled.'
     ERROR_MESSAGE = 'Failed to disable lighting for SignalRGB.'
     logging.info(f'Executing execute_disable_lighting')
+    
+    # Check if CLI is initialized
+    global CLI
+    if CLI is None:
+        logging.error('OpenRGB client not initialized')
+        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
+    
     try:
         # Send status update
         if send_status_callback:
             send_status_callback(generate_status_update("Disabling RGB lighting..."))
-        
-        global CLI
         for device in CLI.devices:
             device.set_mode('off')
 
@@ -421,9 +450,15 @@ def execute_disable_lighting(params:dict=None, context:dict=None, system_info:di
 def execute_set_mode(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
     SUCCESS_MESSAGE = 'Mode set successfully.'
     ERROR_MESSAGE = 'Failed to set mode for OpenRGB.'
-    logging.info(f'Executing execute_set_mode')     
+    logging.info(f'Executing execute_set_mode')
+    
+    # Check if CLI is initialized
+    global CLI
+    if CLI is None:
+        logging.error('OpenRGB client not initialized')
+        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
+    
     try:
-        global CLI
         device_name = params.get('device_name')
         effect_name = params.get('effect_name')
         

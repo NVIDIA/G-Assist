@@ -1,167 +1,67 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-import ctypes
 import json
+import logging
 import os
-import sys
-
+import threading
+import time
 from ctypes import byref, windll, wintypes
 from ipaddress import ip_address
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from nanoleafapi import Nanoleaf
 
+STD_INPUT_HANDLE = -10
+STD_OUTPUT_HANDLE = -11
 
-# Get the directory where the plugin is deployed
-PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "nanoleaf")
-CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
+PLUGIN_NAME = "nanoleaf"
+PROGRAM_DATA = os.environ.get("PROGRAMDATA", ".")
+PLUGIN_DIR = os.path.join(
+    PROGRAM_DATA, "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
 
-# Save log in plugin directory for better organization
-os.makedirs(PLUGIN_DIR, exist_ok=True)
-LOG_FILE = os.path.join(PLUGIN_DIR, 'nanoleaf-plugin.log')
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "ip": "",
+    "features": {
+        "enable_passthrough": False,
+        "stream_chunk_size": 240,
+        "use_setup_wizard": True,
+    },
+}
 
-
-# Data Types
-Response = dict[str, bool | Optional[str]]
-Color = tuple[int, int, int]
-
-
-# Globals
-NL: Nanoleaf | None = None
-NANOLEAF_IP = None
-SETUP_COMPLETE = False
-
-# Load config at startup
-try:
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as file:
-            data = json.load(file)
-            NANOLEAF_IP = data.get('ip', '')
-            if NANOLEAF_IP and ip_address(NANOLEAF_IP):
-                SETUP_COMPLETE = True
-                write_log(f"Successfully loaded Nanoleaf IP from {CONFIG_FILE}")
-            else:
-                write_log(f"Invalid IP address in {CONFIG_FILE}")
-                NANOLEAF_IP = None
-except FileNotFoundError:
-    write_log(f"Config file not found at {CONFIG_FILE}")
-except Exception as e:
-    write_log(f"Error loading config: {e}")
+STATE: Dict[str, Any] = {
+    "config": DEFAULT_CONFIG.copy(),
+    "awaiting_input": False,
+    "wizard_active": False,
+    "heartbeat_active": False,
+    "heartbeat_thread": None,
+    "heartbeat_message": "",
+    "nanoleaf": None,
+}
 
 
-def write_log(line: str) -> None:
-    ''' Writes a line to the log file.
-
-    Parameters:
-        line: The line to write
-    '''
-    global LOG_FILE
-
-    try:
-        if LOG_FILE is not None:
-            with open(LOG_FILE, 'a') as file:
-                file.write(f'{line}\n')
-                file.flush()
-    except Exception:
-        # Error writing to the log
-        pass
+def ensure_directories() -> None:
+    os.makedirs(PLUGIN_DIR, exist_ok=True)
 
 
-def execute_setup_wizard() -> Response:
-    """Guide user through Nanoleaf setup."""
-    global SETUP_COMPLETE, NANOLEAF_IP
-    
-    # Check if config was updated
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as file:
-                data = json.load(file)
-            new_ip = data.get('ip', '')
-            
-            if new_ip and ip_address(new_ip):
-                NANOLEAF_IP = new_ip
-                SETUP_COMPLETE = True
-                write_log("Nanoleaf IP configured successfully!")
-                return {
-                    'success': True,
-                    'message': "✓ Nanoleaf configured! You can now control your lights.",
-                    'awaiting_input': False
-                }
-    except:
-        pass
-    
-    # Show setup instructions
-    message = f"""
-NANOLEAF PLUGIN - FIRST TIME SETUP
-===================================
-
-Welcome! Let's set up your Nanoleaf lights. This takes about 2 minutes.
-
-STEP 1 - Find Your Nanoleaf IP Address:
-   Method A - Using Nanoleaf App:
-   1. Open the Nanoleaf app on your phone
-   2. Go to Settings > Device Info
-   3. Note the IP address shown
-
-   Method B - Using Router:
-   1. Log into your router's admin page
-   2. Find the list of connected devices
-   3. Look for "Nanoleaf" or "NL" device
-   4. Note its IP address
-
-STEP 2 - Configure Plugin:
-   1. Open this file: {CONFIG_FILE}
-   2. Replace the IP address:
-      {{"ip": "192.168.1.XXX"}}
-   3. Save the file
-
-After saving, send me ANY message (like "done") and I'll verify it!
-
-Note: Make sure your Nanoleaf is powered on and connected to the same network!
-"""
-    
-    write_log("Showing Nanoleaf setup wizard to user")
-    return {
-        'success': True,
-        'message': message,
-        'awaiting_input': True
-    }
+def setup_logging() -> None:
+    ensure_directories()
+    if logging.getLogger().handlers:
+        return
+    logging.basicConfig(
+        filename=LOG_FILE,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
 
 
-def execute_initialize_command() -> Response:
-    ''' Command handler for "initialize" function
-
-    Returns:
-        Function response
-    '''
-    global NL, NANOLEAF_IP, SETUP_COMPLETE
-
-    # Check if setup is needed
-    if not SETUP_COMPLETE or not NANOLEAF_IP:
-        return execute_setup_wizard()
-
-    try:
-        NL = Nanoleaf(NANOLEAF_IP)
-        NL.power_on()
-        NL.set_color(get_rgb_code('BLACK'))
-        write_log(f"Successfully connected to Nanoleaf at {NANOLEAF_IP}")
-        return generate_success_response('Nanoleaf initialized successfully.')
-    except Exception as e:
-        write_log(f'Error connecting to Nanoleaf device: {str(e)}')
-        NL = None
-        return generate_failure_response(f'Error connecting to Nanoleaf at {NANOLEAF_IP}. Check IP address and network connection.')
+def apply_config_defaults(raw: Dict[str, Any]) -> Dict[str, Any]:
+    merged = DEFAULT_CONFIG.copy()
+    merged.update({k: v for k, v in raw.items() if k != "features"})
+    merged_features = DEFAULT_CONFIG["features"].copy()
+    merged_features.update(raw.get("features", {}))
+    merged["features"] = merged_features
+    return merged
 
 
 def execute_shutdown_command() -> Response:
@@ -524,6 +424,25 @@ def main():
         context = input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in input else None
 
         write_log(f'Input Received: {input}')
+        
+        # Handle user input passthrough messages (for setup wizard interaction)
+        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+            user_input_text = input.get('content', '')
+            write_log(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+            
+            # Check if setup is needed
+            global SETUP_COMPLETE, NANOLEAF_IP
+            if not SETUP_COMPLETE:
+                write_log("[WIZARD] User input during setup - checking config")
+                response = execute_setup_wizard()
+                write_response(response)
+                continue
+            else:
+                # Setup already complete, acknowledge the input
+                write_log("[INPUT] Setup already complete, acknowledging user input")
+                response = generate_success_response("Got it! The Nanoleaf plugin is ready to use.")
+                write_response(response)
+                continue
         
         if TOOL_CALLS_PROPERTY in input:
             tool_calls = input[TOOL_CALLS_PROPERTY]

@@ -5,6 +5,8 @@ import requests
 import feedparser
 from ctypes import byref, windll, wintypes
 from typing import Dict, Optional, List
+import threading
+import time
 
 # Data Types
 Response = Dict[bool, Optional[str]]
@@ -47,6 +49,32 @@ except FileNotFoundError:
 except Exception as e:
     logger.error(f"Error loading config: {e}")
 
+
+# Tethered mode support
+heartbeat_thread = None
+heartbeat_active = False
+
+def send_heartbeat(state="ready"):
+    """Send silent heartbeat to engine (not visible to user)."""
+    try:
+        heartbeat_msg = {
+            "type": "heartbeat",
+            "state": state,
+            "timestamp": time.time()
+        }
+        write_response(heartbeat_msg)
+        logger.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
+    except Exception as e:
+        logger.error(f"[HEARTBEAT] Failed to send heartbeat: {e}")
+
+def heartbeat_loop():
+    """Background thread that sends periodic heartbeats."""
+    global heartbeat_active
+    logger.info("[HEARTBEAT] Heartbeat thread started")
+    while heartbeat_active:
+        send_heartbeat(state="ready")
+        time.sleep(5)  # Send heartbeat every 5 seconds
+    logger.info("[HEARTBEAT] Heartbeat thread stopped")
 def execute_setup_wizard() -> Response:
     """Guide user through IFTTT webhook setup."""
     global SETUP_COMPLETE, IFTTT_WEBHOOK_KEY, EVENT_NAME, MAIN_RSS_URL, ALTERNATE_RSS_URL
@@ -125,6 +153,15 @@ def execute_initialize_command() -> dict:
     """Initialize the plugin."""
     logger.info('Initializing IFTTT plugin...')
     
+    
+    # Start heartbeat thread
+    global heartbeat_thread, heartbeat_active
+    if not heartbeat_active:
+        heartbeat_active = True
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
+        logger.info("[HEARTBEAT] Started heartbeat thread")
+    
     # Check if setup is needed
     if not SETUP_COMPLETE or not IFTTT_WEBHOOK_KEY or not EVENT_NAME:
         return execute_setup_wizard()
@@ -134,6 +171,15 @@ def execute_initialize_command() -> dict:
 def execute_shutdown_command() -> dict:
     """Shutdown the plugin."""
     logger.info('Shutting down IFTTT plugin')
+    
+    # Stop heartbeat thread
+    global heartbeat_active, heartbeat_thread
+    if heartbeat_active:
+        heartbeat_active = False
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=1)
+        logger.info("[HEARTBEAT] Stopped heartbeat thread")
+    
     return generate_success_response('Shutdown success.')
 
 def fetch_ign_gaming_news() -> List[str]:
@@ -336,6 +382,25 @@ def main():
         read_failures = 0
 
         logger.info(f'Received input: {input}')
+
+        # Handle user input passthrough messages (for setup wizard interaction)
+        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
+            user_input_text = input.get('content', '')
+            logger.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
+            
+            # Check if setup is needed
+            global SETUP_COMPLETE, IFTTT_WEBHOOK_KEY, EVENT_NAME
+            if not SETUP_COMPLETE:
+                logger.info("[WIZARD] User input during setup - checking config")
+                response = execute_setup_wizard()
+                write_response(response)
+                continue
+            else:
+                # Setup already complete, acknowledge the input
+                logger.info("[INPUT] Setup already complete, acknowledging user input")
+                response = generate_success_response("Got it! The IFTTT plugin is ready to use.")
+                write_response(response)
+                continue
 
         if TOOL_CALLS_PROPERTY in input:
             tool_calls = input[TOOL_CALLS_PROPERTY]

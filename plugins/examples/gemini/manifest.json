@@ -1,45 +1,20 @@
 {
   "manifestVersion": 1,
-  "executable": "g-assist-plugin-google.exe",
-  "persistent": false,
-  "passthrough": true,
-  "name": "google",
-  "description": "Google Gemini AI assistant for real-time information, general knowledge, current events, and any non-GPU/gaming queries",
+  "executable": "g-assist-plugin-gemini.exe",
+  "persistent": true,
   "functions": [
     {
       "name": "query_gemini",
-      "description": "Handles real-time queries (weather, time, date, news, current events), general knowledge questions (facts, definitions, explanations, how-to, trivia), non-gaming topics (movies, sports, science, history, geography, culture), web searches, and any queries outside GPU/gaming domain. Provides up-to-date information with Google Search integration.",
-      "tags": [
-        "gemini", "google", "chat", "question", "questions", "answer", "answers", "query", "queries", "knowledge", "ask",
-        "time", "date", "clock", "timezone", "current time", "what time",
-        "weather", "temperature", "forecast", "climate", "rain", "snow", "sunny", "cloudy",
-        "news", "current events", "today", "latest", "recent", "breaking news", "updates",
-        "search", "find", "lookup", "look up", "google search", "web search", "internet",
-        "what", "how", "when", "where", "why", "who", "which", "explain", "tell me", "define", "definition",
-        "fact", "facts", "information", "info", "trivia", "general knowledge",
-        "movie", "movies", "film", "show", "tv", "series", "entertainment",
-        "sports", "football", "basketball", "soccer", "baseball", "game", "match", "score",
-        "science", "physics", "chemistry", "biology", "math", "mathematics", "equation",
-        "history", "historical", "past", "ancient", "war", "event",
-        "geography", "country", "countries", "city", "cities", "capital", "location", "place",
-        "culture", "language", "translation", "translate",
-        "food", "recipe", "cooking", "restaurant", "eat", "drink",
-        "travel", "trip", "vacation", "hotel", "flight",
-        "health", "medical", "doctor", "medicine", "symptoms",
-        "technology", "tech", "computer", "software", "hardware", "internet",
-        "wiki", "wikipedia", "guide", "tutorial", "help",
-        "about", "regarding", "concerning", "related to",
-        "general", "generic", "miscellaneous", "other", "misc",
-        "conversational", "conversation", "chat", "talk", "discuss"
-      ],
+      "description": "**GOOGLE SEARCH via Gemini AI** - Search the internet using Google's Gemini AI with grounded search capabilities. Use this to get real-time information from the web including: current news, live sports scores, stock prices, weather updates, latest game patch notes, trending topics, product reviews, how-to guides, and any other information that requires up-to-date internet data. This function performs actual Google searches and returns current, web-grounded results. Use ONLY for queries requiring internet search. DO NOT use for: local system settings, GPU info, game performance queries, or topics that RISE handles locally.",
+      "tags": ["google", "google_search", "web_search", "internet", "search", "external_info", "fallback", "gemini"],
       "properties": {
-        "input": {
+        "query": {
           "type": "string",
-          "description": "the user's input"
+          "description": "The complete user question or search query to send to Google Gemini. This should be the user's exact question or a rephrased version that captures their intent. Examples: 'Who won the basketball game last night?', 'What are the best settings for Cyberpunk 2077?', 'How do I make chicken tikka masala?', 'What's the capital of Mongolia?'"
         },
-        "game": {
+        "context": {
           "type": "string",
-          "description": "an optional parameter that specifies which game is currently being played"
+          "description": "[OPTIONAL] Additional contextual information that might help provide better results. Can include: current game being played, user's location, time of day, or any other relevant background information. Examples: 'playing Elden Ring', 'Los Angeles', 'evening gaming session'. Leave empty if no specific context is needed."
         }
       }
     }
