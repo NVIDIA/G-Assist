@@ -1,0 +1,40 @@
+{
+    "manifestVersion": 1,
+    "executable": "find_my_mcp_plugin.exe",
+    "persistent": true,
+    "functions": [
+        {
+            "name": "scan_mcp_servers",
+            "description": "Scans for configured MCP servers and returns their status.",
+            "tags": ["mcp", "discovery"],
+            "properties": {}
+        },
+        {
+            "name": "inspect_mcp_server",
+            "description": "Connects to a specific MCP server to discover its available tools and resources.",
+            "tags": ["mcp", "inspection"],
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "The name of the server (from config) to inspect."
+                }
+            }
+        },
+        {
+            "name": "create_mcp_plugin",
+            "description": "Generates a standalone G-Assist plugin for a specific MCP server.",
+            "tags": ["mcp", "generator"],
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "The name of the server to generate a plugin for."
+                },
+                "plugin_name": {
+                    "type": "string",
+                    "description": "The name for the new plugin (e.g., 'mcp-filesystem')."
+                }
+            }
+        }
+    ]
+}
+
