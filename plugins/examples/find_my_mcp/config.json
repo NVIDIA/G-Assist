@@ -1,0 +1,21 @@
+{
+    "api_base_url": "https://api.example.com/v1",
+    "api_key": "example_key",
+    "default_timeout": 30,
+    "features": {
+        "enable_passthrough": false,
+        "stream_chunk_size": 240,
+        "use_setup_wizard": true
+    },
+    "mcp_servers": {
+        "sqlite": {
+            "command": "uvx",
+            "args": ["mcp-server-sqlite", "--db-path", "test.db"]
+        },
+        "filesystem": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+        }
+    }
+}
+
