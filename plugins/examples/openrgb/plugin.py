@@ -1,513 +1,243 @@
-''' G-Assist plugin template code.
+"""
+OpenRGB Plugin for G-Assist - V2 SDK Version
 
-The following code can be used to create a G-Assist plugin written in Python. G-Assist
-plugins are Windows based executables. They are spawned by the G-Assist plugin
-manager. Communication between the plugin and the manager are done via pipes.
-'''
-import json
-import logging
+Control RGB lighting via OpenRGB SDK server.
+"""
+
 import os
-from ctypes import byref, windll, wintypes
-from xmlrpc.client import boolean
-import requests
+import sys
+
+# ============================================================================
+# PATH SETUP - Must be FIRST before any third-party imports!
+# ============================================================================
+_plugin_dir = os.path.dirname(os.path.abspath(__file__))
+_libs_path = os.path.join(_plugin_dir, "libs")
+if os.path.exists(_libs_path) and _libs_path not in sys.path:
+    sys.path.insert(0, _libs_path)
+
+# Now we can import third-party libraries
+import logging
 from typing import Optional
+
+try:
+    from gassist_sdk import Plugin
+except ImportError as e:
+    sys.stderr.write(f"FATAL: Cannot import gassist_sdk: {e}\n")
+    sys.exit(1)
+
 from openrgb import OpenRGBClient
-import threading
-import time
-from openrgb.utils import RGBColor, DeviceType
+from openrgb.utils import RGBColor
 
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+PLUGIN_NAME = "openrgb"
+PLUGIN_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", "."),
+    "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
 
-# Data Types
-Response = dict[bool,Optional[str]]
-
-# Get the directory where the plugin is deployed
-PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "openrgb")
 os.makedirs(PLUGIN_DIR, exist_ok=True)
 
-LOG_FILE = os.path.join(PLUGIN_DIR, 'openrgb-plugin.log')
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-SIGNALRGB_URL = "http://127.0.0.1:16038/api/v1"
-global CLI 
-
+# Color map
 COLOR_MAP = {
-    'red': (255, 0, 0),
-    'green': (0, 255, 0),
-    'blue': (0, 0, 255),
-    'yellow': (255, 255, 0),
-    'purple': (128, 0, 128),
-    'orange': (255, 165, 0),
-    'pink': (255, 192, 203),
-    'white': (255, 255, 255),
-    'black': (0, 0, 0)
+    "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+    "yellow": (255, 255, 0), "purple": (128, 0, 128), "orange": (255, 165, 0),
+    "pink": (255, 192, 203), "white": (255, 255, 255), "black": (0, 0, 0),
+    "cyan": (0, 255, 255), "magenta": (255, 0, 255),
 }
 
-def main():
-    ''' Main entry point.
-
-    Sits in a loop listening to a pipe, waiting for commands to be issued. After
-    receiving the command, it is processed and the result returned. The loop
-    continues until the "shutdown" command is issued.
-
-    Returns:
-        0 if no errors occurred during execution; non-zero if an error occurred
-    '''
-    TOOL_CALLS_PROPERTY = 'tool_calls'
-    CONTEXT_PROPERTY = 'messages'
-    SYSTEM_INFO_PROPERTY = 'system_info'  # Added for game information
-    FUNCTION_PROPERTY = 'func'
-    PARAMS_PROPERTY = 'params'
-    INITIALIZE_COMMAND = 'initialize'
-    SHUTDOWN_COMMAND = 'shutdown'
+# ============================================================================
+# GLOBAL STATE
+# ============================================================================
+CLI: Optional[OpenRGBClient] = None
 
 
-    ERROR_MESSAGE = 'Plugin Error!'
-
-    try:
-        # Generate command handler mapping
-        commands = {
-            'initialize': execute_initialize_command,
-            'shutdown': execute_shutdown_command,
-            'list_devices': execute_list_devices,
-            'disable_lighting': execute_disable_lighting,
-            # 'list_colors': execute_list_colors,
-            # 'list_effects': execute_list_effects,
-            'set_color': execute_set_color,
-            'set_mode': execute_set_mode,
-        }
-        cmd = ''
-
-        logging.info('Plugin started')
-        read_failures = 0
-        MAX_READ_FAILURES = 3
-        
-        while cmd != SHUTDOWN_COMMAND:
-            response = None
-            input = read_command()
-            if input is None:
-                read_failures += 1
-                logging.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
-                if read_failures >= MAX_READ_FAILURES:
-                    logging.error('Too many read failures, exiting')
-                    break
-                continue
-            
-            # Reset failure counter on successful read
-            read_failures = 0
-
-            logging.info(f'Received input: {input}')
-            
-            # Handle user input passthrough messages (for consistency with other plugins)
-            if isinstance(input, dict) and input.get('msg_type') == 'user_input':
-                user_input_text = input.get('content', '')
-                logging.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
-                
-                # OpenRGB doesn't need setup, just acknowledge
-                logging.info("[INPUT] Acknowledging user input")
-                response = generate_success_response("Got it! The OpenRGB plugin is ready to use.")
-                write_response(response)
-                continue
-            
-            if TOOL_CALLS_PROPERTY in input:
-                tool_calls = input[TOOL_CALLS_PROPERTY]
-                for tool_call in tool_calls:
-                    if FUNCTION_PROPERTY in tool_call:
-                        cmd = tool_call[FUNCTION_PROPERTY]
-                        logging.info(f'Processing command: {cmd}')
-                        if cmd in commands:
-                            if(cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND):
-                                response = commands[cmd]()
-                            else:
-                                response = execute_initialize_command()
-                                response = commands[cmd](
-                                    tool_call.get(PARAMS_PROPERTY, {}),
-                                    input[CONTEXT_PROPERTY] if CONTEXT_PROPERTY in input else None,
-                                    input[SYSTEM_INFO_PROPERTY] if SYSTEM_INFO_PROPERTY in input else None,  # Pass system_info directly
-                                    send_status_callback=write_response
-                                )
-                        else:
-                            logging.warning(f'Unknown command: {cmd}')
-                            response = generate_failure_response(f'{ERROR_MESSAGE} Unknown command: {cmd}')
-                    else:
-                        logging.warning('Malformed input: missing function property')
-                        response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
-            else:
-                logging.warning('Malformed input: missing tool_calls property')
-                response = generate_failure_response(f'{ERROR_MESSAGE} Malformed input.')
-
-            logging.info(f'Sending response: {response}')
-            write_response(response)
-
-            if cmd == SHUTDOWN_COMMAND:
-                logging.info('Shutdown command received, terminating plugin')
-                break
-        
-        logging.info('G-Assist Plugin stopped.')
-        return 0
-    except Exception as e:
-        logging.error(f'Unexpected error in main: {str(e)}')
-        return 1
-
-
-def read_command() -> dict | None:
-    ''' Reads a command from the communication pipe.
-
-    Returns:
-        Command details if the input was proper JSON; `None` otherwise
-    '''
-    try:
-        STD_INPUT_HANDLE = -10
-        pipe = windll.kernel32.GetStdHandle(STD_INPUT_HANDLE)
-        chunks = []
-
-        while True:
-            BUFFER_SIZE = 4096
-            message_bytes = wintypes.DWORD()
-            buffer = bytes(BUFFER_SIZE)
-            success = windll.kernel32.ReadFile(
-                pipe,
-                buffer,
-                BUFFER_SIZE,
-                byref(message_bytes),
-                None
-            )
-
-            if not success:
-                logging.error('Error reading from command pipe')
-                return None
-
-            # Add the chunk we read
-            chunk = buffer.decode('utf-8')[:message_bytes.value]
-            chunks.append(chunk)
-
-            # If we read less than the buffer size, we're done
-            if message_bytes.value < BUFFER_SIZE:
-                break
-
-        # BUGFIX: Use ''.join(chunks) instead of buffer to get the full message
-        retval = ''.join(chunks)
-        logging.info(f'[PIPE] Read {len(retval)} bytes from pipe')
-        return json.loads(retval)
-
-    except json.JSONDecodeError:
-        logging.error('Failed to decode JSON input')
-        return None
-    except Exception as e:
-        logging.error(f'Unexpected error in read_command: {str(e)}')
-        return None
-
-
-def write_response(response:Response) -> None:
-    ''' Writes a response to the communication pipe.
-
-    Args:
-        response: Function response
-    '''
-    try:
-        STD_OUTPUT_HANDLE = -11
-        pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-
-        json_message = json.dumps(response) + '<<END>>'
-        message_bytes = json_message.encode('utf-8')
-        message_len = len(message_bytes)
-        
-        logging.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
-
-        bytes_written = wintypes.DWORD()
-        success = windll.kernel32.WriteFile(
-            pipe,
-            message_bytes,
-            message_len,
-            byref(bytes_written),
-            None
-        )
-        
-        if success:
-            logging.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
-        else:
-            logging.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
-
-    except Exception as e:
-        logging.error(f'Failed to write response: {str(e)}')
-
-
-def generate_failure_response(message:str=None) -> Response:
-    ''' Generates a response indicating failure.
-
-    Parameters:
-        message: String to be returned in the response (optional)
-
-    Returns:
-        A failure response with the attached message
-    '''
-    response = { 'success': False }
-    if message:
-        response['message'] = message
-    return response
-
-
-def generate_success_response(message:str=None) -> Response:
-    ''' Generates a response indicating success.
-
-    Parameters:
-        message: String to be returned in the response (optional)
-
-    Returns:
-        A success response with the attached massage
-    '''
-    response = { 'success': True }
-    if message:
-        response['message'] = message
-    return response
-
-def generate_status_update(message: str) -> dict:
-    """Generate a status update (not a final response).
-    
-    Status updates are intermediate messages that don't end the plugin execution.
-    They should NOT include 'success' field to avoid being treated as final responses.
-    """
-    return {'status': 'in_progress', 'message': message}
-
-
-def execute_initialize_command() -> dict:
-    ''' Command handler for `initialize` function
-
-    This handler is responseible for initializing the plugin.
-
-    Args:
-        params: Function parameters
-
-    Returns:
-        The function return value(s)
-    '''
-    logging.info('Initializing plugin')
+def ensure_connected() -> bool:
+    """Ensure OpenRGB connection is established."""
     global CLI
+    if CLI is not None:
+        return True
     
     try:
-        # Try to connect to OpenRGB service
-        CLI = OpenRGBClient('127.0.0.1', 6742, 'G-Assist Plugin')
-        logging.info('Successfully connected to OpenRGB service')
-        return generate_success_response('OpenRGB plugin initialized successfully.')
+        CLI = OpenRGBClient("127.0.0.1", 6742, "G-Assist Plugin")
+        logger.info("Successfully connected to OpenRGB service")
+        return True
     except ConnectionRefusedError:
-        logging.error('OpenRGB service is not running')
-        return generate_failure_response(
-            'OpenRGB service is not running. Please start OpenRGB and try again.\n'
-            'Download from: https://openrgb.org/'
-        )
+        logger.error("OpenRGB service is not running")
+        return False
     except TimeoutError:
-        logging.error('Timeout connecting to OpenRGB service')
-        return generate_failure_response(
-            'Timeout connecting to OpenRGB service. Please check if OpenRGB is running and the SDK server is enabled.'
-        )
+        logger.error("Timeout connecting to OpenRGB service")
+        return False
     except Exception as e:
-        logging.error(f'Error connecting to OpenRGB: {str(e)}')
-        return generate_failure_response(
-            f'Failed to connect to OpenRGB: {str(e)}\n'
-            'Make sure OpenRGB is running and SDK server is enabled in Settings.'
+        logger.error(f"Error connecting to OpenRGB: {str(e)}")
+        return False
+
+
+# ============================================================================
+# PLUGIN SETUP
+# ============================================================================
+plugin = Plugin(
+    name=PLUGIN_NAME,
+    version="2.0.0",
+    description="Control RGB lighting via OpenRGB"
+)
+
+
+# ============================================================================
+# COMMANDS
+# ============================================================================
+@plugin.command("list_devices")
+def list_devices():
+    """List all available RGB devices."""
+    if not ensure_connected():
+        return (
+            "OpenRGB service is not running. Please start OpenRGB and enable SDK server.\n"
+            "Download from: https://openrgb.org/"
         )
-
-
-def execute_shutdown_command() -> dict:
-    ''' Command handler for `shutdown` function
-
-    This handler is responsible for releasing any resources the plugin may have
-    acquired during its operation (memory, access to hardware, etc.).
-
-    Args:
-        params: Function parameters
-
-    Returns:
-        The function return value(s)
-    '''
-    global CLI
-    try:
-        if CLI:
-            CLI.disconnect()
-        return generate_success_response('Shutdown OpenRGB client successfully.')
-    except Exception as e:
-        logging.error(f'Failed to shutdown OpenRGB: {str(e)}')
-        return generate_failure_response('Failed to shutdown OpenRGB client.')
-
-
-def execute_list_devices(params:dict=None, context:dict=None, system_info:dict=None) -> dict:
-    SUCCESS_MESSAGE = 'Here is a list of devices:\n'
-    ERROR_MESSAGE = 'Failed to get devices information for OpenRGB.'
-    logging.info(f'Executing execute_get_devices')
-    global CLI 
-
-    # Check if CLI is initialized
-    if CLI is None:
-        logging.error('OpenRGB client not initialized')
-        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
-
+    
     try:
         devices = [device.name for device in CLI.devices]
-        readable_devices = '\n'.join(devices)
-        print(devices)
-
-        logging.info(f'Devices: {readable_devices}')
-
         if devices:
-            return generate_success_response(f'{SUCCESS_MESSAGE} {readable_devices}')
+            return "Available devices:\n" + "\n".join(f"  - {d}" for d in devices)
         else:
-            return generate_failure_response(ERROR_MESSAGE)
+            return "No RGB devices found."
     except Exception as e:
-        return generate_failure_response(f'{ERROR_MESSAGE} {e}')
+        return f"Failed to list devices: {e}"
 
-def execute_set_color(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
-    SUCCESS_MESSAGE = 'Lighting for '
-    ERROR_MESSAGE = 'Failed to set lighting to color for OpenRGB.'
-    logging.info(f'Executing execute_set_color')
 
-    # Check if CLI is initialized
-    global CLI
-    if CLI is None:
-        logging.error('OpenRGB client not initialized')
-        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
-
-    try:
-        color = params.get('color_name')
-        logging.info(f'Color: {color}')
-        if not color:
-            return generate_failure_response(f'{ERROR_MESSAGE} Missing color')
-        
-        device_name = params.get('device_name')
-        logging.info(f'Device Name: {device_name}')
-        
-        # Send status update
-        if send_status_callback:
-            if device_name and "all" not in device_name.lower():
-                send_status_callback(generate_status_update(f"Setting {device_name} to {color}..."))
-            else:
-                send_status_callback(generate_status_update(f"Setting all devices to {color}..."))
+@plugin.command("set_color")
+def set_color(color_name: str = "", device_name: str = ""):
+    """
+    Set RGB color for device(s).
+    
+    Args:
+        color_name: Color name (red, green, blue, yellow, etc.)
+        device_name: Specific device or "all" for all devices
+    """
+    if not ensure_connected():
+        return (
+            "OpenRGB service is not running. Please start OpenRGB and enable SDK server.\n"
+            "Download from: https://openrgb.org/"
+        )
+    
+    if not color_name:
+        return "Missing color_name."
+    
+    color_name = color_name.lower()
+    if color_name not in COLOR_MAP:
+        return f"Unknown color: {color_name}. Available: {', '.join(COLOR_MAP.keys())}"
+    
+    r, g, b = COLOR_MAP[color_name]
+    color = RGBColor(r, g, b)
+    
+    if device_name and "all" not in device_name.lower():
+        plugin.stream(f"Setting {device_name} to {color_name}...")
         try:
-            # Look up color in our map
-            color = color.lower()
-            if color not in COLOR_MAP:
-                return generate_failure_response(f'{ERROR_MESSAGE} Unknown color: {color}')
-            r, g, b = COLOR_MAP[color]
-            color = RGBColor(r, g, b)
+            devices = CLI.get_devices_by_name(device_name, False)
+            if devices and len(devices) > 0:
+                devices[0].set_color(color)
+                return f"{device_name} set to {color_name}."
+            else:
+                return f"Device not found: {device_name}"
         except Exception as e:
-            return generate_failure_response(f'{ERROR_MESSAGE} Invalid color format: {e}')
+            return f"Failed to set color: {e}"
+    else:
+        plugin.stream(f"Setting all devices to {color_name}...")
+        try:
+            all_devices = CLI.devices
+            if not all_devices:
+                return "No devices found."
+            
+            results = []
+            for device in all_devices:
+                device.set_color(color)
+                results.append(f"{device.name} set to {color_name}")
+            
+            return "Updated devices:\n" + "\n".join(f"  - {r}" for r in results)
+        except Exception as e:
+            return f"Failed to set color: {e}"
 
-        if device_name and "all" not in device_name.lower():
-            # Set color for specific device
-            try:
-                devices = CLI.get_devices_by_name(device_name, False)
-                logging.info(f'Devices: {devices}')
 
-                if devices and len(devices) > 0:
-                    logging.info(f'Setting color for device: {devices[0]}')
-                    devices[0].set_color(color)
-                    return generate_success_response(f'{SUCCESS_MESSAGE} {device_name} set to {color}')
-                else:
-                    return generate_failure_response(f'{ERROR_MESSAGE} Device not found')
-            except Exception as e:
-                return generate_failure_response(f'{ERROR_MESSAGE} Error finding device: {e}')
-        else:
-            # Set color for all devices
-            try:
-                all_devices = CLI.devices
-                logging.info(f'All Devices: {all_devices}')
-                if not all_devices:
-                    return generate_failure_response(f'{ERROR_MESSAGE} No devices found')
-                
-                success_messages = []
-                for device in all_devices:
-                    device.set_color(color)
-                    success_messages.append(f'{device.name} set to {color}')
-                
-                return generate_success_response(f'{SUCCESS_MESSAGE} all devices: ' + '\n '.join(success_messages))
-            except Exception as e:
-                return generate_failure_response(f'{ERROR_MESSAGE} Error setting color on devices: {e}')
-        
-    except Exception as e:
-        return generate_failure_response(f'{ERROR_MESSAGE} {e}')
-
-def execute_disable_lighting(params:dict=None, context:dict=None, system_info:dict=None, send_status_callback=None) -> dict:
-    SUCCESS_MESSAGE = 'SignalRGB lighting disabled.'
-    ERROR_MESSAGE = 'Failed to disable lighting for SignalRGB.'
-    logging.info(f'Executing execute_disable_lighting')
+@plugin.command("set_mode")
+def set_mode(effect_name: str = "", device_name: str = ""):
+    """
+    Set RGB effect/mode for device(s).
     
-    # Check if CLI is initialized
-    global CLI
-    if CLI is None:
-        logging.error('OpenRGB client not initialized')
-        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
+    Args:
+        effect_name: Effect mode name
+        device_name: Specific device or "all" for all devices
+    """
+    if not ensure_connected():
+        return (
+            "OpenRGB service is not running. Please start OpenRGB and enable SDK server."
+        )
+    
+    if not effect_name:
+        return "Missing effect_name."
+    
+    if device_name and "all" not in device_name.lower():
+        try:
+            devices = CLI.get_devices_by_name(device_name, False)
+            if devices and len(devices) > 0:
+                device = devices[0]
+                modes = {mode.name.lower(): mode for mode in device.modes}
+                if effect_name.lower() in modes:
+                    device.set_mode(effect_name)
+                    return f"{device_name} set to {effect_name}."
+                else:
+                    return f"Effect not supported on {device_name}."
+            else:
+                return f"Device not found: {device_name}"
+        except Exception as e:
+            return f"Failed to set mode: {e}"
+    else:
+        try:
+            all_devices = CLI.devices
+            if not all_devices:
+                return "No devices found."
+            
+            results = []
+            for device in all_devices:
+                modes = {mode.name.lower(): mode for mode in device.modes}
+                if effect_name.lower() in modes:
+                    device.set_mode(effect_name)
+                    results.append(f"{device.name} set to {effect_name}")
+                else:
+                    results.append(f"{device.name} does not support {effect_name}")
+            
+            return "Results:\n" + "\n".join(f"  - {r}" for r in results)
+        except Exception as e:
+            return f"Failed to set mode: {e}"
+
+
+@plugin.command("disable_lighting")
+def disable_lighting():
+    """Turn off all RGB lighting."""
+    if not ensure_connected():
+        return "OpenRGB service is not running."
+    
+    plugin.stream("Disabling RGB lighting...")
     
     try:
-        # Send status update
-        if send_status_callback:
-            send_status_callback(generate_status_update("Disabling RGB lighting..."))
         for device in CLI.devices:
-            device.set_mode('off')
-
-        return generate_success_response(SUCCESS_MESSAGE)
+            device.set_mode("off")
+        return "RGB lighting disabled."
     except Exception as e:
-        return generate_failure_response(f'{ERROR_MESSAGE} {e}')
-
-def execute_set_mode(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
-    SUCCESS_MESSAGE = 'Mode set successfully.'
-    ERROR_MESSAGE = 'Failed to set mode for OpenRGB.'
-    logging.info(f'Executing execute_set_mode')
-    
-    # Check if CLI is initialized
-    global CLI
-    if CLI is None:
-        logging.error('OpenRGB client not initialized')
-        return generate_failure_response('OpenRGB is not connected. Please ensure OpenRGB is running and try initializing the plugin again.')
-    
-    try:
-        device_name = params.get('device_name')
-        effect_name = params.get('effect_name')
-        
-        if not effect_name:
-            return generate_failure_response(f'{ERROR_MESSAGE} Missing effect_name')
-
-        if device_name and "all" not in device_name.lower():
-            # Set mode for specific device
-            try:
-                devices = CLI.get_devices_by_name(device_name, False)
-                logging.info(f'Devices: {devices}')
-
-                if devices and len(devices) > 0:
-                    device = devices[0]
-                    modes = {mode.name.lower(): mode for mode in device.modes}
-                    if effect_name.lower() in modes:
-                        device.set_mode(effect_name)
-                        return generate_success_response(f'{SUCCESS_MESSAGE} {device_name} set to {effect_name}')
-                    else:
-                        return generate_failure_response(f'{ERROR_MESSAGE} Effect not supported on device')
-                else:
-                    return generate_failure_response(f'{ERROR_MESSAGE} Device not found')
-            except Exception as e:
-                return generate_failure_response(f'{ERROR_MESSAGE} Error finding device: {e}')
-        else:
-            # Set mode for all devices
-            try:
-                all_devices = CLI.devices
-                logging.info(f'All Devices: {all_devices}')
-                if not all_devices:
-                    return generate_failure_response(f'{ERROR_MESSAGE} No devices found')
-                
-                success_messages = []
-                for device in all_devices:
-                    modes = {mode.name.lower(): mode for mode in device.modes}
-                    if effect_name.lower() in modes:
-                        device.set_mode(effect_name)
-                        success_messages.append(f'{device.name} set to {effect_name}')
-                    else:
-                        success_messages.append(f'{device.name} does not support {effect_name}')
-                
-                return generate_success_response(f'{SUCCESS_MESSAGE} all devices: ' + '\n '.join(success_messages))
-            except Exception as e:
-                return generate_failure_response(f'{ERROR_MESSAGE} Error setting mode on devices: {e}')
-        
-    except Exception as e:
-        logging.error(f'Error setting mode: {str(e)}')
-        return generate_failure_response(f'{ERROR_MESSAGE} {e}')
+        return f"Failed to disable lighting: {e}"
 
 
-if __name__ == '__main__':
-    main()
+# ============================================================================
+# MAIN
+# ============================================================================
+if __name__ == "__main__":
+    logger.info("Starting OpenRGB plugin (SDK version)...")
+    plugin.run()

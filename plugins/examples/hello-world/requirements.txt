@@ -1,0 +1,5 @@
+# G-Assist Hello World Plugin Dependencies
+# These packages will be pip installed to libs/ by setup.bat
+# Note: gassist_sdk is copied from the SDK folder (not on PyPI)
+
+# No additional dependencies for this simple example
