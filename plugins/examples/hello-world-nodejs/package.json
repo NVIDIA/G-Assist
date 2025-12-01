@@ -1,0 +1,9 @@
+{
+  "name": "hello-world-nodejs",
+  "version": "1.0.0",
+  "description": "A simple Node.js Hello World plugin for G-Assist",
+  "main": "plugin.js",
+  "author": "NVIDIA Corporation",
+  "license": "Apache-2.0"
+}
+
