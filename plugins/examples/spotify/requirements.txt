@@ -1,2 +1,2 @@
-spotipy==2.25.1
+spotipy==2.25.2
 pyinstaller==6.11.0
