@@ -1,0 +1,34 @@
+{
+  "manifestVersion": 1,
+  "name": "stream-deck",
+  "version": "1.0.0",
+  "description": "Stream Deck MCP plugin - dynamically discovers and executes tools from MCP server",
+  "executable": "plugin.py",
+  "persistent": true,
+  "protocol_version": "2.0",
+  "functions": [
+    {
+      "name": "streamdeck_discover",
+      "description": "Discover available tools from the Stream Deck MCP server. Call this to connect to the MCP server and discover what Stream Deck actions are available. The manifest will be updated with the discovered tools.",
+      "tags": ["stream-deck", "streamdeck", "discover", "tools", "elgato", "mcp"],
+      "properties": {},
+      "required": []
+    },
+    {
+      "name": "streamdeck_call",
+      "description": "Call any Stream Deck MCP tool by name with JSON arguments. Use this to execute a specific Stream Deck action.",
+      "tags": ["stream-deck", "streamdeck", "call", "execute", "elgato", "mcp"],
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "The name of the MCP tool to call (e.g., 'press_button', 'set_brightness')"
+        },
+        "arguments": {
+          "type": "string",
+          "description": "JSON string of arguments to pass to the tool (e.g., '{\"button_id\": 1}')"
+        }
+      },
+      "required": ["tool"]
+    }
+  ]
+}

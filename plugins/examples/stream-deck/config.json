@@ -1,0 +1,6 @@
+{
+  "mcp_server_url": "http://localhost:9090/mcp",
+  "auto_discover": false,
+  "timeout": 30
+}
+

@@ -30,15 +30,26 @@ from .types import (
     ErrorCode, LogLevel
 )
 
-# Set up logging
+# Set up logging - use temp directory to avoid permission issues
+def _get_log_path():
+    """Get a writable log file path."""
+    import tempfile
+    # Try current working directory first (plugin's directory)
+    cwd_log = os.path.join(os.getcwd(), "gassist_sdk.log")
+    try:
+        with open(cwd_log, "a") as f:
+            pass
+        return cwd_log
+    except (PermissionError, OSError):
+        pass
+    # Fall back to temp directory
+    return os.path.join(tempfile.gettempdir(), "gassist_sdk.log")
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.FileHandler(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plugin_sdk.log"),
-            mode="a"
-        )
+        logging.FileHandler(_get_log_path(), mode="a", encoding="utf-8")
     ]
 )
 logger = logging.getLogger("gassist_sdk.plugin")
