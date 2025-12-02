@@ -2,33 +2,33 @@
   "manifestVersion": 1,
   "name": "stream-deck",
   "version": "1.0.0",
-  "description": "Stream Deck MCP plugin - dynamically discovers and executes tools from MCP server",
+  "description": "Stream Deck MCP plugin - control Stream Deck devices, get installed plugins, and execute actions",
   "executable": "plugin.py",
   "persistent": true,
   "protocol_version": "2.0",
   "functions": [
     {
-      "name": "streamdeck_discover",
-      "description": "Discover available tools from the Stream Deck MCP server. Call this to connect to the MCP server and discover what Stream Deck actions are available. The manifest will be updated with the discovered tools.",
-      "tags": ["stream-deck", "streamdeck", "discover", "tools", "elgato", "mcp"],
-      "properties": {},
-      "required": []
-    },
-    {
       "name": "streamdeck_call",
-      "description": "Call any Stream Deck MCP tool by name with JSON arguments. Use this to execute a specific Stream Deck action.",
-      "tags": ["stream-deck", "streamdeck", "call", "execute", "elgato", "mcp"],
+      "description": "PRIMARY command for ALL Stream Deck operations. Automatically initializes session. Use tool='get_devices' to list devices, 'get_plugins' for plugins, 'get_executable_actions' for available actions, or 'execute_action' to run an action.",
+      "tags": ["stream-deck", "streamdeck", "elgato", "devices", "plugins", "actions", "execute", "control"],
       "properties": {
         "tool": {
           "type": "string",
-          "description": "The name of the MCP tool to call (e.g., 'press_button', 'set_brightness')"
+          "description": "The MCP tool to call: 'get_devices', 'get_plugins', 'get_executable_actions', 'execute_action', or 'install_plugin'"
         },
         "arguments": {
           "type": "string",
-          "description": "JSON string of arguments to pass to the tool (e.g., '{\"button_id\": 1}')"
+          "description": "Optional JSON string of arguments for the tool"
         }
       },
       "required": ["tool"]
+    },
+    {
+      "name": "streamdeck_discover",
+      "description": "List what Stream Deck tools are available from the MCP server. Only use this if you need to see the full list of available operations.",
+      "tags": ["stream-deck", "streamdeck", "discover", "list", "tools"],
+      "properties": {},
+      "required": []
     }
   ]
 }

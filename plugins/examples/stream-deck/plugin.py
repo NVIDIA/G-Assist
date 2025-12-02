@@ -698,13 +698,15 @@ def streamdeck_discover_cmd(context: Context = None):
     """
     Discover available tools from the Stream Deck MCP server.
     
+    USE THIS ONLY to see what tools are available. For actual operations like
+    getting devices or plugins, use streamdeck_call directly - it will 
+    automatically initialize the session.
+    
     This command:
     1. Initializes a session with the MCP server (if needed)
     2. Queries available tools
     3. Updates the manifest.json with discovered tools
     4. Returns a list of available tools
-    
-    Note: If session has expired (400 error), automatic retry with fresh session.
     """
     global mcp_session_id
     
@@ -755,11 +757,18 @@ def streamdeck_discover_cmd(context: Context = None):
 @plugin.command("streamdeck_call")
 def streamdeck_call_cmd(tool: str = None, arguments: str = None, context: Context = None):
     """
-    Call any MCP tool by name with JSON arguments.
+    Call any Stream Deck MCP tool. This is the PRIMARY command for all Stream Deck operations.
+    Automatically initializes session if needed - no need to call discover first.
+    
+    Common tools:
+    - get_devices: List connected Stream Deck devices
+    - get_plugins: List installed plugins  
+    - get_executable_actions: List available actions
+    - execute_action: Execute a specific action
     
     Args:
-        tool: The name of the MCP tool to call (with or without streamdeck_ prefix)
-        arguments: JSON string of arguments to pass to the tool
+        tool: The name of the MCP tool to call (e.g., 'get_devices', 'get_plugins')
+        arguments: JSON string of arguments to pass to the tool (optional)
     """
     global mcp_session_id
     
