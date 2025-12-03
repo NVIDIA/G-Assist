@@ -2,31 +2,15 @@
   "manifestVersion": 1,
   "name": "stream-deck",
   "version": "1.0.0",
-  "description": "Stream Deck MCP plugin - control Stream Deck devices, get installed plugins, and execute actions",
+  "description": "Stream Deck plugin - discover and execute Stream Deck actions",
   "executable": "plugin.py",
   "persistent": true,
   "protocol_version": "2.0",
   "functions": [
     {
-      "name": "streamdeck_call",
-      "description": "PRIMARY command for ALL Stream Deck operations. Automatically initializes session. Use tool='get_devices' to list devices, 'get_plugins' for plugins, 'get_executable_actions' for available actions, or 'execute_action' to run an action.",
-      "tags": ["stream-deck", "streamdeck", "elgato", "devices", "plugins", "actions", "execute", "control"],
-      "properties": {
-        "tool": {
-          "type": "string",
-          "description": "The MCP tool to call: 'get_devices', 'get_plugins', 'get_executable_actions', 'execute_action', or 'install_plugin'"
-        },
-        "arguments": {
-          "type": "string",
-          "description": "Optional JSON string of arguments for the tool"
-        }
-      },
-      "required": ["tool"]
-    },
-    {
       "name": "streamdeck_discover",
-      "description": "List what Stream Deck tools are available from the MCP server. Only use this if you need to see the full list of available operations.",
-      "tags": ["stream-deck", "streamdeck", "discover", "list", "tools"],
+      "description": "Discover Stream Deck and learn what actions are available. Call this first to see what your Stream Deck can do, then use the discovered action functions.",
+      "tags": ["stream-deck", "streamdeck", "discover", "elgato", "actions"],
       "properties": {},
       "required": []
     }

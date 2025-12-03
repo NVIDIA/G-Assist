@@ -1,18 +1,19 @@
-# Stream Deck MCP Plugin
+# Stream Deck Plugin
 
-A G-Assist plugin that interfaces with the **Elgato Stream Deck** via an MCP (Model Context Protocol) server. This plugin dynamically discovers available tools from the MCP server and updates its manifest at runtime.
+A G-Assist plugin that integrates with **Elgato Stream Deck** via an MCP (Model Context Protocol) server. This plugin discovers your configured Stream Deck actions and lets you execute them with natural language.
 
 ## Features
 
-- **Dynamic Tool Discovery**: Queries the MCP server for available tools and updates the manifest
-- **Generic Tool Calling**: Call any MCP tool by name with JSON arguments
-- **Session Management**: Handles MCP session initialization and persistence
-- **Auto-Discovery**: Optionally discover tools on plugin startup
+- **Action Discovery**: Automatically discovers all executable actions configured on your Stream Deck
+- **Dynamic Functions**: Each discovered action becomes a callable function
+- **Natural Language**: Execute actions by simply asking (e.g., "open the webpage" or "play the audio")
+- **Session Management**: Handles MCP session lifecycle automatically
 
 ## Prerequisites
 
 1. **Stream Deck MCP Server** running at `http://localhost:9090/mcp`
 2. **Python 3.x** with `requests` library
+3. **Stream Deck** with configured actions (buttons)
 
 ## Quick Start
 
@@ -31,7 +32,6 @@ Edit `config.json` to set your MCP server URL:
 ```json
 {
   "mcp_server_url": "http://localhost:9090/mcp",
-  "auto_discover": false,
   "timeout": 30
 }
 ```
@@ -44,67 +44,67 @@ setup.bat stream-deck -deploy
 
 ### 4. Use
 
-In G-Assist, say:
-- "Discover Stream Deck tools" → Connects to MCP server and discovers available actions
-- "Call Stream Deck tool press_button with button 1" → Executes a specific action
+In G-Assist:
+
+1. **Discover your Stream Deck**: "Discover my Stream Deck"
+2. **Execute actions**: "Open the webpage" or "Play the audio" or "Start the timer"
 
 ## How It Works
 
-### MCP Protocol Flow
+### Discovery Flow
 
-1. **Initialize Session**:
-   ```
-   POST /mcp
-   {"jsonrpc": "2.0", "method": "initialize", ...}
-   → Response includes mcp-session-id header
-   ```
+1. Plugin connects to the Stream Deck MCP server
+2. Queries for all executable actions configured on your Stream Deck
+3. Creates a function for each action (e.g., `streamdeck_open_webpage`)
+4. Updates the manifest with discovered functions
+5. You can now execute any action by name
 
-2. **Discover Tools**:
-   ```
-   POST /mcp (with mcp-session-id header)
-   {"jsonrpc": "2.0", "method": "tools/list", ...}
-   → Returns list of available tools
-   ```
+### Example Discovery Output
 
-3. **Call Tool**:
-   ```
-   POST /mcp (with mcp-session-id header)
-   {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "...", "arguments": {...}}}
-   → Returns tool result
-   ```
-
-### Dynamic Manifest Updates
-
-When tools are discovered, the plugin:
-1. Converts MCP tool schemas to G-Assist function definitions
-2. Writes updated `manifest.json` to the plugin directory
-3. Registers dynamic command handlers for each tool
-
-**Example**: If MCP server has a tool called `press_button`, the manifest gets:
-```json
-{
-  "name": "mcp_press_button",
-  "description": "Press a button on Stream Deck",
-  "properties": {
-    "button_id": {"type": "integer", "description": "Button ID to press"}
-  }
-}
 ```
+Discovering Stream Deck...
+
+Connecting to Stream Deck MCP server...
+Connected.
+
+Querying available actions...
+Found 4 actions.
+
+Registering actions...
+Done.
+
+Stream Deck Discovery Complete
+
+Found 4 actions ready to use:
+
+- Open webpage (Website) - Open URL
+- Play Video (Play Audio) - Play a sound bite, audio effect or music clip
+- Audacity (Open Application) - Open an app
+- Timer - Timer for Stream Deck (acoustically and visually)
+
+Just ask me to execute any of these actions.
+```
+
+### Action Execution
+
+After discovery, simply ask to execute any action:
+
+- "Execute the timer"
+- "Open webpage"
+- "Play the video"
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `mcp_discover_tools` | Connect to MCP server and discover available tools |
-| `mcp_call` | Call any MCP tool by name with JSON arguments |
-| `mcp_<tool_name>` | (Dynamic) Direct command for each discovered tool |
+| `streamdeck_discover` | Connect to Stream Deck and discover available actions |
+| `streamdeck_<action>` | (Dynamic) Execute a discovered action |
 
 ## Configuration
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `mcp_server_url` | `http://localhost:9090/mcp` | MCP server endpoint |
-| `auto_discover` | `false` | Auto-discover tools on plugin startup |
 | `timeout` | `30` | Request timeout in seconds |
 
 ## Files
@@ -112,9 +112,11 @@ When tools are discovered, the plugin:
 ```
 stream-deck/
 ├── plugin.py           # Main plugin code
-├── manifest.json       # Function definitions (updated dynamically)
-├── config.json         # MCP server configuration
-├── requirements.txt    # Python dependencies (requests)
+├── manifest.json       # Function definitions (updated on discovery)
+├── config.json         # MCP server configuration (created on first run)
+├── actions_cache.json  # Cached actions (created on discovery)
+├── requirements.txt    # Python dependencies
+├── libs/               # SDK and dependencies
 └── README.md           # This file
 ```
 
@@ -129,21 +131,20 @@ Plugin logs are written to:
 
 | Issue | Solution |
 |-------|----------|
-| "Failed to initialize MCP session" | Ensure MCP server is running at the configured URL |
-| "No tools discovered" | Check MCP server has tools registered |
-| Dynamic tools not appearing | Restart G-Assist after discovery to reload manifest |
+| "Failed to connect to Stream Deck MCP server" | Ensure MCP server is running at the configured URL |
+| "No executable actions found" | Configure some actions on your Stream Deck first |
+| Discovered actions not working | Run discovery again after adding new Stream Deck actions |
 | Connection timeout | Increase `timeout` in config.json |
 
-## MCP Server Setup
+## MCP Server
 
-This plugin expects an MCP server that implements:
+This plugin requires an MCP server that provides:
 - `initialize` - Start a session
-- `tools/list` - List available tools
-- `tools/call` - Execute a tool
+- `tools/list` - List available tools (including `get_executable_actions`)
+- `tools/call` - Execute tools (including `execute_action`)
 
-See the [MCP Specification](https://modelcontextprotocol.io/) for details.
+See the Stream Deck MCP server documentation for setup instructions.
 
 ## License
 
 Apache License 2.0
-
