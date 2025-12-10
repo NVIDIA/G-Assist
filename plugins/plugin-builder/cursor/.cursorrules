@@ -1,0 +1,31 @@
+version: 1
+rules:
+  - matches: ["*"]
+    message: |
+      # Plugin Builder Cursor Profile
+      - Purpose: guide developers through the interview + cloning workflow for creating a new G-Assist plugin.
+      - Steps Cursor should follow whenever a dev opens this folder:
+        1. Ask the developer:
+           * Plugin name + one-line purpose
+           * Target APIs/services or hardware
+           * Functions to expose (name, params, description, expected output)
+           * Whether onboarding/setup wizard is required and what data it collects
+           * Whether the plugin needs passthrough (awaiting_input flows)
+           * Whether the plugin should be persistent
+        2. Echo back a structured summary and confirm accuracy.
+        3. After confirmation, clone `ssh://git@gitlab-master.nvidia.com:12051/rise/g-assist-plugins-page.git`, copy `plugins/templates/python` into `plugins/examples/<plugin_name>`, delete the temp clone, then update:
+           * `plugin.py` (set `PLUGIN_NAME`, inject API details, functions)
+           * `manifest.json` (functions + parameters)
+           * `config.json` & README with setup instructions
+        4. Generate a plugin-specific `.cursorrules` inside the new folder that restates purpose, functions, and any special behaviors so future edits stay contextual.
+        5. Remind the developer to run the template’s `setup_and_build.bat` (or local equivalent) and check JSON validity (`python -m json.tool manifest.json`).
+      - Respond with commands ready to copy/paste (git clone, robocopy, etc.) so developers can execute them quickly.
+      - Once the plugin folder exists, keep enforcing the shared authoring rules:
+        * Keep `manifest.json` and `plugin.py` in sync; every manifest function needs a handler in `handle_tool_call`, and `initialize`/`shutdown` stay implicit (do not list them in the manifest).
+        * Always use absolute `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\<plugin>` paths for config/logs and log to `<plugin>.log` with `logging.basicConfig`.
+        * Preserve heartbeat helpers and call `start_heartbeat()` after config validation so persistent plugins emit `{"type":"heartbeat"}` regularly.
+        * Leave the setup wizard (`ENABLE_SETUP_WIZARD`) in place when secrets are required; return `awaiting_input=true` with instructions until validation succeeds.
+        * Request passthrough dynamically (`STATE["awaiting_input"]`); never append exit instructions or prefixes—those tags are added by the engine.
+        * Stream multi-sentence responses via `stream_text()` chunks (~200–300 chars) and end with a `success` payload that reflects the current `awaiting_input` state.
+        * Update `PLUGIN_ANATOMY.md` or other shared docs whenever a new helper pattern is introduced.
+
