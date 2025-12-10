@@ -147,13 +147,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="GAssistPlugin.cpp" />
-    <ClCompile Include="LogiLedPlugin.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="GAssistPlugin.h" />
-    <ClInclude Include="LogiLedPlugin.h" />
+    <ClInclude Include="gassist_sdk.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="manifest.json" />
+    <None Include="V2_MIGRATION_CHANGELOG.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

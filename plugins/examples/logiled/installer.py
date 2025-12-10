@@ -14,6 +14,22 @@ import shutil
 import ctypes
 import json
 from pathlib import Path
+from typing import Tuple, Optional
+from ctypes import wintypes, byref
+
+# Windows Security Constants for ACL Permissions
+SECURITY_DESCRIPTOR_MIN_LENGTH = 20
+SECURITY_DESCRIPTOR_REVISION = 1
+DACL_SECURITY_INFORMATION = 0x00000004
+
+# Access Rights Constants
+FILE_ALL_ACCESS = 0x1F01FF
+FILE_GENERIC_READ = 0x120089
+FILE_GENERIC_EXECUTE = 0x1200A0
+
+# Windows API Functions
+advapi32 = ctypes.windll.advapi32
+kernel32 = ctypes.windll.kernel32
 
 def is_admin():
     """Check if the script is running with administrator privileges."""
@@ -60,8 +76,8 @@ def verify_admin_and_permissions():
     if not is_admin():
         return False, "Not running as Administrator"
     
-    # Test write permissions to ProgramData adapters directory
-    test_dir = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / "NVIDIA Corporation" / "nvtopps" / "rise" / "adapters"
+    # Test write permissions to ProgramData plugins directory
+    test_dir = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / "NVIDIA Corporation" / "nvtopps" / "rise" / "plugins"
     
     try:
         # Try to create the directory
@@ -221,12 +237,282 @@ def build_cpp_plugin(plugin_name):
         
         return False
 
+def get_current_user_sid():
+    """Get the SID of the current user using GetUserName and LookupAccountName."""
+    try:
+        print("Getting current user SID...")
+        
+        # Get current username
+        username_size = wintypes.DWORD(256)
+        username = ctypes.create_string_buffer(username_size.value)
+        
+        if not advapi32.GetUserNameA(username, byref(username_size)):
+            error_code = kernel32.GetLastError()
+            print(f"Failed to get username, error code: {error_code}")
+            return None
+        
+        current_username = username.value.decode('utf-8')
+        print(f"Current username: {current_username}")
+        
+        # Get SID for the current user
+        sid_size = wintypes.DWORD(0)
+        domain_size = wintypes.DWORD(0)
+        sid_type = wintypes.DWORD()
+        
+        # Get required buffer sizes
+        result = advapi32.LookupAccountNameW(None, current_username, None, byref(sid_size), 
+                                           None, byref(domain_size), byref(sid_type))
+        
+        if sid_size.value == 0:
+            print("SID size is 0, this is unexpected")
+            return None
+        
+        # Create buffers
+        sid = ctypes.create_string_buffer(sid_size.value)
+        domain = ctypes.create_string_buffer(domain_size.value * 2)  # Unicode
+        
+        # Get the SID
+        result = advapi32.LookupAccountNameW(None, current_username, sid, byref(sid_size),
+                                           domain, byref(domain_size), byref(sid_type))
+        
+        if result:
+            print("Current user SID retrieved successfully")
+            # Return the buffer itself, not the pointer value
+            return sid
+        else:
+            error_code = kernel32.GetLastError()
+            print(f"LookupAccountNameW failed with error code: {error_code}")
+            return None
+        
+    except Exception as e:
+        print(f"Exception in get_current_user_sid: {e}")
+        return None
+
+def get_administrators_sid():
+    """Get the SID for the local Administrators group."""
+    try:
+        print("Getting Administrators group SID...")
+        
+        # Create SID for BUILTIN\Administrators
+        sid_size = wintypes.DWORD(0)
+        domain_size = wintypes.DWORD(0)
+        sid_type = wintypes.DWORD()
+        
+        # Get required buffer sizes
+        result = advapi32.LookupAccountNameW(None, "Administrators", None, byref(sid_size), 
+                                           None, byref(domain_size), byref(sid_type))
+        
+        if sid_size.value == 0:
+            print("SID size is 0, this is unexpected")
+            return None
+        
+        # Create buffers
+        sid = ctypes.create_string_buffer(sid_size.value)
+        domain = ctypes.create_string_buffer(domain_size.value * 2)  # Unicode
+        
+        # Get the SID
+        result = advapi32.LookupAccountNameW(None, "Administrators", sid, byref(sid_size),
+                                           domain, byref(domain_size), byref(sid_type))
+        
+        if result:
+            print("Administrators SID retrieved successfully")
+            # Return the buffer itself, not the pointer value
+            return sid
+        else:
+            error_code = kernel32.GetLastError()
+            print(f"LookupAccountNameW failed with error code: {error_code}")
+            return None
+        
+    except Exception as e:
+        print(f"Exception in get_administrators_sid: {e}")
+        return None
+
+def create_restricted_security_descriptor():
+    """
+    Create a security descriptor with restricted ACL permissions.
+    This replicates the behavior of setupSecurityDescriptor() from the C++ code.
+    """
+    try:
+        print("Creating restricted security descriptor...")
+        
+        # Allocate security descriptor - use a larger buffer to be safe
+        sd_size = 1024  # Much larger than minimum to avoid buffer issues
+        pSD = ctypes.create_string_buffer(sd_size)
+        if not pSD:
+            print("Failed to allocate security descriptor")
+            return None, None
+        
+        # Initialize security descriptor
+        if not advapi32.InitializeSecurityDescriptor(ctypes.byref(pSD), SECURITY_DESCRIPTOR_REVISION):
+            print("Failed to initialize security descriptor")
+            return None, None
+        
+        # Create ACL with restricted permissions
+        acl_size = 1024  # Conservative size for ACL with multiple ACEs
+        pACL = ctypes.create_string_buffer(acl_size)
+        if not pACL:
+            print("Failed to allocate ACL")
+            return None, None
+        
+        # Initialize ACL
+        if not advapi32.InitializeAcl(ctypes.byref(pACL), acl_size, 2):  # ACL_REVISION = 2
+            print("Failed to initialize ACL")
+            return None, None
+        
+        # Get SIDs for current user and administrators
+        user_sid = get_current_user_sid()
+        admin_sid = get_administrators_sid()
+        
+        if not user_sid or not admin_sid:
+            print("Failed to get required SIDs")
+            return None, None
+        
+        # Add ACE for current user (limited permissions - read/execute only)
+        restricted_access = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE
+        if not advapi32.AddAccessAllowedAce(ctypes.byref(pACL), 2, restricted_access, ctypes.byref(user_sid)):
+            error_code = kernel32.GetLastError()
+            print(f"Failed to add user ACE, error code: {error_code}")
+            return None, None
+        
+        # Add ACE for administrators (full control)
+        if not advapi32.AddAccessAllowedAce(ctypes.byref(pACL), 2, FILE_ALL_ACCESS, ctypes.byref(admin_sid)):
+            error_code = kernel32.GetLastError()
+            print(f"Failed to add admin ACE, error code: {error_code}")
+            return None, None
+        
+        # Set DACL in security descriptor
+        if not advapi32.SetSecurityDescriptorDacl(ctypes.byref(pSD), True, ctypes.byref(pACL), False):
+            error_code = kernel32.GetLastError()
+            print(f"Failed to set DACL in security descriptor, error code: {error_code}")
+            return None, None
+        
+        print("Security descriptor created successfully")
+        # Return the buffer objects themselves, not raw pointers
+        return pSD, pACL
+    
+    except Exception as e:
+        print(f"Exception in create_restricted_security_descriptor: {e}")
+        return None, None
+
+def set_file_acl_permissions(file_path: str, pSD) -> bool:
+    """
+    Set ACL permissions on a specific file.
+    This replicates setFilePermissions() from the C++ code.
+    """
+    try:
+        # Convert to bytes for Windows API
+        file_path_bytes = str(file_path).encode('utf-8')
+        
+        # Apply security descriptor to file
+        result = advapi32.SetFileSecurityA(
+            file_path_bytes,
+            DACL_SECURITY_INFORMATION,
+            ctypes.byref(pSD)
+        )
+        
+        if not result:
+            error_code = kernel32.GetLastError()
+            print(f"Failed to set file security for {file_path}, error code: {error_code}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"Exception setting file ACL for {file_path}: {e}")
+        return False
+
+def remove_existing_dacl(file_path: str) -> bool:
+    """
+    Remove existing DACL from a file by setting a NULL DACL.
+    This replicates the NULL DACL removal from the C++ code.
+    """
+    try:
+        # Create null security descriptor using ctypes buffer
+        pNullSD = ctypes.create_string_buffer(1024)  # Use larger buffer like main function
+        if not pNullSD:
+            print("Failed to allocate null security descriptor")
+            return False
+        
+        # Initialize null security descriptor
+        if not advapi32.InitializeSecurityDescriptor(ctypes.byref(pNullSD), SECURITY_DESCRIPTOR_REVISION):
+            print("Failed to initialize null security descriptor")
+            return False
+        
+        # Set NULL DACL (removes existing DACLs)
+        if not advapi32.SetSecurityDescriptorDacl(ctypes.byref(pNullSD), True, None, False):
+            print("Failed to set NULL DACL")
+            return False
+        
+        # Apply null security descriptor to remove existing DACL
+        file_path_bytes = str(file_path).encode('utf-8')
+        result = advapi32.SetFileSecurityA(
+            file_path_bytes,
+            DACL_SECURITY_INFORMATION,
+            ctypes.byref(pNullSD)
+        )
+        
+        if not result:
+            error_code = kernel32.GetLastError()
+            print(f"Failed to remove existing DACL for {file_path}, error code: {error_code}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"Exception removing DACL for {file_path}: {e}")
+        return False
+
+def set_plugin_acl_permissions(plugin_directory: Path) -> Tuple[bool, Optional[str]]:
+    """
+    Set ACL permissions on all files in a plugin directory.
+    This is the Python equivalent of DependencyManager::setAclPermissionsPlugins().
+    
+    Args:
+        plugin_directory (Path): Path to the installed plugin directory
+        
+    Returns:
+        Tuple[bool, Optional[str]]: (success, error_message)
+    """
+    try:
+        # Create restricted security descriptor
+        pSD, pACL = create_restricted_security_descriptor()
+        if not pSD or not pACL:
+            return False, "Failed to create restricted security descriptor"
+        
+        try:
+            # Recursively set permissions on all files in the plugin directory
+            file_count = 0
+            for file_path in plugin_directory.rglob('*'):
+                if file_path.is_file():
+                    # Remove existing DACL
+                    if not remove_existing_dacl(str(file_path)):
+                        return False, f"Failed to remove existing DACLs for file: {file_path}"
+                    
+                    # Apply new restricted DACL
+                    if not set_file_acl_permissions(str(file_path), pSD):
+                        return False, f"Failed to set ACL permissions for file: {file_path}"
+                    
+                    file_count += 1
+            
+            print(f"Applied ACL permissions to {file_count} file(s)")
+            return True, None
+            
+        finally:
+            # Clean up allocated memory - ctypes buffers are automatically cleaned up
+            # No manual cleanup needed for ctypes.create_string_buffer objects
+            pass
+    
+    except Exception as e:
+        error_msg = f"Exception in set_plugin_acl_permissions: {e}"
+        print(error_msg)
+        return False, error_msg
+
 def install_cpp_plugin(plugin_name):
-    """Install the C++ plugin to the NVIDIA G-Assist adapters directory."""
+    """Install the C++ plugin to the NVIDIA G-Assist plugins directory."""
     print("Installing C++ plugin...")
     
-    # Define target directory (adapters instead of plugins for C++ plugins)
-    target_dir = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / "NVIDIA Corporation" / "nvtopps" / "rise" / "adapters"
+    # Define target directory
+    target_dir = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / "NVIDIA Corporation" / "nvtopps" / "rise" / "plugins"
     
     print(f"Target directory: {target_dir}")
     
@@ -295,6 +581,33 @@ def install_cpp_plugin(plugin_name):
         raise
     
     print(f"Plugin installed successfully to {target_dir}")
+    
+    # Apply ACL security restrictions to installed plugin files
+    print("\nApplying security restrictions to plugin files...")
+    success, error = set_plugin_acl_permissions(target_plugin_dir)
+    if not success:
+        print(f"ERROR: Failed to apply security restrictions: {error}")
+        print("SECURITY BREACH PREVENTION: Removing insecure plugin files...")
+        
+        # Remove the entire plugin directory to prevent insecure loading
+        try:
+            shutil.rmtree(target_plugin_dir)
+            print(f"✓ Insecure plugin directory removed: {target_plugin_dir}")
+            print("Installation failed due to security restrictions failure.")
+            print("This prevents potentially vulnerable plugin files from being loaded.")
+            raise Exception("Plugin installation failed: Unable to apply required security restrictions")
+        except Exception as cleanup_error:
+            print(f"ERROR: Could not remove insecure plugin directory: {cleanup_error}")
+            print("SECURITY WARNING: Insecure plugin files may still exist!")
+            print("\n⚠️  MANUAL CLEANUP REQUIRED:")
+            print(f"Please manually delete this directory: {target_plugin_dir}")
+            print("1. Open File Explorer as Administrator")
+            print("2. Navigate to the directory above")
+            print("3. Delete the entire plugin folder")
+            print("4. This prevents the insecure plugin from being loaded by G-Assist")
+            raise Exception(f"Critical security failure: Plugin installed but could not be secured or removed")
+    else:
+        print("✓ Security restrictions applied successfully")
 
 def main():
     """Main installation process."""
@@ -364,6 +677,8 @@ def main():
         print("\n=== Installation Complete! ===")
         print(f"The G-Assist {plugin_name} C++ plugin has been successfully installed.")
         print("You can now use it with NVIDIA G-Assist.")
+        print("\nNote: The plugin has been secured with restricted ACL permissions.")
+        print("Only administrators can modify the plugin files.")
         print("\nInstallation successful! Window will close automatically in 3 seconds...")
         import time
         time.sleep(3)

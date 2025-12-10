@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-echo Building Logitech G C++ Plugin Installer...
+echo Building Logitech LED C++ Plugin Installer...
 echo.
 
 :: Check if Python is available
@@ -22,12 +22,12 @@ python -m pip install pyinstaller
 
 :: Build the installer executable
 echo Creating installer executable...
-python -m PyInstaller --onefile --name logiled-plugin-installer --distpath . installer.py
+python -m PyInstaller --onefile --name plugin-installer --distpath . installer.py
 
-if exist logiled-plugin-installer.exe (
+if exist plugin-installer.exe (
     echo.
-    echo === Logitech G C++ Plugin Installer created successfully! ===
-    echo The installer executable is: logiled-plugin-installer.exe
+    echo === Logitech LED C++ Plugin Installer created successfully! ===
+    echo The installer executable is: plugin-installer.exe
     echo.
     echo IMPORTANT: This installer must remain in this directory alongside the Visual Studio project files.
     echo.
@@ -38,18 +38,23 @@ if exist logiled-plugin-installer.exe (
     echo 4. JSON for Modern C++ library set up
     echo.
     echo To install the plugin:
-    echo 1. Right-click on logiled-plugin-installer.exe
+    echo 1. Right-click on plugin-installer.exe
     echo 2. Select "Run as administrator"
     echo 3. Follow the installation prompts
     echo.
     echo The installer will:
     echo - Build the C++ plugin using Visual Studio/MSBuild
     echo - Install to NVIDIA G-Assist adapters directory
+    echo - Apply ACL security restrictions to prevent unauthorized modification
     echo - Handle all dependencies automatically
+    echo.
+    echo Note: For pre-built plugins, use build_copy_installer.bat to create
+    echo       a lightweight installer that doesn't require Visual Studio.
     echo.
 ) else (
     echo ERROR: Failed to create installer executable
     exit /b 1
 )
 
-pause 
+pause
+ 
