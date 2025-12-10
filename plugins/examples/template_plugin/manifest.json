@@ -1,0 +1,30 @@
+{
+    "manifestVersion": 1,
+    "executable": "RENAME_ME.exe",
+    "persistent": true,
+    "functions": [
+        {
+            "name": "template_echo",
+            "description": "Example streaming function that echoes user text in multiple chunks. Replace with real functionality for your plugin.",
+            "tags": ["template", "demo", "echo"],
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Free-form text to echo back to the user."
+                }
+            }
+        },
+        {
+            "name": "template_collect_note",
+            "description": "Demonstrates passthrough mode. The plugin requests follow-up input until the user types 'done' or 'cancel'.",
+            "tags": ["template", "demo", "passthrough"],
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Prompt displayed to the user before passthrough begins."
+                }
+            }
+        }
+    ]
+}
+

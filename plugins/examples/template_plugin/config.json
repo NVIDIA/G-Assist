@@ -1,0 +1,11 @@
+{
+  "api_base_url": "https://api.example.com/v1",
+  "api_key": "<replace-with-secure-key>",
+  "default_timeout": 15,
+  "features": {
+    "enable_passthrough": true,
+    "stream_chunk_size": 240,
+    "use_setup_wizard": true
+  }
+}
+

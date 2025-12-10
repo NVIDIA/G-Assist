@@ -76,6 +76,197 @@ ACCESS_TOKEN: Optional[str] = None
 REFRESH_TOKEN: Optional[str] = None
 WIZARD_STEP = 0
 
+# Spotify app credentials (loaded from config.json in main())
+CLIENT_ID = None
+CLIENT_SECRET = None
+USERNAME = None
+
+# OAuth callback server state
+oauth_callback_code = None
+oauth_callback_error = None
+oauth_server_running = False
+
+# Setup state machine
+class SetupState:
+    """Persistent setup state machine for plugin configuration"""
+    UNCONFIGURED = "unconfigured"                    # No app credentials
+    WAITING_APP_CREATION = "waiting_app_creation"    # User creating Spotify app
+    WAITING_CREDENTIALS = "waiting_credentials"       # User entering credentials
+    NEED_USER_AUTH = "need_user_auth"                # Need OAuth tokens
+    WAITING_OAUTH = "waiting_oauth"                  # User authorizing in browser
+    CONFIGURED = "configured"                         # Fully set up
+    
+    def __init__(self, state_file):
+        self.state_file = state_file
+        self.current_state = self.UNCONFIGURED
+        self.completed_steps = []
+        self.last_error = None
+        self.retry_count = 0
+        self.timestamp = None
+        self.load()
+    
+    def load(self):
+        """Load state from disk"""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r') as f:
+                    data = json.load(f)
+                    self.current_state = data.get('current_state', self.UNCONFIGURED)
+                    self.completed_steps = data.get('completed_steps', [])
+                    self.last_error = data.get('last_error')
+                    self.retry_count = data.get('retry_count', 0)
+                    self.timestamp = data.get('timestamp')
+                    logging.info(f"[STATE] Loaded state: {self.current_state}")
+        except Exception as e:
+            logging.error(f"[STATE] Error loading state: {e}")
+    
+    def save(self):
+        """Save state to disk"""
+        try:
+            import time
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            data = {
+                'current_state': self.current_state,
+                'completed_steps': self.completed_steps,
+                'last_error': self.last_error,
+                'retry_count': self.retry_count,
+                'timestamp': time.time()
+            }
+            with open(self.state_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            logging.info(f"[STATE] Saved state: {self.current_state}")
+        except Exception as e:
+            logging.error(f"[STATE] Error saving state: {e}")
+    
+    def advance(self, new_state, completed_step=None):
+        """Advance to new state"""
+        self.current_state = new_state
+        if completed_step and completed_step not in self.completed_steps:
+            self.completed_steps.append(completed_step)
+        self.retry_count = 0
+        self.last_error = None
+        self.save()
+    
+    def record_error(self, error):
+        """Record error and increment retry count"""
+        self.last_error = error
+        self.retry_count += 1
+        self.save()
+    
+    def reset(self):
+        """Reset to unconfigured state"""
+        self.current_state = self.UNCONFIGURED
+        self.completed_steps = []
+        self.last_error = None
+        self.retry_count = 0
+        self.save()
+
+# Global setup state
+SETUP_STATE = None
+
+# Helper response generators (defined early for use throughout the code)
+def generate_message_response(message: str, awaiting_input: bool = False) -> dict:
+    """
+    Generate a message response.
+    
+    PHASE 3: Tethered Mode Protocol
+    - awaiting_input=True: Plugin needs more user interaction, stay in passthrough
+    - awaiting_input=False: Plugin is done, exit passthrough mode
+    """
+    return {
+        'success': True,  # Always include success for protocol compliance
+        'message': message,
+        'awaiting_input': awaiting_input
+    }
+
+def generate_success_response(body: dict = None, awaiting_input: bool = False) -> dict:
+    """Generate a success response with optional data"""
+    response = body.copy() if body is not None else dict()
+    response['success'] = True
+    response['awaiting_input'] = awaiting_input  # PHASE 3
+    return response
+
+def generate_failure_response(body: dict = None) -> dict:
+    """Generate a failure response with optional data"""
+    response = body.copy() if body is not None else dict()
+    response['success'] = False
+    response['awaiting_input'] = False  # PHASE 3: Always exit on failure
+    return response
+
+# PHASE 1: Tethered Mode - Heartbeat and Status Messages
+def send_heartbeat(state="ready"):
+    """Send silent heartbeat to engine (not visible to user)"""
+    try:
+        heartbeat_msg = {
+            "type": "heartbeat",
+            "state": state,
+            "timestamp": time.time()
+        }
+        write_response(heartbeat_msg)
+        logging.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
+    except Exception as e:
+        logging.error(f"[HEARTBEAT] Error: {e}")
+
+def send_status_message(message):
+    """Send status update visible to user"""
+    try:
+        status_msg = {
+            "type": "status",
+            "message": message
+        }
+        write_response(status_msg)
+        logging.info(f"[STATUS] Sent: {message[:50]}...")
+    except Exception as e:
+        logging.error(f"[STATUS] Error: {e}")
+
+def send_state_change(new_state):
+    """Notify engine of state transition"""
+    try:
+        state_msg = {
+            "type": "state_change",
+            "new_state": new_state
+        }
+        write_response(state_msg)
+        logging.info(f"[STATE] Changed to: {new_state}")
+    except Exception as e:
+        logging.error(f"[STATE] Error: {e}")
+
+def start_continuous_heartbeat(state="ready", interval=5, show_dots=True):
+    """
+    Start background thread that sends periodic heartbeats.
+    
+    Args:
+        state: Heartbeat state ("onboarding" or "ready")
+        interval: Seconds between heartbeats
+        show_dots: If True, send visible status dots. If False, send silent heartbeats only.
+    """
+    stop_continuous_heartbeat()
+
+    STATE["heartbeat_message"] = state
+    STATE["heartbeat_active"] = True
+
+    def heartbeat_loop():
+        while STATE["heartbeat_active"]:
+            time.sleep(interval)
+            if STATE["heartbeat_active"]:
+                send_heartbeat(STATE["heartbeat_message"])
+                if show_dots:
+                    send_status_message(".")
+
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    STATE["heartbeat_thread"] = thread
+    thread.start()
+    logging.info(f"[HEARTBEAT] Started continuous heartbeat: state={state}, interval={interval}s, show_dots={show_dots}")
+
+def stop_continuous_heartbeat():
+    """Stop background heartbeat thread"""
+    STATE["heartbeat_active"] = False
+    thread = STATE.get("heartbeat_thread")
+    if thread and thread.is_alive():
+        thread.join(timeout=1)
+    STATE["heartbeat_thread"] = None
+    logging.info("[HEARTBEAT] Stopped continuous heartbeat")
+
 
 def load_config() -> Dict[str, Any]:
     """Load Spotify configuration."""
