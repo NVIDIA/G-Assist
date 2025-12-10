@@ -1,8 +1,8 @@
 {
     "manifestVersion": 1,
-    "executable": "g-assist-plugin-spotify.exe",
+    "executable": "plugin.py",
+    "protocol_version": "2.0",
     "persistent": true,
-    "tethered": true,
     "tether_config": {
         "heartbeat_interval": 5,
         "heartbeat_timeout": 20,

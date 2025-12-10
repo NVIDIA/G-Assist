@@ -1,110 +1,93 @@
+"""
+Discord Plugin for G-Assist - V2 SDK Version
+
+Send messages, clips, and screenshots to Discord channels.
+"""
+
+import os
+import sys
+
+# ============================================================================
+# PATH SETUP - Must be FIRST before any third-party imports!
+# ============================================================================
+_plugin_dir = os.path.dirname(os.path.abspath(__file__))
+_libs_path = os.path.join(_plugin_dir, "libs")
+if os.path.exists(_libs_path) and _libs_path not in sys.path:
+    sys.path.insert(0, _libs_path)
+
+# Now we can import third-party libraries
 import json
 import logging
-import os
-import requests
-import threading
-import time
-from ctypes import byref, windll, wintypes
 from typing import Optional
 
-# Data Types
-Response = dict[bool, Optional[str]]
+import requests
 
-# Get the directory where the plugin is deployed
-PLUGIN_DIR = os.path.join(os.environ.get("PROGRAMDATA", "."), "NVIDIA Corporation", "nvtopps", "rise", "plugins", "discord")
-CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
+try:
+    from gassist_sdk import Plugin
+except ImportError as e:
+    sys.stderr.write(f"FATAL: Cannot import gassist_sdk: {e}\n")
+    sys.exit(1)
 
-# Save log in plugin directory for better organization
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+PLUGIN_NAME = "discord"
+PLUGIN_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", "."),
+    "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
+
 os.makedirs(PLUGIN_DIR, exist_ok=True)
-LOG_FILE = os.path.join(PLUGIN_DIR, 'discord-plugin.log')
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Directories for media files
-CSV_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), 'Videos', 'NVIDIA', 'G-Assist')
-BASE_MP4_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), 'Videos', 'NVIDIA')
-BASE_SCREENSHOT_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), 'Videos', 'NVIDIA')
+CSV_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), "Videos", "NVIDIA", "G-Assist")
+BASE_MP4_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), "Videos", "NVIDIA")
+BASE_SCREENSHOT_DIRECTORY = os.path.join(os.environ.get("USERPROFILE", "."), "Videos", "NVIDIA")
 
-# Global state
-BOT_TOKEN = None
-CHANNEL_ID = None
-GAME_DIRECTORY = None
+# ============================================================================
+# GLOBAL STATE
+# ============================================================================
+BOT_TOKEN: Optional[str] = None
+CHANNEL_ID: Optional[str] = None
+GAME_DIRECTORY: Optional[str] = None
 SETUP_COMPLETE = False
 
-# Tethered mode support
-heartbeat_thread = None
-heartbeat_active = False
 
-# Load config at startup
-try:
-    with open(CONFIG_FILE, 'r') as f:
-        config = json.load(f)
-    BOT_TOKEN = config.get('BOT_TOKEN', '')
-    CHANNEL_ID = config.get('CHANNEL_ID', '')
-    GAME_DIRECTORY = config.get('GAME_DIRECTORY', '')
-    
-    if BOT_TOKEN and len(BOT_TOKEN) > 20 and CHANNEL_ID and len(CHANNEL_ID) > 10:
-        SETUP_COMPLETE = True
-        logger.info(f"Successfully loaded config from {CONFIG_FILE}")
-    else:
-        logger.warning(f"Bot token or channel ID is empty/invalid in {CONFIG_FILE}")
-        BOT_TOKEN = None
-        CHANNEL_ID = None
-except FileNotFoundError:
-    logger.error(f"Config file not found at {CONFIG_FILE}")
-except Exception as e:
-    logger.error(f"Error loading config: {e}")
-
-def send_heartbeat(state="ready"):
-    """Send silent heartbeat to engine (not visible to user)."""
+def load_config():
+    """Load Discord bot configuration."""
+    global BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY, SETUP_COMPLETE
     try:
-        heartbeat_msg = {
-            "type": "heartbeat",
-            "state": state,
-            "timestamp": time.time()
-        }
-        write_response(heartbeat_msg)
-        logger.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
-    except Exception as e:
-        logger.error(f"[HEARTBEAT] Failed to send heartbeat: {e}")
-
-def heartbeat_loop():
-    """Background thread that sends periodic heartbeats."""
-    global heartbeat_active
-    logger.info("[HEARTBEAT] Heartbeat thread started")
-    while heartbeat_active:
-        send_heartbeat(state="ready")
-        time.sleep(5)  # Send heartbeat every 5 seconds
-    logger.info("[HEARTBEAT] Heartbeat thread stopped")
-
-def execute_setup_wizard() -> Response:
-    """Guide user through Discord bot setup."""
-    global SETUP_COMPLETE, BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY
-    
-    # Check if config was updated
-    try:
-        with open(CONFIG_FILE, 'r') as f:
+        with open(CONFIG_FILE, "r") as f:
             config = json.load(f)
-        new_token = config.get('BOT_TOKEN', '')
-        new_channel = config.get('CHANNEL_ID', '')
-        new_game_dir = config.get('GAME_DIRECTORY', '')
+        BOT_TOKEN = config.get("BOT_TOKEN", "")
+        CHANNEL_ID = config.get("CHANNEL_ID", "")
+        GAME_DIRECTORY = config.get("GAME_DIRECTORY", "")
         
-        if new_token and len(new_token) > 20 and new_channel and len(new_channel) > 10:
-            BOT_TOKEN = new_token
-            CHANNEL_ID = new_channel
-            GAME_DIRECTORY = new_game_dir
+        if BOT_TOKEN and len(BOT_TOKEN) > 20 and CHANNEL_ID and len(CHANNEL_ID) > 10:
             SETUP_COMPLETE = True
-            logger.info("Discord bot configured successfully!")
-            return {
-                'success': True,
-                'message': "✓ Discord bot configured! You can now send messages, clips, and screenshots to your Discord channel.",
-                'awaiting_input': False
-            }
-    except:
-        pass
-    
-    # Show setup instructions
-    message = f"""
+            logger.info(f"Successfully loaded config from {CONFIG_FILE}")
+        else:
+            logger.warning("Bot token or channel ID is empty/invalid")
+            BOT_TOKEN = None
+            CHANNEL_ID = None
+    except FileNotFoundError:
+        logger.error(f"Config file not found at {CONFIG_FILE}")
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+
+
+def get_setup_instructions() -> str:
+    """Return setup wizard instructions."""
+    return f"""
 DISCORD PLUGIN - FIRST TIME SETUP
 ==================================
 
@@ -144,368 +127,224 @@ After saving, send me ANY message (like "done") and I'll verify it!
 
 Note: GAME_DIRECTORY is where clips/screenshots are stored (e.g., "Desktop", "RUST")
 """
-    
-    logger.info("Showing Discord setup wizard to user")
-    return {
-        'success': True,
-        'message': message,
-        'awaiting_input': True
-    }
 
-def execute_initialize_command() -> dict:
-    """Initialize the plugin."""
-    logger.info("Initializing Discord plugin...")
-    
-    # Start heartbeat thread
-    global heartbeat_thread, heartbeat_active
-    if not heartbeat_active:
-        heartbeat_active = True
-        heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
-        heartbeat_thread.start()
-        logger.info("[HEARTBEAT] Started heartbeat thread")
-    
-    # Check if setup is needed
-    if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
-        return execute_setup_wizard()
-    
-    return generate_success_response('Discord plugin initialized successfully.')
-
-def execute_shutdown_command() -> dict:
-    """Shutdown the plugin."""
-    logger.info('Shutting down Discord plugin')
-    
-    # Stop heartbeat thread
-    global heartbeat_active, heartbeat_thread
-    if heartbeat_active:
-        heartbeat_active = False
-        if heartbeat_thread:
-            heartbeat_thread.join(timeout=1)
-        logger.info("[HEARTBEAT] Stopped heartbeat thread")
-    
-    return generate_success_response('Shutdown success.')
-
-def send_message_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
-    """Send a text message to Discord channel."""
-    try:
-        if not BOT_TOKEN or not CHANNEL_ID:
-            return generate_failure_response('Discord bot not configured.')
-        
-        text = params.get('message', '')
-        if not text:
-            return generate_failure_response('No message provided.')
-        
-        # Send status update
-        if send_status_callback:
-            send_status_callback(generate_status_update("Sending message to Discord..."))
-        
-        logger.info(f'Sending message to Discord channel: {CHANNEL_ID}')
-        
-        url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        headers = {"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"}
-        payload = {"content": text}
-
-        r = requests.post(url, headers=headers, json=payload)
-
-        if r.status_code == 200 or r.status_code == 201:
-            logger.info('Message sent successfully.')
-            return generate_success_response('Message sent successfully.')
-        else:
-            logger.error(f'Failed to send message: {r.text}')
-            return generate_failure_response(f'Failed to send message: {r.text}')
-
-    except Exception as e:
-        logger.error(f'Error in send_message_to_discord_channel: {str(e)}')
-        return generate_failure_response('Error sending message.')
 
 def find_latest_file(directory: str, extension: str) -> Optional[str]:
     """Find the most recently modified file with given extension."""
     try:
         if not os.path.exists(directory):
-            logger.error(f'Directory not found: {directory}')
+            logger.error(f"Directory not found: {directory}")
             return None
-            
         files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(extension)]
         if not files:
             return None
         return max(files, key=os.path.getmtime)
     except Exception as e:
-        logger.error(f'Error finding latest file: {str(e)}')
+        logger.error(f"Error finding latest file: {str(e)}")
         return None
 
-def send_latest_chart_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None, send_status_callback=None) -> dict:
-    """Send latest performance chart (CSV) to Discord."""
-    try:
-        if not BOT_TOKEN or not CHANNEL_ID:
-            return generate_failure_response('Discord bot not configured.')
-        
-        # Send status update
-        if send_status_callback:
-            send_status_callback(generate_status_update("Finding latest chart..."))
-            
-        caption = params.get('caption', '') if params else ''
-        file_path = find_latest_file(CSV_DIRECTORY, '.csv')
 
-        if not file_path:
-            return generate_failure_response('No CSV file found.')
-        
-        # Send status update
-        if send_status_callback:
-            send_status_callback(generate_status_update("Uploading chart to Discord..."))
+# ============================================================================
+# PLUGIN SETUP
+# ============================================================================
+plugin = Plugin(
+    name=PLUGIN_NAME,
+    version="2.0.0",
+    description="Send messages and media to Discord"
+)
 
-        url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-        files = {"file": open(file_path, 'rb')}
-        payload = {"content": caption}
 
-        r = requests.post(url, headers=headers, data=payload, files=files)
-
-        if r.status_code == 200 or r.status_code == 201:
-            return generate_success_response('CSV sent successfully.')
-        else:
-            return generate_failure_response(f'Failed to send CSV: {r.text}')
-
-    except Exception as e:
-        logger.error(f'Error in send_latest_chart_to_discord_channel: {str(e)}')
-        return generate_failure_response('Error sending CSV.')
-
-def send_latest_shadowplay_clip_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
-    """Send latest ShadowPlay clip to Discord."""
-    try:
-        if not BOT_TOKEN or not CHANNEL_ID:
-            return generate_failure_response('Discord bot not configured.')
-        
-        if not GAME_DIRECTORY:
-            return generate_failure_response('GAME_DIRECTORY not configured.')
-            
-        caption = params.get('caption', '') if params else ''
-        mp4_directory = os.path.join(BASE_MP4_DIRECTORY, GAME_DIRECTORY)
-        file_path = find_latest_file(mp4_directory, '.mp4')
-
-        if not file_path:
-            return generate_failure_response(f'No MP4 file found in {mp4_directory}.')
-
-        url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-        files = {"file": open(file_path, 'rb')}
-        payload = {"content": caption}
-        r = requests.post(url, headers=headers, data=payload, files=files)
-
-        if r.status_code == 200 or r.status_code == 201:
-            return generate_success_response('MP4 sent successfully.')
-        else:
-            return generate_failure_response(f'Failed to send MP4: {r.text}')
-
-    except Exception as e:
-        logger.error(f'Error in send_latest_shadowplay_clip_to_discord_channel: {str(e)}')
-        return generate_failure_response('Error sending MP4.')
-
-def send_latest_screenshot_to_discord_channel(params: dict = None, context: dict = None, system_info: dict = None) -> dict:
-    """Send latest screenshot to Discord."""
-    try:
-        if not BOT_TOKEN or not CHANNEL_ID:
-            return generate_failure_response('Discord bot not configured.')
-        
-        if not GAME_DIRECTORY:
-            return generate_failure_response('GAME_DIRECTORY not configured.')
-            
-        caption = params.get('caption', '') if params else ''
-        screenshot_directory = os.path.join(BASE_SCREENSHOT_DIRECTORY, GAME_DIRECTORY)
-        file_path = find_latest_file(screenshot_directory, '.png')
-
-        if not file_path:
-            return generate_failure_response(f'No screenshot found in {screenshot_directory}.')
-
-        url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-        files = {"file": open(file_path, 'rb')}
-        payload = {"content": caption}
-
-        r = requests.post(url, headers=headers, data=payload, files=files)
-
-        if r.status_code == 200 or r.status_code == 201:
-            return generate_success_response('Screenshot sent successfully.')
-        else:
-            return generate_failure_response(f'Failed to send screenshot: {r.text}')
-
-    except Exception as e:
-        logger.error(f'Error in send_latest_screenshot_to_discord_channel: {str(e)}')
-        return generate_failure_response('Error sending screenshot.')
-
-def generate_failure_response(message: str = None) -> Response:
-    """Generate a failure response."""
-    response = {'success': False}
-    if message:
-        response['message'] = message
-    return response
-
-def generate_success_response(message: str = None) -> Response:
-    """Generate a success response."""
-    response = {'success': True}
-    if message:
-        response['message'] = message
-    return response
-
-def generate_status_update(message: str) -> dict:
-    """Generate a status update (not a final response).
-    
-    Status updates are intermediate messages that don't end the plugin execution.
-    They should NOT include 'success' field to avoid being treated as final responses.
+# ============================================================================
+# COMMANDS
+# ============================================================================
+@plugin.command("send_message_to_discord_channel")
+def send_message_to_discord_channel(message: str = ""):
     """
-    return {'status': 'in_progress', 'message': message}
-
-def read_command() -> dict | None:
-    """Read command from stdin pipe."""
+    Send a text message to Discord channel.
+    
+    Args:
+        message: The text message to send
+    """
+    global BOT_TOKEN, CHANNEL_ID, SETUP_COMPLETE
+    
+    load_config()
+    if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+    
+    if not message:
+        return "No message provided."
+    
+    plugin.stream("Sending message to Discord...")
+    
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    headers = {"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"}
+    payload = {"content": message}
+    
     try:
-        STD_INPUT_HANDLE = -10
-        pipe = windll.kernel32.GetStdHandle(STD_INPUT_HANDLE)
-        chunks = []
-
-        while True:
-            BUFFER_SIZE = 4096
-            message_bytes = wintypes.DWORD()
-            buffer = bytes(BUFFER_SIZE)
-            success = windll.kernel32.ReadFile(pipe, buffer, BUFFER_SIZE, byref(message_bytes), None)
-
-            if not success:
-                logger.error('Error reading from command pipe')
-                return None
-
-            chunk = buffer.decode('utf-8')[:message_bytes.value]
-            chunks.append(chunk)
-
-            if message_bytes.value < BUFFER_SIZE:
-                break
-
-        retval = ''.join(chunks)
-        logger.info(f'[PIPE] Read {len(retval)} bytes from pipe')
-        return json.loads(retval)
-
-    except json.JSONDecodeError:
-        logger.error('Failed to decode JSON input')
-        return None
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        if r.status_code in [200, 201]:
+            logger.info("Message sent successfully.")
+            return "Message sent successfully."
+        else:
+            logger.error(f"Failed to send message: {r.text}")
+            return f"Failed to send message: {r.text}"
     except Exception as e:
-        logger.error(f'Unexpected error in read_command: {str(e)}')
-        return None
+        logger.error(f"Error in send_message_to_discord_channel: {str(e)}")
+        return "Error sending message."
 
-def write_response(response: Response) -> None:
-    """Write response to stdout pipe."""
+
+@plugin.command("send_latest_chart_to_discord_channel")
+def send_latest_chart_to_discord_channel(caption: str = ""):
+    """
+    Send latest performance chart (CSV) to Discord.
+    
+    Args:
+        caption: Optional caption for the file
+    """
+    global BOT_TOKEN, CHANNEL_ID, SETUP_COMPLETE
+    
+    load_config()
+    if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+    
+    plugin.stream("Finding latest chart...")
+    
+    file_path = find_latest_file(CSV_DIRECTORY, ".csv")
+    if not file_path:
+        return "No CSV file found."
+    
+    plugin.stream("Uploading chart to Discord...")
+    
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    
     try:
-        STD_OUTPUT_HANDLE = -11
-        pipe = windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-        json_message = json.dumps(response) + '<<END>>'
-        message_bytes = json_message.encode('utf-8')
-        message_len = len(message_bytes)
+        with open(file_path, "rb") as f:
+            files = {"file": f}
+            payload = {"content": caption}
+            r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
         
-        logger.info(f"[PIPE] Writing message: success={response.get('success', 'unknown')}, length={message_len} bytes")
-
-        bytes_written = wintypes.DWORD()
-        success = windll.kernel32.WriteFile(pipe, message_bytes, message_len, byref(bytes_written), None)
-        
-        if success:
-            logger.info(f"[PIPE] Write OK - bytes={bytes_written.value}/{message_len}")
+        if r.status_code in [200, 201]:
+            return "CSV sent successfully."
         else:
-            logger.error(f"[PIPE] Write FAILED - GetLastError={windll.kernel32.GetLastError()}")
+            return f"Failed to send CSV: {r.text}"
     except Exception as e:
-        logger.error(f'Failed to write response: {str(e)}')
+        logger.error(f"Error in send_latest_chart_to_discord_channel: {str(e)}")
+        return "Error sending CSV."
 
-def main():
-    """Main plugin entry point."""
-    TOOL_CALLS_PROPERTY = 'tool_calls'
-    CONTEXT_PROPERTY = 'messages'
-    SYSTEM_INFO_PROPERTY = 'system_info'
-    FUNCTION_PROPERTY = 'func'
-    PARAMS_PROPERTY = 'params'
-    INITIALIZE_COMMAND = 'initialize'
-    SHUTDOWN_COMMAND = 'shutdown'
 
-    commands = {
-        'initialize': execute_initialize_command,
-        'shutdown': execute_shutdown_command,
-        'send_message_to_discord_channel': send_message_to_discord_channel,
-        'send_latest_chart_to_discord_channel': send_latest_chart_to_discord_channel,
-        'send_latest_shadowplay_clip_to_discord_channel': send_latest_shadowplay_clip_to_discord_channel,
-        'send_latest_screenshot_to_discord_channel': send_latest_screenshot_to_discord_channel,
-    }
-
-    cmd = ''
-    logger.info('Discord plugin started')
-    read_failures = 0
-    MAX_READ_FAILURES = 3
-
-    while cmd != SHUTDOWN_COMMAND:
-        response = None
-        input = read_command()
-        if input is None:
-            read_failures += 1
-            logger.error(f'Error reading command (failure {read_failures}/{MAX_READ_FAILURES})')
-            if read_failures >= MAX_READ_FAILURES:
-                logger.error('Too many read failures, exiting')
-                break
-            continue
+@plugin.command("send_latest_shadowplay_clip_to_discord_channel")
+def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
+    """
+    Send latest ShadowPlay clip to Discord.
+    
+    Args:
+        caption: Optional caption for the clip
+    """
+    global BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY, SETUP_COMPLETE
+    
+    load_config()
+    if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+    
+    if not GAME_DIRECTORY:
+        return "GAME_DIRECTORY not configured."
+    
+    plugin.stream("Finding latest clip...")
+    
+    mp4_directory = os.path.join(BASE_MP4_DIRECTORY, GAME_DIRECTORY)
+    file_path = find_latest_file(mp4_directory, ".mp4")
+    
+    if not file_path:
+        return f"No MP4 file found in {mp4_directory}."
+    
+    plugin.stream("Uploading clip to Discord...")
+    
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    
+    try:
+        with open(file_path, "rb") as f:
+            files = {"file": f}
+            payload = {"content": caption}
+            r = requests.post(url, headers=headers, data=payload, files=files, timeout=60)
         
-        # Reset failure counter on successful read
-        read_failures = 0
-
-        logger.info(f'Received input: {input}')
-
-        # Handle user input passthrough messages (for setup wizard interaction)
-        if isinstance(input, dict) and input.get('msg_type') == 'user_input':
-            user_input_text = input.get('content', '')
-            logger.info(f'[INPUT] Received user input passthrough: "{user_input_text}"')
-            
-            # Check if setup is needed
-            global SETUP_COMPLETE, BOT_TOKEN, CHANNEL_ID
-            if not SETUP_COMPLETE:
-                logger.info("[WIZARD] User input during setup - checking config")
-                response = execute_setup_wizard()
-                write_response(response)
-                continue
-            else:
-                # Setup already complete, acknowledge the input
-                logger.info("[INPUT] Setup already complete, acknowledging user input")
-                response = generate_success_response("Got it! The Discord plugin is ready to use.")
-                write_response(response)
-                continue
-
-        if TOOL_CALLS_PROPERTY in input:
-            tool_calls = input[TOOL_CALLS_PROPERTY]
-            for tool_call in tool_calls:
-                if FUNCTION_PROPERTY in tool_call:
-                    cmd = tool_call[FUNCTION_PROPERTY]
-                    logger.info(f'Processing command: {cmd}')
-                    if cmd in commands:
-                        if cmd == INITIALIZE_COMMAND or cmd == SHUTDOWN_COMMAND:
-                            response = commands[cmd]()
-                        else:
-                            # Check if setup is needed before executing Discord functions
-                            if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
-                                logger.info('[COMMAND] Bot not configured - starting setup wizard')
-                                response = execute_setup_wizard()
-                            else:
-                                params = tool_call.get(PARAMS_PROPERTY, {})
-                                context = input.get(CONTEXT_PROPERTY, {})
-                                system_info = input.get(SYSTEM_INFO_PROPERTY, {})
-                                logger.info(f'Executing command: {cmd}')
-                                response = commands[cmd](params, context, system_info, send_status_callback=write_response)
-                    else:
-                        logger.warning(f'Unknown command: {cmd}')
-                        response = generate_failure_response(f'Unknown command: {cmd}')
-                else:
-                    logger.warning('Malformed input: missing function property')
-                    response = generate_failure_response('Malformed input.')
+        if r.status_code in [200, 201]:
+            return "MP4 sent successfully."
         else:
-            logger.warning('Malformed input: missing tool_calls property')
-            response = generate_failure_response('Malformed input.')
+            return f"Failed to send MP4: {r.text}"
+    except Exception as e:
+        logger.error(f"Error in send_latest_shadowplay_clip_to_discord_channel: {str(e)}")
+        return "Error sending MP4."
 
-        logger.info(f'Sending response: {response}')
-        write_response(response)
 
-        if cmd == SHUTDOWN_COMMAND:
-            logger.info('Shutdown command received, terminating plugin')
-            break
+@plugin.command("send_latest_screenshot_to_discord_channel")
+def send_latest_screenshot_to_discord_channel(caption: str = ""):
+    """
+    Send latest screenshot to Discord.
+    
+    Args:
+        caption: Optional caption for the screenshot
+    """
+    global BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY, SETUP_COMPLETE
+    
+    load_config()
+    if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+    
+    if not GAME_DIRECTORY:
+        return "GAME_DIRECTORY not configured."
+    
+    plugin.stream("Finding latest screenshot...")
+    
+    screenshot_directory = os.path.join(BASE_SCREENSHOT_DIRECTORY, GAME_DIRECTORY)
+    file_path = find_latest_file(screenshot_directory, ".png")
+    
+    if not file_path:
+        return f"No screenshot found in {screenshot_directory}."
+    
+    plugin.stream("Uploading screenshot to Discord...")
+    
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    
+    try:
+        with open(file_path, "rb") as f:
+            files = {"file": f}
+            payload = {"content": caption}
+            r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
+        
+        if r.status_code in [200, 201]:
+            return "Screenshot sent successfully."
+        else:
+            return f"Failed to send screenshot: {r.text}"
+    except Exception as e:
+        logger.error(f"Error in send_latest_screenshot_to_discord_channel: {str(e)}")
+        return "Error sending screenshot."
 
-    logger.info('Discord plugin stopped.')
-    return 0
 
-if __name__ == '__main__':
-    main()
+@plugin.command("on_input")
+def on_input(content: str = ""):
+    """Handle user input during setup wizard."""
+    global SETUP_COMPLETE
+    
+    load_config()
+    if SETUP_COMPLETE:
+        plugin.set_keep_session(False)
+        return "Discord bot configured! You can now send messages, clips, and screenshots to your Discord channel."
+    else:
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+if __name__ == "__main__":
+    logger.info("Starting Discord plugin (SDK version)...")
+    load_config()
+    plugin.run()

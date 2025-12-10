@@ -3,40 +3,75 @@
   "executable": "g-assist-plugin-logiled.exe",
   "persistent": true,
   "name": "logiled",
-  "description": "Control Logitech RGB lighting devices.",
+  "description": "Control Logitech RGB lighting devices including keyboards, mice, and headsets.",
   "functions": [
     {
       "name": "logi_change_keyboard_lights",
-      "description": "Changes the color of the keyboard's LEDs",
-      "tags": [ "lighting", "keyboard", "Logiled", "Logitech", "logi" ],
+      "description": "Changes the RGB color of Logitech keyboard LEDs. Controls all zones and lighting effects on supported Logitech G keyboards. Use this when the user wants to change keyboard backlight color, set keyboard RGB lighting, or customize keyboard illumination.",
+      "tags": [
+        "lighting",
+        "keyboard",
+        "Logiled",
+        "Logitech",
+        "logi",
+        "RGB",
+        "backlight",
+        "illumination",
+        "keyboard color",
+        "LED"
+      ],
       "properties": {
         "color": {
           "type": "string",
-          "description": "the color"
+          "description": "[required] The color to set the keyboard LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'ice_blue', 'crimson', 'gold', 'neon_green', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change keyboard to blue' (color='blue'), 'Set keyboard lighting to red' (color='red'), 'Turn keyboard off' (color='off')."
         }
-      }
+      },
+      "required": ["color"]
     },
     {
       "name": "logi_change_mouse_lights",
-      "description": "Changes the color of the mouse's LEDs",
-      "tags": [ "lighting", "mouse", "Logiled", "Logitech", "logi" ],
+      "description": "Changes the RGB color of Logitech mouse LEDs. Controls all zones and lighting effects on supported Logitech G mice. Use this when the user wants to change mouse lighting color, set mouse RGB effects, or customize mouse illumination.",
+      "tags": [
+        "lighting",
+        "mouse",
+        "Logiled",
+        "Logitech",
+        "logi",
+        "RGB",
+        "illumination",
+        "mouse color",
+        "LED"
+      ],
       "properties": {
         "color": {
           "type": "string",
-          "description": "the color"
+          "description": "[required] The color to set the mouse LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'ice_blue', 'crimson', 'gold', 'neon_green', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change mouse to green' (color='green'), 'Set mouse lighting to purple' (color='purple'), 'Turn mouse off' (color='off')."
         }
-      }
+      },
+      "required": ["color"]
     },
     {
       "name": "logi_change_headphone_lights",
-      "description": "Changes the color of the headset's LEDs",
-      "tags": [ "lighting", "headphones", "headset", "Logiled", "Logitech", "logi" ],
+      "description": "Changes the RGB color of Logitech headset/headphone LEDs. Controls all zones and lighting effects on supported Logitech G headsets. Use this when the user wants to change headset lighting color, set headphone RGB effects, or customize headphone illumination.",
+      "tags": [
+        "lighting",
+        "headphones",
+        "headset",
+        "Logiled",
+        "Logitech",
+        "logi",
+        "RGB",
+        "illumination",
+        "headset color",
+        "LED"
+      ],
       "properties": {
         "color": {
           "type": "string",
-          "description": "the color"
+          "description": "[required] The color to set the headset LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'ice_blue', 'crimson', 'gold', 'neon_green', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change headset to cyan' (color='cyan'), 'Set headphones lighting to pink' (color='pink'), 'Turn headphones off' (color='off')."
         }
-      }
+      },
+      "required": ["color"]
     }
   ]
 }

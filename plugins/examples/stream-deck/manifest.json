@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 1,
+  "name": "stream-deck",
+  "version": "1.0.0",
+  "description": "Stream Deck plugin - discover and execute Stream Deck actions",
+  "executable": "plugin.py",
+  "persistent": true,
+  "protocol_version": "2.0",
+  "functions": [
+    {
+      "name": "streamdeck_discover",
+      "description": "Discover Stream Deck and learn what actions are available. Call this first to see what your Stream Deck can do, then use the discovered action functions.",
+      "tags": ["stream-deck", "streamdeck", "discover", "elgato", "actions"],
+      "properties": {},
+      "required": []
+    }
+  ]
+}

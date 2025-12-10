@@ -1,0 +1,18 @@
+{
+  "name": "gassist-sdk",
+  "version": "2.0.0",
+  "description": "G-Assist Plugin SDK for Node.js",
+  "main": "gassist-sdk.js",
+  "author": "NVIDIA Corporation",
+  "license": "Apache-2.0",
+  "keywords": [
+    "gassist",
+    "nvidia",
+    "plugin",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+

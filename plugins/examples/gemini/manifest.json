@@ -1,7 +1,11 @@
 {
   "manifestVersion": 1,
-  "executable": "g-assist-plugin-gemini.exe",
+  "name": "gemini",
+  "version": "2.0.0",
+  "description": "Google Gemini AI assistant with web search capabilities",
+  "executable": "plugin.py",
   "persistent": true,
+  "protocol_version": "2.0",
   "functions": [
     {
       "name": "query_gemini",
@@ -10,13 +14,10 @@
       "properties": {
         "query": {
           "type": "string",
-          "description": "The complete user question or search query to send to Google Gemini. This should be the user's exact question or a rephrased version that captures their intent. Examples: 'Who won the basketball game last night?', 'What are the best settings for Cyberpunk 2077?', 'How do I make chicken tikka masala?', 'What's the capital of Mongolia?'"
-        },
-        "context": {
-          "type": "string",
-          "description": "[OPTIONAL] Additional contextual information that might help provide better results. Can include: current game being played, user's location, time of day, or any other relevant background information. Examples: 'playing Elden Ring', 'Los Angeles', 'evening gaming session'. Leave empty if no specific context is needed."
+          "description": "The complete user question or search query to send to Google Gemini. This should be the user's exact question or a rephrased version that captures their intent."
         }
-      }
+      },
+      "required": ["query"]
     }
   ]
 }

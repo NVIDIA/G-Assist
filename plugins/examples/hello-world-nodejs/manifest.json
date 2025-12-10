@@ -1,0 +1,48 @@
+{
+  "manifestVersion": 1,
+  "name": "hello-world-nodejs",
+  "version": "1.0.0",
+  "description": "A simple Node.js Hello World plugin demonstrating the G-Assist Node.js SDK and JSON-RPC V2 protocol",
+  "executable": "launch.bat",
+  "persistent": true,
+  "protocol_version": "2.0",
+  "functions": [
+    {
+      "name": "say_hello",
+      "description": "Greet the user with a personalized hello message. Use this when the user wants a greeting or says hello.",
+      "tags": ["hello", "greet", "welcome", "example", "nodejs"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the person to greet. If not provided, defaults to 'World'."
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "count_with_streaming",
+      "description": "Count from 1 to a specified number, demonstrating streaming output. Use this when the user wants to see a counting demonstration.",
+      "tags": ["count", "demo", "streaming", "example", "nodejs"],
+      "properties": {
+        "count_to": {
+          "type": "integer",
+          "description": "The number to count to (1-20). Defaults to 5."
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "start_conversation",
+      "description": "Start an interactive conversation session. Use this when the user wants to have a back-and-forth chat.",
+      "tags": ["chat", "conversation", "talk", "example", "nodejs"],
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "The topic the user wants to discuss. Defaults to 'anything'."
+        }
+      },
+      "required": []
+    }
+  ]
+}
+
