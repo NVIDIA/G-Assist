@@ -280,7 +280,8 @@ if "%P_TYPE%"=="cpp" (
     )
     
     :: Copy any DLLs from libs folder to deployed plugin's libs/
-    if exist "%P_LIBS%\*.dll" (
+    :: Note: Using dir to check for wildcards since "if exist *.dll" is unreliable
+    dir "%P_LIBS%\*.dll" >nul 2>&1 && (
         echo Copying runtime DLLs to libs/...
         if not exist "%P_DEPLOY_DIR%\libs" mkdir "%P_DEPLOY_DIR%\libs"
         copy /Y "%P_LIBS%\*.dll" "%P_DEPLOY_DIR%\libs\" >nul
@@ -446,4 +447,3 @@ exit /b 0
 :done
 endlocal
 exit /b 0
-
