@@ -40,21 +40,50 @@ Any device compatible with iCUE SDK v4 and Automation SDK:
 - Windows 10/11
 - [Corsair iCUE Software](https://www.corsair.com/us/en/s/downloads) installed and running
 - G-Assist installed
-- Visual Studio 2022 (to build)
 
-### Build
+### Quick Deploy (Pre-built)
 
-1. Clone/download this repository
-2. Open `corsair.sln` in Visual Studio 2022
-3. Build in Release|x64 configuration
+Use the setup script from the `plugins/examples/` folder:
 
-### Install
+```batch
+cd plugins\examples
+setup.bat corsair-new -deploy
+```
 
-Copy to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\corsair\`:
+This will:
+1. Copy runtime DLLs to `libs/` folder
+2. Deploy the pre-built `g-assist-plugin-corsair.exe`, `manifest.json`, and DLLs to G-Assist
+
+### Build from Source
+
+If you want to modify and rebuild:
+
+1. **Setup** (copies SDK headers and prepares build environment):
+   ```batch
+   cd plugins\examples
+   setup.bat corsair-new
+   ```
+
+2. **Build** with Visual Studio:
+   ```batch
+   cd corsair-new
+   msbuild corsair.sln /p:Configuration=Release /p:Platform=x64
+   ```
+   Or open `corsair.sln` in Visual Studio 2022 and build Release|x64.
+
+3. **Deploy** (after building):
+   ```batch
+   cd plugins\examples
+   setup.bat corsair-new -deploy
+   ```
+
+### Manual Install
+
+If not using the setup script, copy to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\corsair-new\`:
 - `g-assist-plugin-corsair.exe`
 - `manifest.json`
-- `iCUESDK.x64_2019.dll` (from `iCUESDK\redist\x64\`)
-- `iCUEAutomationSDK.dll` (from `AutomationSDK\redist\x64\`)
+- `libs\iCUESDK.x64_2019.dll` (from `iCUESDK\redist\x64\`)
+- `libs\iCUEAutomationSDK.dll` (from `AutomationSDK\redist\x64\`)
 
 ## Usage Examples
 
@@ -111,11 +140,33 @@ For the plugin to work, configure iCUE:
 | DPI not changing | Check if mouse supports DPI control in iCUE |
 | Lighting not changing | Disable Windows Dynamic Lighting in Settings |
 
+## Project Structure
+
+```
+corsair-new/
+├── g-assist-plugin-corsair.exe  # Pre-built executable (delay-load DLLs)
+├── manifest.json                # Plugin manifest for G-Assist
+├── main.cpp                     # Source code
+├── corsair.sln                  # Visual Studio solution
+├── corsair.vcxproj              # Visual Studio project
+├── iCUESDK/                     # Corsair iCUE SDK
+│   ├── include/                 # Headers
+│   ├── lib/x64/                 # Link libraries
+│   └── redist/x64/              # Runtime DLLs
+├── AutomationSDK/               # Corsair Automation SDK
+│   ├── include/                 # Headers
+│   ├── lib/x64/                 # Link libraries
+│   └── redist/x64/              # Runtime DLLs
+├── json/                        # nlohmann/json (header-only)
+└── libs/                        # Runtime DLLs (created by setup.bat)
+```
+
 ## Technical Details
 
 - **Protocol**: V2 (JSON-RPC 2.0 with length-prefix framing)
 - **SDKs**: iCUE SDK v4, Automation SDK
 - **Language**: C++20
+- **DLL Loading**: Delay-load with `libs/` subdirectory search path
 
 ## License
 
