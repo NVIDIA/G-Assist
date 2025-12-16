@@ -399,6 +399,11 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 
-# 3rd Party Components
-iCUESDK/
-json/
+# 3rd Party Components - KEEP these for building:
+# iCUESDK/  (needed for build)
+# json/     (needed for build)
+
+# Build output folders (but keep root exe for distribution)
+x64/
+build/
+libs/
