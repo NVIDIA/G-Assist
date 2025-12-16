@@ -196,6 +196,17 @@ goto :eof
 :deploy_plugin
 echo Deploying to %P_DEPLOY_DIR%...
 
+:: ============================================================
+:: PRE-DEPLOYMENT: Validate source manifest
+:: ============================================================
+call :validate_manifest "%P_DIR%\manifest.json" "SOURCE"
+if errorlevel 1 (
+    echo.
+    echo ERROR: Source manifest validation failed - NOT deploying!
+    echo Fix the issues above before deploying.
+    goto :eof
+)
+
 :: Create deploy directory if it doesn't exist
 if not exist "%P_DEPLOY_DIR%" mkdir "%P_DEPLOY_DIR%"
 
@@ -267,8 +278,76 @@ if "%P_TYPE%"=="nodejs" (
     if exist "%P_LIBS%\gassist-sdk.js" copy /Y "%P_LIBS%\gassist-sdk.js" "%P_DEPLOY_DIR%\" >nul
 )
 
+:: ============================================================
+:: POST-DEPLOYMENT: Validate deployed manifest
+:: ============================================================
+call :validate_manifest "%P_DEPLOY_DIR%\manifest.json" "DEPLOYED"
+if errorlevel 1 (
+    echo.
+    echo WARNING: Deployed manifest validation failed!
+    echo The plugin may not load correctly in G-Assist.
+)
+
 echo Deployed to: %P_DEPLOY_DIR%
 goto :eof
+
+:: ============================================================
+:: VALIDATE MANIFEST
+:: Checks manifest.json for common issues that would prevent loading
+:: Usage: call :validate_manifest "path\to\manifest.json" "SOURCE|DEPLOYED"
+:: ============================================================
+:validate_manifest
+set "MANIFEST_PATH=%~1"
+set "MANIFEST_TYPE=%~2"
+set "VALIDATION_ERRORS=0"
+
+echo Validating %MANIFEST_TYPE% manifest...
+
+:: Check file exists
+if not exist "%MANIFEST_PATH%" (
+    echo   [ERROR] manifest.json not found at %MANIFEST_PATH%
+    exit /b 1
+)
+
+:: Check file is not empty (0 bytes)
+for %%F in ("%MANIFEST_PATH%") do set MANIFEST_SIZE=%%~zF
+if "%MANIFEST_SIZE%"=="0" (
+    echo   [ERROR] manifest.json is EMPTY (0 bytes) - this will fail to load!
+    exit /b 1
+)
+
+:: Use PowerShell to validate JSON structure and required fields
+powershell -NoProfile -Command ^
+    "$ErrorActionPreference='Stop'; " ^
+    "try { " ^
+    "  $m = Get-Content '%MANIFEST_PATH%' -Raw -Encoding UTF8 | ConvertFrom-Json; " ^
+    "  $errs = @(); " ^
+    "  if (-not $m.manifestVersion) { $errs += 'Missing manifestVersion (must be 1)' } " ^
+    "  elseif ($m.manifestVersion -ne 1) { $errs += 'Invalid manifestVersion (must be 1)' } " ^
+    "  if (-not $m.executable) { $errs += 'Missing executable field' } " ^
+    "  if ($null -eq $m.persistent) { $errs += 'Missing persistent field (true/false)' } " ^
+    "  if (-not $m.functions -and -not $m.schema) { $errs += 'Missing functions array or schema' } " ^
+    "  if ($m.functions -and $m.functions.Count -eq 0) { $errs += 'functions array is empty' } " ^
+    "  foreach ($f in $m.functions) { " ^
+    "    if (-not $f.name) { $errs += 'Function missing name field' } " ^
+    "    elseif ($f.name -like 'rise_*') { $errs += \"Function '$($f.name)' uses reserved rise_ prefix\" } " ^
+    "    if (-not $f.description) { $errs += \"Function '$($f.name)' missing description\" } " ^
+    "  } " ^
+    "  if ($errs.Count -gt 0) { " ^
+    "    foreach ($e in $errs) { Write-Host \"  [ERROR] $e\" } " ^
+    "    exit 1 " ^
+    "  } " ^
+    "  Write-Host '  [OK] Manifest is valid'; exit 0 " ^
+    "} catch { " ^
+    "  Write-Host \"  [ERROR] Invalid JSON: $($_.Exception.Message)\"; exit 1 " ^
+    "}"
+
+if errorlevel 1 (
+    set "VALIDATION_ERRORS=1"
+    exit /b 1
+)
+
+exit /b 0
 
 :: ============================================================
 :: CHECK PYTHON VERSION
