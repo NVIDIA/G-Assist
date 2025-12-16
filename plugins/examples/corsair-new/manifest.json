@@ -1,0 +1,69 @@
+{
+  "manifestVersion": 1,
+  "name": "corsair",
+  "version": "2.0.0",
+  "description": "Control Corsair iCUE devices - lighting, DPI, EQ, and profiles",
+  "protocol_version": "2.0",
+  "executable": "g-assist-plugin-corsair.exe",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "corsair_set_mouse_dpi",
+      "description": "Set mouse DPI (sensitivity). Auto-detects connected Corsair mouse. Common values: 400 (precision), 800 (balanced), 1600 (fast), 3200 (very fast).",
+      "tags": ["mouse", "DPI", "sensitivity", "Corsair", "iCUE"],
+      "properties": {
+        "dpi": {
+          "type": "number",
+          "description": "DPI value between 100-26000"
+        }
+      },
+      "required": ["dpi"]
+    },
+    {
+      "name": "corsair_set_lighting",
+      "description": "Change LED color on any Corsair device. Auto-detects device type or targets specific device. Use 'all' for all devices.",
+      "tags": ["lighting", "LED", "RGB", "color", "Corsair", "iCUE", "keyboard", "mouse", "headset"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "Color name (red, blue, green, cyan, magenta, yellow, white, orange, purple, pink, gold, off) or 'off' to turn off"
+        },
+        "device": {
+          "type": "string",
+          "description": "Optional: 'keyboard', 'mouse', 'headset', 'mousemat', 'fans', 'cooler', 'ram', 'all'. If not specified, applies to all devices."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_headset_eq",
+      "description": "Set headset equalizer preset. Auto-detects connected Corsair headset.",
+      "tags": ["headset", "headphone", "EQ", "equalizer", "audio", "Corsair", "iCUE", "sound"],
+      "properties": {
+        "preset": {
+          "type": "string",
+          "description": "EQ preset name like 'Pure Direct', 'Bass Boost', 'FPS', 'Movie', 'Music', 'Clear Chat', or custom preset name"
+        }
+      },
+      "required": ["preset"]
+    },
+    {
+      "name": "corsair_set_profile",
+      "description": "Switch to an iCUE profile. Profiles contain saved lighting and device settings.",
+      "tags": ["profile", "preset", "Corsair", "iCUE", "settings"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Profile name to activate (case-insensitive)"
+        }
+      },
+      "required": ["name"]
+    },
+    {
+      "name": "corsair_get_devices",
+      "description": "List all connected Corsair devices with their capabilities. Use this to see what devices are available.",
+      "tags": ["devices", "list", "info", "Corsair", "iCUE", "status"],
+      "properties": {}
+    }
+  ]
+}

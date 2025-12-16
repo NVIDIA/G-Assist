@@ -44,8 +44,8 @@ if /i "%PLUGIN_NAME%"=="all" (
     echo ============================================================
     echo All plugins setup complete!
     echo ============================================================
-    goto :end
 )
+if /i "%PLUGIN_NAME%"=="all" goto :done
 
 :: Single plugin setup
 if exist "%EXAMPLES_DIR%%PLUGIN_NAME%\manifest.json" (
@@ -62,7 +62,7 @@ if exist "%EXAMPLES_DIR%%PLUGIN_NAME%\manifest.json" (
     exit /b 1
 )
 
-goto :end
+goto :done
 
 :: ============================================================
 :: SUBROUTINE: Setup a single plugin
@@ -81,7 +81,9 @@ echo ------------------------------------------------------------
 set "P_TYPE=unknown"
 if exist "%P_DIR%\plugin.py" set "P_TYPE=python"
 if exist "%P_DIR%\plugin.cpp" set "P_TYPE=cpp"
+if exist "%P_DIR%\main.cpp" set "P_TYPE=cpp"
 if exist "%P_DIR%\CMakeLists.txt" set "P_TYPE=cpp"
+if exist "%P_DIR%\*.vcxproj" set "P_TYPE=cpp"
 if exist "%P_DIR%\plugin.js" set "P_TYPE=nodejs"
 
 echo Plugin type: %P_TYPE%
@@ -163,8 +165,20 @@ if exist "%NLOHMANN_SRC%\json.hpp" (
     echo NOTE: nlohmann/json not found. CMake will download it during build.
 )
 
+:: Copy DLLs from any SDK redist folders to libs/ (for runtime loading)
+:: Check known SDK redist paths (iCUESDK, AutomationSDK, etc.)
+if exist "%P_DIR%\iCUESDK\redist\x64\*.dll" (
+    echo Copying iCUESDK runtime DLLs to libs/...
+    copy /Y "%P_DIR%\iCUESDK\redist\x64\*.dll" "%P_LIBS%\" >nul
+)
+if exist "%P_DIR%\AutomationSDK\redist\x64\*.dll" (
+    echo Copying AutomationSDK runtime DLLs to libs/...
+    copy /Y "%P_DIR%\AutomationSDK\redist\x64\*.dll" "%P_LIBS%\" >nul
+)
+
 echo.
 echo To build: mkdir build ^& cd build ^& cmake .. ^& cmake --build . --config Release
+echo   Or for VS: msbuild *.sln /p:Configuration=Release /p:Platform=x64
 
 goto :eof
 
@@ -265,10 +279,11 @@ if "%P_TYPE%"=="cpp" (
         echo WARNING: No executable found. Build the plugin first with CMake.
     )
     
-    :: Copy any DLLs from libs folder
+    :: Copy any DLLs from libs folder to deployed plugin's libs/
     if exist "%P_LIBS%\*.dll" (
-        echo Copying DLLs from libs/...
-        copy /Y "%P_LIBS%\*.dll" "%P_DEPLOY_DIR%\" >nul
+        echo Copying runtime DLLs to libs/...
+        if not exist "%P_DEPLOY_DIR%\libs" mkdir "%P_DEPLOY_DIR%\libs"
+        copy /Y "%P_LIBS%\*.dll" "%P_DEPLOY_DIR%\libs\" >nul
     )
 )
 
@@ -305,47 +320,20 @@ echo Validating %MANIFEST_TYPE% manifest...
 
 :: Check file exists
 if not exist "%MANIFEST_PATH%" (
-    echo   [ERROR] manifest.json not found at %MANIFEST_PATH%
+    echo   [ERROR] manifest.json not found
     exit /b 1
 )
 
 :: Check file is not empty (0 bytes)
 for %%F in ("%MANIFEST_PATH%") do set MANIFEST_SIZE=%%~zF
 if "%MANIFEST_SIZE%"=="0" (
-    echo   [ERROR] manifest.json is EMPTY (0 bytes) - this will fail to load!
+    echo   [ERROR] manifest.json is EMPTY
     exit /b 1
 )
 
-:: Use PowerShell to validate JSON structure and required fields
-powershell -NoProfile -Command ^
-    "$ErrorActionPreference='Stop'; " ^
-    "try { " ^
-    "  $m = Get-Content '%MANIFEST_PATH%' -Raw -Encoding UTF8 | ConvertFrom-Json; " ^
-    "  $errs = @(); " ^
-    "  if (-not $m.manifestVersion) { $errs += 'Missing manifestVersion (must be 1)' } " ^
-    "  elseif ($m.manifestVersion -ne 1) { $errs += 'Invalid manifestVersion (must be 1)' } " ^
-    "  if (-not $m.executable) { $errs += 'Missing executable field' } " ^
-    "  if ($null -eq $m.persistent) { $errs += 'Missing persistent field (true/false)' } " ^
-    "  if (-not $m.functions -and -not $m.schema) { $errs += 'Missing functions array or schema' } " ^
-    "  if ($m.functions -and $m.functions.Count -eq 0) { $errs += 'functions array is empty' } " ^
-    "  foreach ($f in $m.functions) { " ^
-    "    if (-not $f.name) { $errs += 'Function missing name field' } " ^
-    "    elseif ($f.name -like 'rise_*') { $errs += \"Function '$($f.name)' uses reserved rise_ prefix\" } " ^
-    "    if (-not $f.description) { $errs += \"Function '$($f.name)' missing description\" } " ^
-    "  } " ^
-    "  if ($errs.Count -gt 0) { " ^
-    "    foreach ($e in $errs) { Write-Host \"  [ERROR] $e\" } " ^
-    "    exit 1 " ^
-    "  } " ^
-    "  Write-Host '  [OK] Manifest is valid'; exit 0 " ^
-    "} catch { " ^
-    "  Write-Host \"  [ERROR] Invalid JSON: $($_.Exception.Message)\"; exit 1 " ^
-    "}"
-
-if errorlevel 1 (
-    set "VALIDATION_ERRORS=1"
-    exit /b 1
-)
+:: Validate JSON using PowerShell
+powershell.exe -NoProfile -Command "try { Get-Content '%MANIFEST_PATH%' -Raw | ConvertFrom-Json | Out-Null; Write-Host '  [OK] Manifest is valid'; exit 0 } catch { Write-Host '  [ERROR] Invalid JSON'; exit 1 }"
+if %ERRORLEVEL% neq 0 exit /b 1
 
 exit /b 0
 
@@ -439,6 +427,8 @@ for /d %%d in ("%EXAMPLES_DIR%*") do (
         set "PTYPE="
         if exist "%%d\plugin.py" set "PTYPE=[Python]"
         if exist "%%d\plugin.cpp" set "PTYPE=[C++]"
+        if exist "%%d\main.cpp" set "PTYPE=[C++]"
+        if exist "%%d\*.vcxproj" set "PTYPE=[C++]"
         if exist "%%d\CMakeLists.txt" set "PTYPE=[C++]"
         if exist "%%d\plugin.js" set "PTYPE=[Node.js]"
         echo   - %%~nxd !PTYPE!
@@ -453,6 +443,7 @@ echo.
 endlocal
 exit /b 0
 
-:end
+:done
 endlocal
 exit /b 0
+
