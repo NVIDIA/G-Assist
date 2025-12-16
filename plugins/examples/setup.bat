@@ -166,12 +166,12 @@ if exist "%NLOHMANN_SRC%\json.hpp" (
 )
 
 :: Copy DLLs from any SDK redist folders to libs/ (for runtime loading)
-:: Check known SDK redist paths (iCUESDK, AutomationSDK, etc.)
-if exist "%P_DIR%\iCUESDK\redist\x64\*.dll" (
+:: Note: Using "dir ... >nul 2>&1 &&" since "if exist *.dll" doesn't work with wildcards
+dir "%P_DIR%\iCUESDK\redist\x64\*.dll" >nul 2>&1 && (
     echo Copying iCUESDK runtime DLLs to libs/...
     copy /Y "%P_DIR%\iCUESDK\redist\x64\*.dll" "%P_LIBS%\" >nul
 )
-if exist "%P_DIR%\AutomationSDK\redist\x64\*.dll" (
+dir "%P_DIR%\AutomationSDK\redist\x64\*.dll" >nul 2>&1 && (
     echo Copying AutomationSDK runtime DLLs to libs/...
     copy /Y "%P_DIR%\AutomationSDK\redist\x64\*.dll" "%P_LIBS%\" >nul
 )
@@ -280,7 +280,6 @@ if "%P_TYPE%"=="cpp" (
     )
     
     :: Copy any DLLs from libs folder to deployed plugin's libs/
-    :: Note: Using dir to check for wildcards since "if exist *.dll" is unreliable
     dir "%P_LIBS%\*.dll" >nul 2>&1 && (
         echo Copying runtime DLLs to libs/...
         if not exist "%P_DEPLOY_DIR%\libs" mkdir "%P_DEPLOY_DIR%\libs"
