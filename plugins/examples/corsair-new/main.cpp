@@ -427,7 +427,25 @@ static json cmdGetDevices(const json& args) {
 // Main Entry Point
 // ============================================================================
 
+// Set up DLL search path to find SDK DLLs in libs/ subfolder
+static void setupDllDirectory() {
+    wchar_t exePath[MAX_PATH];
+    if (GetModuleFileNameW(NULL, exePath, MAX_PATH)) {
+        // Find last backslash to get directory
+        wchar_t* lastSlash = wcsrchr(exePath, L'\\');
+        if (lastSlash) {
+            *(lastSlash + 1) = L'\0';  // Keep trailing backslash
+            std::wstring libsPath = std::wstring(exePath) + L"libs";
+            AddDllDirectory(libsPath.c_str());
+            SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+        }
+    }
+}
+
 int main() {
+    // MUST call before any delay-loaded DLL functions
+    setupDllDirectory();
+    
     gassist::Plugin plugin("corsair", "2.0.0", "Control Corsair iCUE devices");
     g_plugin = &plugin;
     

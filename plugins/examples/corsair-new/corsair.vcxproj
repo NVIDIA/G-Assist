@@ -137,7 +137,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(ProjectDir)iCUESDK\lib\x64\iCUESDK.x64_2019.lib;$(ProjectDir)AutomationSDK\lib\x64\iCUEAutomationSDK.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)iCUESDK\lib\x64\iCUESDK.x64_2019.lib;$(ProjectDir)AutomationSDK\lib\x64\iCUEAutomationSDK.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>iCUESDK.x64_2019.dll;iCUEAutomationSDK.dll</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
