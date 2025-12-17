@@ -406,4 +406,7 @@ FodyWeavers.xsd
 # Build output folders (but keep root exe for distribution)
 x64/
 build/
-libs/
+
+# libs/ folder - ignore DLLs but keep SDK headers
+libs/*.dll
+!libs/include/
