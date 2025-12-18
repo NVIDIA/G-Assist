@@ -1,7 +1,0 @@
-.venv
-build
-test_ign_news.py
-
-*.spec
-build_installer.bat
-installer.py

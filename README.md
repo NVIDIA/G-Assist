@@ -81,43 +81,44 @@ ninja is OFFLINE
 ```
 
 #### Key Features
+- Protocol V2 with JSON-RPC 2.0 communication
 - Secure API credential management
 - OAuth token handling
 - Comprehensive logging system
-- Windows pipe communication
 - Real-time stream status checking
 
 #### Project Structure
 ```
 plugins/examples/twitch/
-├── manifest.json        # Plugin configuration
+├── manifest.json        # Plugin configuration (with protocol_version: "2.0")
 ├── config.json          # Twitch API credentials
-├── plugin.py            # Main plugin code
+├── plugin.py            # Main plugin code (uses gassist_sdk)
 ├── requirements.txt     # Python dependencies
-├── setup.bat            # Environment setup script
-└── build.bat            # Build script
+└── libs/
+    └── gassist_sdk/     # G-Assist SDK
 ```
 See our [Twitch Plugin Example Code](./plugins/examples/twitch/) for a step-by-step guide to creating a Twitch integration plugin for G-Assist.
 
 
 ## Table of Contents
-- [Project G-Assist Plugins](#-project-g-assist-plugins)
-- [Why Plugins Matter](#-why-plugins-matter)
-- [What Can You Build?](#-what-can-you-build)
-- [Quick Start](#-quick-start)
-  - [Python Development with G-Assist](#-python-development-with-g-assist)
-  - [NVIDIA Plugin Example - Twitch](#-nvidia-plugin-example---twitch)
-- [G-Assist Module Architecture](#-g-assist-module-architecture)
-- [Extending G-Assist (Plugins)](#-extending-g-assist-plugins)
-  - [What Can You Build?](#-what-can-you-build-1)
-  - [Plugin Architecture](#-plugin-architecture)
+- [Project G-Assist Plugins](#project-g-assist-plugins)
+- [Why Plugins Matter](#why-plugins-matter)
+- [What Can You Build?](#what-can-you-build)
+- [Quick Start](#quick-start)
+  - [Python Development with G-Assist](#python-development-with-g-assist)
+  - [NVIDIA Plugin Example - Twitch](#nvidia-plugin-example---twitch)
+- [G-Assist Module Architecture](#g-assist-module-architecture)
+- [Extending G-Assist (Plugins)](#extending-g-assist-plugins)
+  - [Plugin Architecture](#plugin-architecture)
+  - [Protocol V2 Features](#protocol-v2-features)
+  - [Minimal Plugin Example](#minimal-plugin-example)
   - [Plugin Integration](#plugin-integration)
-- [NVIDIA-Built G-Assist Plugins](#-nvidia-built-g-assist-plugins)
-- [Community-Built Plugins](#-community-built-plugins)
-- [Development Tools](#-development-tools)
-- [Need Help?](#-need-help)
-- [License](#-license)
-- [Contributing](#-contributing)
+- [NVIDIA-Built G-Assist Plugins](#nvidia-built-g-assist-plugins)
+- [Community-Built Plugins](#community-built-plugins)
+- [Development Tools](#development-tools)
+- [Need Help?](#need-help)
+- [License](#license)
+- [Contributing](#contributing)
 
 ## G-Assist Module Architecture
 
@@ -138,6 +139,8 @@ flowchart TD
 
 Transform your ideas into powerful G-Assist plugins! Whether you're a Python developer, C++ enthusiast, or just getting started, our plugin system makes it easy to extend G-Assist's capabilities. Create custom commands, automate tasks, or build entirely new features - the possibilities are endless!
 
+> ⚠️ **Protocol V2**: All plugins must use Protocol V2. See the [Plugin Migration Guide](./PLUGIN_MIGRATION_GUIDE_V2.md) for details.
+
 ### Plugin Architecture
 
 Each plugin lives in its own directory named after the plugin (this name is used to invoke the plugin):
@@ -145,26 +148,88 @@ Each plugin lives in its own directory named after the plugin (this name is used
 ```text
 plugins/
 └── myplugin/              # Plugin directory name = invocation name
-    ├── g-assist-plugin-myplugin.exe  # Executable
+    ├── plugin.py           # Main plugin code (Python) or .exe (C++)
     ├── manifest.json       # Plugin configuration
-    └── config.json         # Settings & credentials (optional)
+    ├── config.json         # Settings & credentials (optional)
+    └── libs/               # SDK and dependencies
+        └── gassist_sdk/    # G-Assist SDK (required)
 ```
 
 **File Descriptions:**
-- `g-assist-plugin-<plugin-name>.exe` - Executable file that executes plugin functionality
+- `plugin.py` or `.exe` - Main plugin executable (Python files run directly, no compilation needed)
 - `manifest.json` - Plugin manifest that defines:
+    - `manifestVersion` - manifest schema version (use `1`)
     - `name` - plugin identifier
+    - `version` - plugin version string
     - `description` - brief description of plugin functionality
-    - `executable` - name of the executable file
+    - `protocol_version` - **required**: must be `"2.0"`
+    - `executable` - name of the executable file (can be `.py` or `.exe`)
     - `persistent` - [true/false] whether plugin runs throughout G-Assist lifecycle
     - `functions` - array of available functions with:
       - `name` - function identifier
       - `description` - what the function does
       - `tags` - keywords for AI model to match user intent
       - `properties` - parameters the function accepts
+      - `required` - array of required parameter names
 - `config.json` - Configuration file for plugin-specific settings (API keys, credentials, etc.) ⚠️ **Add to `.gitignore`**
+- `libs/gassist_sdk/` - The G-Assist SDK that handles protocol communication
 
 > 💡 **Tip**: The plugin directory name is what users will type to invoke your plugin (e.g., "Hey myplugin, do something")
+
+### Protocol V2 Features
+
+Protocol V2 brings significant improvements:
+
+| Feature | Description |
+|---------|-------------|
+| **JSON-RPC 2.0** | Standard protocol for interoperability |
+| **Engine-driven health monitoring** | No more plugin heartbeat threads needed |
+| **Length-prefixed framing** | Robust message handling (replaces `<<END>>` delimiter) |
+| **Native Python support** | Run `.py` files directly without compilation |
+| **SDK-based development** | ~20 lines of code instead of 200+ boilerplate |
+
+### Minimal Plugin Example
+
+```python
+from gassist_sdk import Plugin
+
+plugin = Plugin("hello-world", version="1.0.0")
+
+@plugin.command("say_hello")
+def say_hello(name: str = "World"):
+    """Greet the user by name."""
+    return f"Hello, {name}! 👋"
+
+if __name__ == "__main__":
+    plugin.run()
+```
+
+**Corresponding `manifest.json`:**
+
+```json
+{
+  "manifestVersion": 1,
+  "name": "hello-world",
+  "version": "1.0.0",
+  "description": "A simple greeting plugin",
+  "protocol_version": "2.0",
+  "executable": "plugin.py",
+  "persistent": true,
+  "functions": [
+    {
+      "name": "say_hello",
+      "description": "Greet the user by name",
+      "tags": ["greeting", "hello"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name to greet"
+        }
+      }
+    }
+  ]
+}
+```
 
 ### Plugin Integration
 #### How to Call a Plugin from G-Assist
@@ -198,20 +263,6 @@ Explore our official example plugins:
 
 ### AI & Information
 - **[Gemini AI Integration](./plugins/examples/gemini)** - Query Google's Gemini AI for real-time information, general knowledge, and web searches
-- **[Weather](./plugins/examples/weather)** - Get current weather conditions for any city
-- **[Stock Market](./plugins/examples/stock)** - Check stock prices and look up ticker symbols
-- **[Twitch](./plugins/examples/twitch)** - Check if streamers are live and get stream details
-
-### Smart Lighting
-- **[Corsair iCUE](./plugins/examples/corsair)** - Control Corsair RGB peripheral lighting (keyboard, mouse, headset)
-- **[Logitech G HUB](./plugins/examples/logiled)** - Control Logitech G RGB peripheral lighting (keyboard, mouse, headset)
-- **[Nanoleaf](./plugins/examples/nanoleaf)** - Control Nanoleaf smart lighting panels
-- **[OpenRGB](./plugins/examples/openrgb)** - Universal RGB lighting control for multiple device brands
-
-### Automation & Entertainment
-- **[Spotify](./plugins/examples/spotify)** - Control Spotify playback, manage playlists, and get track information
-- **[IFTTT](./plugins/examples/ifttt)** - Trigger IFTTT applets and automate smart home routines
-- **[Discord](./plugins/examples/discord)** - Send messages, charts, screenshots, and clips to Discord channels
 
 ## Community-Built Plugins
 Check out what others have built:
@@ -222,10 +273,12 @@ Check out what others have built:
   - Add unique value to the ecosystem
 
 ## Development Tools
+- **[G-Assist SDK](./api/sdk/)** - Official SDK for Protocol V2 plugin development (Python, C++, Node.js)
+- **[Plugin Migration Guide](./PLUGIN_MIGRATION_GUIDE_V2.md)** - Complete guide for migrating to Protocol V2
 - **[Python Bindings](./api/bindings/python/)** - Python API for interacting with G-Assist
 - **[C++ API](./api/c++/)** - Native C++ interface for performance-critical applications
 - **[ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)** - AI-assisted plugin development tool
-- **[Plugin Templates](./plugins/templates/)** - Starter templates for Python and C++ plugins
+- **[Cursor Rules for Plugin Development](./plugins/plugin-builder/cursor/)** - AI coding assistant rules for building G-Assist plugins in Cursor
 
 ## Need Help?
 - Report issues on [GitHub](https://github.com/nvidia/g-assist)

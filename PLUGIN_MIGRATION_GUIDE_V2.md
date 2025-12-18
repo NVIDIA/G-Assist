@@ -18,7 +18,7 @@
 Protocol V2 is a complete overhaul of the G-Assist plugin communication system, bringing:
 
 - **JSON-RPC 2.0 standard** for interoperability
-- **Engine-driven health monitoring** (no more plugin heartbeat threads!)
+- **Engine-driven health monitoring** (no more plugin heartbeat threads)
 - **Length-prefixed framing** (eliminates delimiter parsing bugs)
 - **Independent watchdog thread** for robust failure detection
 - **Native Python support** with auto-discovery and PYTHONPATH injection
@@ -75,7 +75,7 @@ threading.Thread(target=heartbeat_loop).start()
 **V2:** SDK handles it automatically:
 ```python
 # V2 - SDK responds to pings automatically
-# No heartbeat code needed in your plugin!
+# No heartbeat code needed in your plugin
 ```
 
 ---
@@ -932,5 +932,5 @@ For issues or questions:
 ---
 
 *Document Version: 2.0*
-*Last Updated: December 2024*
+*Last Updated: December 2025*
 

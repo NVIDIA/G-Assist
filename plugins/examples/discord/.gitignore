@@ -1,5 +1,0 @@
-build/
-.venv/
-*.spec
-build_installer.bat
-installer.py
