@@ -445,3 +445,318 @@ class Plugin:
         """Handle shutdown signals."""
         logger.info(f"Received signal {signum}, shutting down")
         self._running = False
+
+
+# =============================================================================
+# MCP PLUGIN (Auto-discovery from MCP servers)
+# =============================================================================
+
+class MCPPlugin(Plugin):
+    """
+    Plugin with MCP auto-discovery support.
+    
+    Connects to MCP servers at startup, discovers available tools/actions,
+    and registers them as plugin commands. Falls back to cached functions
+    if MCP server is unavailable.
+    
+    MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18
+    
+    Manifest Schema for MCP Plugins:
+        {
+            "manifestVersion": 1,
+            "name": "stream-deck",
+            "version": "2.0.0",
+            "mcp": {
+                "enabled": true,
+                "server_url": "http://localhost:9090/mcp",
+                "launch_on_startup": true
+            },
+            "functions": []  // Populated by auto-discovery
+        }
+    
+    Example:
+        from gassist_sdk import MCPPlugin
+        from gassist_sdk.mcp import FunctionDef, sanitize_name
+
+        plugin = MCPPlugin(
+            name="stream-deck",
+            version="2.0.0",
+            mcp_url="http://localhost:9090/mcp"
+        )
+
+        @plugin.discoverer
+        def discover_actions(mcp):
+            result = mcp.call_tool("get_executable_actions")
+            return [
+                FunctionDef(
+                    name=sanitize_name(f"streamdeck_{a['title']}"),
+                    description=f"Execute '{a['title']}'",
+                    executor=lambda aid=a['id']: mcp.call_tool("execute_action", {"id": aid})
+                )
+                for a in result.get("actions", [])
+            ]
+
+        plugin.run()  # Auto-discovers at startup, writes manifest
+    """
+    
+    def __init__(
+        self,
+        name: str,
+        version: str = "1.0.0",
+        description: str = "",
+        # MCP configuration
+        mcp_url: str = None,
+        mcp_transport: "MCPTransport" = None,
+        mcp_timeout: float = 30.0,
+        session_timeout: float = 300.0,
+        discovery_timeout: float = 5.0,
+        launch_on_startup: bool = True,
+        # Manifest
+        base_functions: List[Dict[str, Any]] = None,
+        source_dir: str = None
+    ):
+        """
+        Initialize MCPPlugin.
+        
+        Args:
+            name: Plugin name (should match manifest)
+            version: Plugin version
+            description: Plugin description
+            mcp_url: MCP server URL (e.g., "http://localhost:9090/mcp")
+            mcp_transport: Custom MCP transport (alternative to URL)
+            mcp_timeout: Request timeout in seconds
+            session_timeout: Session idle timeout before refresh
+            discovery_timeout: Shorter timeout for startup discovery
+            launch_on_startup: If True, engine should launch this plugin on startup
+            base_functions: Static functions to always include in manifest
+            source_dir: Source directory for writing manifest (auto-detected if None)
+        """
+        super().__init__(name, version, description)
+        
+        self._mcp_url = mcp_url
+        self._mcp_transport = mcp_transport
+        self._mcp_timeout = mcp_timeout
+        self._session_timeout = session_timeout
+        self._discovery_timeout = discovery_timeout
+        self._launch_on_startup = launch_on_startup
+        
+        # Auto-detect source directory from call stack
+        if source_dir is None:
+            import inspect
+            frame = inspect.currentframe()
+            if frame and frame.f_back:
+                caller_file = frame.f_back.f_globals.get('__file__')
+                if caller_file:
+                    source_dir = os.path.dirname(os.path.abspath(caller_file))
+        self._source_dir = source_dir
+        
+        # MCP client (created on demand)
+        self._mcp: Optional["MCPClient"] = None
+        
+        # Discovery function (set via decorator)
+        self._discoverer: Optional[Callable[["MCPClient"], List["FunctionDef"]]] = None
+        
+        # Import here to avoid circular imports
+        from .mcp import FunctionRegistry
+        
+        # Function registry for discovered functions
+        self._registry = FunctionRegistry(name, source_dir=source_dir)
+        if base_functions:
+            self._registry.set_base_functions(base_functions)
+        
+        # Set MCP configuration for manifest
+        self._registry.set_mcp_config({
+            "enabled": True,
+            "server_url": mcp_url,
+            "launch_on_startup": launch_on_startup
+        })
+        
+        # Track discovered function executors
+        self._executors: Dict[str, Callable] = {}
+        
+        logger.info(f"MCPPlugin '{name}' initialized (MCP: {mcp_url or 'custom transport'})")
+    
+    @property
+    def mcp(self) -> Optional["MCPClient"]:
+        """Get MCP client, creating if needed."""
+        if self._mcp is None:
+            # Import here to avoid circular imports
+            from .mcp import MCPClient, HAS_REQUESTS
+            
+            if self._mcp_transport:
+                self._mcp = MCPClient(
+                    transport=self._mcp_transport,
+                    client_name=f"G-Assist-{self.name}",
+                    client_version=self.version
+                )
+            elif self._mcp_url and HAS_REQUESTS:
+                self._mcp = MCPClient(
+                    url=self._mcp_url,
+                    timeout=self._mcp_timeout,
+                    session_timeout=self._session_timeout,
+                    client_name=f"G-Assist-{self.name}",
+                    client_version=self.version
+                )
+        return self._mcp
+    
+    def discoverer(self, func: Callable[["MCPClient"], List["FunctionDef"]]) -> Callable:
+        """
+        Decorator to register the discovery function.
+        
+        The function receives an MCPClient and returns a list of FunctionDef.
+        
+        Example:
+            @plugin.discoverer
+            def discover_actions(mcp: MCPClient) -> List[FunctionDef]:
+                result = mcp.call_tool("get_executable_actions")
+                return [FunctionDef(...) for action in result["actions"]]
+        """
+        self._discoverer = func
+        logger.debug(f"Registered discoverer: {func.__name__}")
+        return func
+    
+    def run(self):
+        """Start plugin with auto-discovery at startup."""
+        self._startup_discovery()
+        super().run()
+    
+    def _startup_discovery(self):
+        """Perform function discovery at startup."""
+        if not self._discoverer:
+            logger.info("No discoverer registered - skipping discovery")
+            return
+        
+        if not self.mcp:
+            logger.info("MCP not configured - loading from cache")
+            self._load_cached_functions()
+            return
+        
+        logger.info("Starting MCP discovery...")
+        
+        try:
+            if not self.mcp.connect(startup_timeout=self._discovery_timeout):
+                logger.info("MCP server unavailable - loading from cache")
+                self._load_cached_functions()
+                return
+            
+            # Import FunctionDef for type hint
+            from .mcp import FunctionDef
+            
+            functions = self._discoverer(self.mcp)
+            
+            if functions:
+                logger.info(f"Discovered {len(functions)} functions")
+                self._register_discovered_functions(functions)
+                self._registry.save_cache()
+                self._registry.update_manifest(self.version, self.description)
+            else:
+                logger.info("No functions discovered")
+                
+        except Exception as e:
+            logger.error(f"Discovery failed: {e} - loading from cache")
+            self._load_cached_functions()
+    
+    def _register_discovered_functions(self, functions: List["FunctionDef"]):
+        """Register discovered functions as plugin commands."""
+        for func in functions:
+            # Store executor for later use
+            if func.executor:
+                self._executors[func.name] = func.executor
+            
+            # Register with function registry
+            self._registry.register(func)
+            
+            # Create a command handler that calls the executor
+            def make_handler(fn_name: str):
+                def handler(**kwargs):
+                    executor = self._executors.get(fn_name)
+                    if executor:
+                        return executor()
+                    return f"Function '{fn_name}' has no executor"
+                return handler
+            
+            # Register as plugin command
+            self._commands[func.name] = CommandInfo(
+                name=func.name,
+                handler=make_handler(func.name),
+                description=func.description
+            )
+            
+            logger.debug(f"Registered command: {func.name}")
+    
+    def _load_cached_functions(self):
+        """Load functions from cache when MCP unavailable."""
+        cache = self._registry.load_cache()
+        
+        if not cache:
+            logger.info("No cached functions available")
+            return
+        
+        logger.info(f"Loading {len(cache)} functions from cache")
+        
+        for name, func_data in cache.items():
+            # Create a placeholder executor that reconnects to MCP
+            def make_lazy_handler(fn_name: str):
+                def handler(**kwargs):
+                    # Try to reconnect and execute
+                    if self.mcp and self._discoverer:
+                        try:
+                            if self.mcp.connect():
+                                # Re-discover to get executors
+                                functions = self._discoverer(self.mcp)
+                                self._register_discovered_functions(functions)
+                                
+                                # Now try to execute
+                                executor = self._executors.get(fn_name)
+                                if executor:
+                                    return executor()
+                        except Exception as e:
+                            return f"Failed to reconnect: {e}"
+                    return f"Function '{fn_name}' - MCP server unavailable"
+                return handler
+            
+            # Register as command
+            self._commands[name] = CommandInfo(
+                name=name,
+                handler=make_lazy_handler(name),
+                description=func_data.get("description", "")
+            )
+            
+            logger.debug(f"Loaded cached command: {name}")
+    
+    def refresh_session(self) -> bool:
+        """
+        Force refresh the MCP session.
+        
+        Returns True if successful, False otherwise.
+        """
+        if self.mcp:
+            self.mcp.disconnect()
+            return self.mcp.connect()
+        return False
+    
+    def rediscover(self) -> int:
+        """
+        Force re-discovery of functions.
+        
+        Returns the number of functions discovered.
+        """
+        if not self._discoverer or not self.mcp:
+            return 0
+        
+        try:
+            if not self.mcp.is_connected:
+                if not self.mcp.connect():
+                    return 0
+            
+            functions = self._discoverer(self.mcp)
+            if functions:
+                self._register_discovered_functions(functions)
+                self._registry.save_cache()
+                self._registry.update_manifest(self.version, self.description)
+                return len(functions)
+                
+        except Exception as e:
+            logger.error(f"Re-discovery failed: {e}")
+        
+        return 0
