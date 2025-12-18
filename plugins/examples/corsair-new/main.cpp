@@ -333,7 +333,7 @@ static json cmdSetMouseDpi(const json& args) {
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiPreset returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
-                    return json(std::format("Set {} to DPI preset '{}'.", deviceName, presetName));
+                    return json(std::format("Set {} to DPI preset '{}'.", mouseDevice->model, presetName));
                 }
             }
         }
@@ -372,7 +372,7 @@ static json cmdSetMouseDpi(const json& args) {
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiStage returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
-                    return json(std::format("Set {} to DPI stage '{}'.", deviceName, stageName));
+                    return json(std::format("Set {} to DPI stage '{}'.", mouseDevice->model, stageName));
                 }
             }
         }
@@ -384,14 +384,14 @@ static json cmdSetMouseDpi(const json& args) {
         
         if (code == Success) {
             return json(std::format("DPI {} not available on {}. Set to '{}' instead.", 
-                dpi, deviceName, stages[0].name));
+                dpi, mouseDevice->model, stages[0].name));
         }
     }
     
     // All approaches failed
     logMsg("[DPI] ERROR: All DPI setting approaches failed");
     return json(std::format(
-        "Could not set DPI on {}. Try setting DPI directly in iCUE.", deviceName));
+        "Could not set DPI on {}. Try setting DPI directly in iCUE.", mouseDevice->model));
 }
 
 // Set lighting with optional device targeting
@@ -624,7 +624,7 @@ static json cmdGetDevices(const json& args) {
         
         result += std::format("- **{}** ({})\n", g_devices[i].model, getDeviceTypeName(g_devices[i].type));
         if (!features.empty()) {
-            result += "  Supports: ";
+            result += "  - Supports: ";
             for (size_t j = 0; j < features.size(); j++) {
                 if (j > 0) result += ", ";
                 result += features[j];
