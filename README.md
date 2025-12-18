@@ -4,6 +4,8 @@ Project G-Assist is an experimental on-device AI Assistant that helps RTX users 
 
 Project G-Assist is built for community expansion. Whether you're a Python developer, C++ enthusiast, or just getting started — its Plugin architecture makes it easy to define new commands for G-Assist to execute. We can't wait to see what the community dreams up!
 
+> 🚀 **Protocol V2 Migration**: We're transitioning to Protocol V2 with the new G-Assist SDK! This brings JSON-RPC 2.0 communication, native Python support (no compilation needed), and dramatically simpler plugin development (~20 lines vs 200+). See the [Plugin Migration Guide](./PLUGIN_MIGRATION_GUIDE_V2.md) for details.
+
 ## Why Plugins Matter
 
 - Leverage a responsive Small Language Model (SLM) running locally on your own RTX GPU
@@ -14,9 +16,9 @@ Project G-Assist is built for community expansion. Whether you're a Python devel
 
 ## What Can You Build?
 
-- Python plugins for rapid development
+- Python plugins for rapid development (native `.py` support - no compilation needed!)
 - C++ plugins for performance-critical applications
-- AI-driven features using the [ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)
+- AI-driven features using the [Plugin Builder](./plugins/plugin-builder/) with [Cursor IDE](./plugins/plugin-builder/cursor/) or [ChatGPT](https://chatgpt.com/g/g-67bcb083cc0c8191b7ca74993785baad-g-assist-plugin-builder)
 - Custom system interactions for hardware and OS automation
 - Game and application integrations that enhance PC performance or add new commands
 
@@ -275,10 +277,10 @@ Check out what others have built:
 ## Development Tools
 - **[G-Assist SDK](./api/sdk/)** - Official SDK for Protocol V2 plugin development (Python, C++, Node.js)
 - **[Plugin Migration Guide](./PLUGIN_MIGRATION_GUIDE_V2.md)** - Complete guide for migrating to Protocol V2
+- **[Plugin Builder with Cursor](./plugins/plugin-builder/cursor/)** ⭐ - AI-guided plugin development in Cursor IDE (recommended)
+- **[Plugin Builder with ChatGPT](./plugins/plugin-builder/)** - AI-assisted plugin generation via OpenAI Custom GPT
 - **[Python Bindings](./api/bindings/python/)** - Python API for interacting with G-Assist
 - **[C++ API](./api/c++/)** - Native C++ interface for performance-critical applications
-- **[ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)** - AI-assisted plugin development tool
-- **[Cursor Rules for Plugin Development](./plugins/plugin-builder/cursor/)** - AI coding assistant rules for building G-Assist plugins in Cursor
 
 ## Need Help?
 - Report issues on [GitHub](https://github.com/nvidia/g-assist)
