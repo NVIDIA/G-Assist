@@ -481,8 +481,7 @@ static json cmdSetMouseDpi(const json& args) {
     logMsg("[DPI] ==========================================================");
     
     return json(std::format(
-        "Could not set DPI on {}. The Automation SDK may not support this mouse for DPI control. "
-        "Check the plugin log file for diagnostics. Try setting DPI directly in iCUE.", mouseDevice->model));
+        "Could not set DPI on {}. Try setting DPI directly in iCUE.", deviceName));
 }
 
 // Set lighting with optional device targeting
