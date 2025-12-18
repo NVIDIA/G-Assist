@@ -4,30 +4,33 @@
 # Stream Deck Plugin
 #
 # This plugin discovers Stream Deck executable actions and exposes them as
-# G-Assist functions. The manifest is dynamically updated with discovered actions.
+# G-Assist functions using the SDK's MCP auto-discovery support.
+#
+# All MCP session management, caching, and manifest updates are handled by the SDK.
 
 import json
 import logging
 import os
-import re
 import sys
-import time
-from typing import Optional, Dict, Any, List
+from typing import List
 
 # ============================================================================
-# CONFIGURATION (must be early for log file path)
+# CONFIGURATION
 # ============================================================================
 PLUGIN_NAME = "stream-deck"
-PLUGIN_DIR = os.path.join(
+
+# Source directory (where plugin.py and manifest.json live)
+SOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
+MANIFEST_FILE = os.path.join(SOURCE_DIR, "manifest.json")
+
+# Deploy directory (where logs and cache are written)
+DEPLOY_DIR = os.path.join(
     os.environ.get("PROGRAMDATA", "."), 
     "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
 )
-CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
-MANIFEST_FILE = os.path.join(PLUGIN_DIR, "manifest.json")
-ACTIONS_CACHE_FILE = os.path.join(PLUGIN_DIR, "actions_cache.json")
-LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}.log")
+LOG_FILE = os.path.join(DEPLOY_DIR, f"{PLUGIN_NAME}.log")
 
-os.makedirs(PLUGIN_DIR, exist_ok=True)
+os.makedirs(DEPLOY_DIR, exist_ok=True)
 
 # ============================================================================
 # STDOUT/STDERR PROTECTION
@@ -36,7 +39,6 @@ class _StderrToLog:
     """Redirect stderr writes to log file to prevent pipe corruption."""
     def __init__(self, log_path):
         self._log_path = log_path
-        self._original_stderr = sys.stderr
     
     def write(self, msg):
         if msg and msg.strip():
@@ -52,26 +54,11 @@ class _StderrToLog:
 sys.stderr = _StderrToLog(LOG_FILE)
 
 # ============================================================================
-# PATH SETUP
+# PATH SETUP - Add SDK to path
 # ============================================================================
-_plugin_dir = os.path.dirname(os.path.abspath(__file__))
-_libs_path = os.path.join(_plugin_dir, "libs")
+_libs_path = os.path.join(SOURCE_DIR, "libs")
 if os.path.exists(_libs_path) and _libs_path not in sys.path:
     sys.path.insert(0, _libs_path)
-
-import requests
-
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("requests").setLevel(logging.WARNING)
-
-try:
-    from gassist_sdk import Plugin, Context
-except ImportError as e:
-    with open(LOG_FILE, "a") as f:
-        f.write(f"FATAL: Cannot import gassist_sdk: {e}\n")
-    sys.exit(1)
-
-LOCAL_MANIFEST_FILE = os.path.join(_plugin_dir, "manifest.json")
 
 # ============================================================================
 # LOGGING SETUP
@@ -84,539 +71,349 @@ file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(mes
 logging.root.addHandler(file_handler)
 logging.root.setLevel(logging.INFO)
 
+# Suppress noisy libraries
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# PLUGIN DEFINITION
+# SDK IMPORTS
 # ============================================================================
-plugin = Plugin(
+try:
+    from gassist_sdk import MCPPlugin, Context
+    from gassist_sdk.mcp import MCPClient, FunctionDef, sanitize_name
+except ImportError as e:
+    logger.error(f"FATAL: Cannot import gassist_sdk: {e}")
+    sys.exit(1)
+
+# ============================================================================
+# CONFIGURATION LOADER
+# ============================================================================
+def load_manifest() -> dict:
+    """Load manifest.json - the source of truth for MCP configuration."""
+    try:
+        with open(MANIFEST_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading manifest: {e}")
+        return {}
+
+
+# ============================================================================
+# PLUGIN DEFINITION - Using MCPPlugin for auto-discovery
+# ============================================================================
+# 
+# MCP configuration lives in manifest.json:
+#   "mcp": { "enabled": true, "server_url": "...", "launch_on_startup": true }
+# 
+# The engine reads the manifest, sees launch_on_startup=true, and launches
+# this plugin at startup for auto-discovery.
+#
+manifest = load_manifest()
+mcp_config = manifest.get("mcp", {})
+mcp_url = mcp_config.get("server_url", "http://localhost:9090/mcp")
+
+plugin = MCPPlugin(
     name=PLUGIN_NAME,
-    version="1.0.0",
-    description="Stream Deck plugin - discover and execute Stream Deck actions"
+    version=manifest.get("version", "2.0.0"),
+    description=manifest.get("description", "Stream Deck plugin"),
+    mcp_url=mcp_url,
+    mcp_timeout=30,
+    session_timeout=300,
+    discovery_timeout=5.0,
+    launch_on_startup=mcp_config.get("launch_on_startup", True)
 )
 
 # ============================================================================
-# GLOBAL STATE
+# DISCOVERY FUNCTION - Called at startup and on rediscover()
 # ============================================================================
-mcp_session_id: Optional[str] = None
-mcp_server_url: str = "http://localhost:9090/mcp"
-
-# Cache: action_id -> action info (name, description, etc.)
-discovered_actions: Dict[str, Dict[str, Any]] = {}
+# Global: Track discovered actions for auto-retry
+# ============================================================================
+_discovered_action_names: set = set()
 
 # ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def load_config() -> dict:
-    """Load configuration from file."""
-    default_config = {
-        "mcp_server_url": "http://localhost:9090/mcp",
-        "timeout": 30
-    }
+@plugin.discoverer
+def discover_stream_deck_actions(mcp: MCPClient) -> List[FunctionDef]:
+    """
+    Discover Stream Deck actions from the MCP server.
+    
+    This is called automatically at startup by MCPPlugin.
+    Returns a list of FunctionDef objects that become plugin commands.
+    
+    Note: No utility functions exposed - discovery/refresh happens automatically.
+    """
+    global _discovered_action_names
+    logger.info("Discovering Stream Deck actions...")
+    
+    functions = []
+    _discovered_action_names = set()  # Reset tracking
+    
+    # =========================================================================
+    # COMPREHENSIVE DISCOVERY - Using original working approach
+    # 
+    # The Stream Deck MCP server exposes tools via tools/list
+    # The main tool is 'get_executable_actions' which returns all actions
+    # Response format: {"structuredContent": {"actions": [...]}}
+    # =========================================================================
+    
+    logger.info("=" * 60)
+    logger.info("STREAM DECK DISCOVERY START")
+    logger.info("=" * 60)
+    
+    # =========================================================================
+    # Step 1: List available tools from the MCP server
+    # =========================================================================
+    logger.info("Step 1: Listing available MCP tools (tools/list)...")
     
     try:
-        if os.path.isfile(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                return {**default_config, **json.load(f)}
+        tools = mcp.list_tools()
+        logger.info(f"Found {len(tools)} tools from MCP server:")
+        for tool in tools:
+            name = tool.get('name', 'unknown')
+            desc = tool.get('description', 'no description')
+            schema = tool.get('inputSchema', {})
+            logger.info(f"  Tool: '{name}'")
+            logger.info(f"    Description: {desc}")
+            if schema.get('properties'):
+                logger.info(f"    Parameters: {list(schema['properties'].keys())}")
     except Exception as e:
-        logger.error(f"Error loading config: {e}")
+        logger.error(f"Failed to list tools: {e}")
+        tools = []
     
-    return default_config
-
-
-def sanitize_function_name(name: str) -> str:
-    """Convert action name to valid function name."""
-    # Convert to lowercase, replace spaces/special chars with underscore
-    clean = re.sub(r'[^a-zA-Z0-9]+', '_', name.lower())
-    # Remove leading/trailing underscores
-    clean = clean.strip('_')
-    # Prefix with streamdeck_
-    return f"streamdeck_{clean}"
-
-
-def mcp_request(method: str, params: dict = None, timeout: int = 30, _retry: bool = True) -> dict:
-    """
-    Send a JSON-RPC request to the MCP server.
+    tool_names = [t.get('name', '') for t in tools]
+    actions = []
     
-    Automatically handles session timeout (HTTP 400) by re-initializing
-    the session and retrying the request once.
-    """
-    global mcp_session_id, mcp_server_url
+    # =========================================================================
+    # Step 2: Call get_executable_actions with RAW response logging
+    # This is the primary way to discover Stream Deck actions
+    # =========================================================================
+    logger.info("Step 2: Calling 'get_executable_actions'...")
     
-    config = load_config()
-    mcp_server_url = config.get("mcp_server_url", mcp_server_url)
-    
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream"
-    }
-    
-    if mcp_session_id:
-        headers["mcp-session-id"] = mcp_session_id
-    
-    payload = {
-        "jsonrpc": "2.0",
-        "id": int(time.time() * 1000),
-        "method": method,
-        "params": params or {}
-    }
-    
-    logger.info(f"MCP Request: {method} (session={mcp_session_id}, retry={_retry})")
-    
-    # Send keep-alive before potentially slow HTTP request
-    plugin.stream(".")
+    if 'get_executable_actions' in tool_names:
+        logger.info("  Tool 'get_executable_actions' found in tool list")
+    else:
+        logger.warning("  Tool 'get_executable_actions' NOT in tool list, trying anyway...")
     
     try:
-        response = requests.post(mcp_server_url, headers=headers, json=payload, timeout=timeout)
+        # Call the tool and log EVERYTHING
+        raw_result = mcp.call_tool("get_executable_actions")
         
-        # Handle HTTP 400 (Bad Request) - typically stale session
-        if response.status_code == 400:
-            logger.warning(f"MCP returned HTTP 400 for {method} - session may be stale")
-            if _retry:
-                logger.info("Re-initializing session and retrying...")
-                plugin.stream(".")  # Keep-alive during re-init
-                mcp_session_id = None
-                
-                if _reinitialize_session():
-                    return mcp_request(method, params, timeout, _retry=False)
-                else:
-                    raise Exception("Failed to re-initialize MCP session")
-            else:
-                raise Exception(f"MCP server returned 400 for {method}")
+        # Log the raw result type and content
+        logger.info(f"  Raw result type: {type(raw_result).__name__}")
+        logger.info(f"  Raw result: {json.dumps(raw_result, indent=2) if isinstance(raw_result, dict) else str(raw_result)}")
         
-        if "mcp-session-id" in response.headers:
-            mcp_session_id = response.headers["mcp-session-id"]
-            logger.info(f"Got MCP session ID: {mcp_session_id}")
-        
-        response.raise_for_status()
-        result = response.json()
-        logger.info(f"MCP Response: {json.dumps(result, indent=2)[:500]}")
-        return result
-        
-    except requests.exceptions.ConnectionError as e:
-        raise Exception(f"Cannot connect to Stream Deck MCP server at {mcp_server_url}. Is it running?")
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"MCP HTTP error: {e}")
-        raise
+        # Extract actions - try multiple paths
+        if isinstance(raw_result, dict):
+            # Path 1: Direct 'actions' key (SDK extracts structuredContent)
+            if 'actions' in raw_result:
+                actions = raw_result['actions']
+                logger.info(f"  Found 'actions' key with {len(actions)} items")
+            
+            # Path 2: Nested in 'structuredContent' (in case SDK didn't extract)
+            elif 'structuredContent' in raw_result:
+                structured = raw_result['structuredContent']
+                if isinstance(structured, dict) and 'actions' in structured:
+                    actions = structured['actions']
+                    logger.info(f"  Found 'structuredContent.actions' with {len(actions)} items")
+            
+            # Path 3: Try 'content' array (text/json format)
+            elif 'content' in raw_result:
+                for item in raw_result.get('content', []):
+                    if isinstance(item, dict) and item.get('type') == 'text':
+                        text = item.get('text', '')
+                        logger.info(f"  Parsing content text: {text[:200]}...")
+                        try:
+                            data = json.loads(text)
+                            if isinstance(data, dict) and 'actions' in data:
+                                actions = data['actions']
+                                logger.info(f"  Parsed {len(actions)} actions from content text")
+                                break
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"  Failed to parse content text: {e}")
+            
+            # Log if no actions found but response had data
+            if not actions:
+                logger.warning(f"  No 'actions' found in response. Keys: {list(raw_result.keys())}")
+        else:
+            logger.warning(f"  Unexpected result type: {type(raw_result)}")
+            
     except Exception as e:
-        logger.error(f"MCP request failed: {e}")
-        raise
-
-
-def _reinitialize_session() -> bool:
-    """
-    Re-initialize the MCP session.
-    Used for automatic session recovery on 400 errors.
-    """
-    global mcp_session_id
+        logger.error(f"  get_executable_actions failed: {e}", exc_info=True)
     
-    logger.info("Re-initializing MCP session...")
-    plugin.stream(".")  # Keep-alive
+    # =========================================================================
+    # Step 3: Try other discovery tools if no actions found
+    # =========================================================================
+    if len(actions) == 0:
+        logger.info("Step 3: Trying alternative tools...")
+        
+        other_tools = [
+            ('get_devices', 'devices'),
+            ('get_plugins', 'plugins'), 
+            ('get_profiles', 'profiles'),
+            ('get_actions', 'actions'),
+            ('list_actions', 'actions'),
+        ]
+        
+        for tool_name, key in other_tools:
+            if tool_name in tool_names:
+                logger.info(f"  Trying '{tool_name}'...")
+                try:
+                    result = mcp.call_tool(tool_name)
+                    logger.info(f"    Response: {json.dumps(result, indent=4) if isinstance(result, dict) else str(result)}")
+                    
+                    if isinstance(result, dict) and key in result:
+                        data = result[key]
+                        logger.info(f"    Found '{key}' with {len(data) if isinstance(data, list) else 'N/A'} items")
+                except Exception as e:
+                    logger.warning(f"    {tool_name} failed: {e}")
     
-    try:
-        config = load_config()
-        url = config.get("mcp_server_url", mcp_server_url)
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream"
-        }
-        
-        payload = {
-            "jsonrpc": "2.0",
-            "id": int(time.time() * 1000),
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "G-Assist-StreamDeck", "version": "1.0"}
-            }
-        }
-        
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        plugin.stream(".")  # Keep-alive after response
-        
-        if "mcp-session-id" in response.headers:
-            mcp_session_id = response.headers["mcp-session-id"]
-            logger.info(f"Got new MCP session ID: {mcp_session_id}")
-        
-        response.raise_for_status()
-        result = response.json()
-        
-        if "result" in result:
-            logger.info("MCP session re-initialized successfully")
-            return True
-        elif "error" in result:
-            logger.error(f"MCP re-initialization error: {result['error']}")
-            return False
-        
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to re-initialize MCP session: {e}")
-        return False
-
-
-def initialize_mcp_session() -> bool:
-    """Initialize MCP session."""
-    try:
-        result = mcp_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "G-Assist-StreamDeck", "version": "1.0"}
-        })
-        return "result" in result
-    except Exception as e:
-        logger.error(f"Failed to initialize MCP session: {e}")
-        return False
-
-
-def call_mcp_tool(tool_name: str, arguments: dict = None) -> Any:
-    """Call an MCP tool."""
-    result = mcp_request("tools/call", {
-        "name": tool_name,
-        "arguments": arguments or {}
-    })
+    # =========================================================================
+    # Log final summary
+    # =========================================================================
+    logger.info("=" * 60)
+    logger.info(f"DISCOVERY COMPLETE:")
+    logger.info(f"  MCP tools available: {len(tools)}")
+    logger.info(f"  Actions discovered: {len(actions)}")
+    if actions:
+        for i, action in enumerate(actions[:5]):
+            title = action.get('title', action.get('name', 'Unknown'))
+            action_id = action.get('id', 'no-id')
+            logger.info(f"    {i+1}. '{title}' (id={action_id})")
+        if len(actions) > 5:
+            logger.info(f"    ... and {len(actions) - 5} more")
+    logger.info("=" * 60)
     
-    if "result" in result:
-        return result["result"]
-    elif "error" in result:
-        raise Exception(f"MCP tool error: {result['error']}")
-    return result
-
-
-def get_executable_actions() -> List[Dict[str, Any]]:
-    """
-    Get list of executable actions from Stream Deck.
-    
-    Response format:
-    {
-        "result": {
-            "structuredContent": {
-                "actions": [
-                    {
-                        "id": "bea905d0-...",  # ID to execute
-                        "title": "Open webpage",  # User-configured title
-                        "pluginId": "com.elgato.streamdeck.system.website",
-                        "description": {
-                            "name": "Website",  # Action type
-                            "description": "Open URL"  # What it does
-                        }
-                    },
-                    ...
-                ]
-            }
-        }
-    }
-    """
-    result = call_mcp_tool("get_executable_actions")
-    
-    # Extract from structuredContent.actions (preferred) or fallback to content text
-    if isinstance(result, dict):
-        # Try structuredContent first
-        if "structuredContent" in result:
-            structured = result["structuredContent"]
-            if isinstance(structured, dict) and "actions" in structured:
-                logger.info(f"Found {len(structured['actions'])} actions in structuredContent")
-                return structured["actions"]
-        
-        # Fallback: parse from content text
-        if "content" in result:
-            for item in result.get("content", []):
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text", "")
-                    try:
-                        data = json.loads(text)
-                        if isinstance(data, dict) and "actions" in data:
-                            logger.info(f"Found {len(data['actions'])} actions in content text")
-                            return data["actions"]
-                    except json.JSONDecodeError:
-                        pass
-    
-    logger.warning("No actions found in response")
-    return []
-
-
-def execute_action(action_id: str) -> dict:
-    """Execute a Stream Deck action by ID."""
-    result = call_mcp_tool("execute_action", {"id": action_id})
-    
-    # Extract from structuredContent or content
-    if isinstance(result, dict):
-        if "structuredContent" in result:
-            return result["structuredContent"]
-        if "content" in result:
-            for item in result.get("content", []):
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text", "")
-                    try:
-                        return json.loads(text)
-                    except json.JSONDecodeError:
-                        return {"success": True, "message": text}
-    
-    return {"success": True}
-
-
-def save_actions_cache(actions: List[Dict[str, Any]]):
-    """
-    Save discovered actions to cache file.
-    
-    Each action has:
-    - id: the execution ID
-    - title: user-configured title (e.g., "Audacity", "Open webpage")
-    - pluginId: source plugin (e.g., "com.elgato.streamdeck.system.openapp")
-    - description.name: action type (e.g., "Open Application", "Website")
-    - description.description: what it does (e.g., "Open an app", "Open URL")
-    """
-    cache = {}
-    seen_names = {}  # Track duplicates
+    seen_names = {}
     
     for action in actions:
         action_id = action.get("id", "")
         if not action_id:
             continue
         
-        # Extract from nested description object
+        # Extract action info from the nested description object
+        # Structure: {"id": "...", "description": {"name": "Play Audio", "description": "..."}, ...}
         desc_obj = action.get("description", {})
-        action_type = desc_obj.get("name", "Unknown")  # e.g., "Website", "Open Application"
-        action_desc = desc_obj.get("description", "")  # e.g., "Open URL", "Open an app"
+        action_type = desc_obj.get("name", "")        # e.g., "Play Audio", "Website"
+        action_desc = desc_obj.get("description", "") # e.g., "Play a sound bite..."
+        title = action.get("title", "")               # User-configured title (may be empty)
+        plugin_id = action.get("pluginId", "")        # e.g., "com.elgato.streamdeck.soundboard"
         
-        # User's configured title for this specific action
-        title = action.get("title", action_type)  # e.g., "Open webpage", "Audacity"
+        # Use title if user configured one, otherwise use action_type from description.name
+        display_name = title if title else action_type
+        if not display_name:
+            display_name = f"action_{action_id[:8]}"  # Last resort: use part of ID
         
-        # Plugin that provides this action
-        plugin_id = action.get("pluginId", "")
+        logger.info(f"Processing action: title='{title}', action_type='{action_type}', display_name='{display_name}'")
         
-        # Generate function name from title (more specific) or action type
-        # Use title if available and meaningful, otherwise use action type
-        base_name = title if title and title != action_type else action_type
-        func_name = sanitize_function_name(base_name)
+        # Generate unique function name from display_name
+        func_name = sanitize_name(f"streamdeck_{display_name}")
         
-        # Handle duplicates by appending a number
+        # Handle duplicates
         if func_name in seen_names:
             seen_names[func_name] += 1
             func_name = f"{func_name}_{seen_names[func_name]}"
         else:
             seen_names[func_name] = 1
         
-        cache[func_name] = {
-            "id": action_id,
-            "title": title,
-            "action_type": action_type,
-            "description": action_desc,
-            "plugin_id": plugin_id
-        }
-        
-        logger.info(f"Cached action: {func_name} -> '{title}' ({action_type})")
-    
-    try:
-        with open(ACTIONS_CACHE_FILE, "w") as f:
-            json.dump(cache, f, indent=2)
-        logger.info(f"Saved {len(cache)} actions to cache")
-    except Exception as e:
-        logger.error(f"Failed to save actions cache: {e}")
-    
-    return cache
-
-
-def load_actions_cache() -> Dict[str, Dict[str, Any]]:
-    """Load actions from cache file."""
-    try:
-        if os.path.isfile(ACTIONS_CACHE_FILE):
-            with open(ACTIONS_CACHE_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load actions cache: {e}")
-    return {}
-
-
-def update_manifest_with_actions(actions_cache: Dict[str, Dict[str, Any]]):
-    """Update manifest with discovered actions as functions."""
-    
-    # Start with the discover function
-    functions = [
-        {
-            "name": "streamdeck_discover",
-            "description": "Discover Stream Deck and learn what actions are available. Call this first to see what your Stream Deck can do, then use the discovered action functions.",
-            "tags": ["stream-deck", "streamdeck", "discover", "elgato", "actions"],
-            "properties": {},
-            "required": []
-        }
-    ]
-    
-    # Add a function for each discovered action
-    for func_name, action_info in actions_cache.items():
-        title = action_info.get("title", "Unknown")
-        action_type = action_info.get("action_type", "")
-        action_desc = action_info.get("description", "")
-        
-        # Build a nice description
-        # e.g., "Execute 'Audacity' (Open Application) - Open an app"
-        description = f"Execute '{title}' on Stream Deck"
-        if action_type and action_type != title:
+        # Build description
+        # e.g., "Execute 'Play Audio' on Stream Deck - Play a sound bite, audio effect or music clip"
+        description = f"Execute '{display_name}' on Stream Deck"
+        if title and action_type and title != action_type:
+            # User has a custom title different from action type
             description += f" ({action_type})"
         if action_desc:
             description += f" - {action_desc}"
         
-        # Build tags from action info
-        tags = ["stream-deck", "execute"]
-        if title:
-            tags.append(title.lower().replace(" ", "-"))
-        if action_type:
+        # Build tags for better LLM matching
+        tags = ["stream-deck", "streamdeck", "execute"]
+        if display_name:
+            tags.append(display_name.lower().replace(" ", "-"))
+        if action_type and action_type.lower() != display_name.lower():
             tags.append(action_type.lower().replace(" ", "-"))
+        if plugin_id:
+            # Extract short plugin name from ID like "com.elgato.streamdeck.soundboard" -> "soundboard"
+            short_plugin = plugin_id.split(".")[-1] if "." in plugin_id else plugin_id
+            tags.append(short_plugin.lower())
         
-        func = {
-            "name": func_name,
-            "description": description,
-            "tags": tags,
-            "properties": {},
-            "required": []
-        }
-        functions.append(func)
-    
-    # Create manifest
-    manifest = {
-        "manifestVersion": 1,
-        "name": PLUGIN_NAME,
-        "version": "1.0.0",
-        "description": f"Stream Deck plugin with {len(actions_cache)} executable actions",
-        "executable": "plugin.py",
-        "persistent": True,
-        "protocol_version": "2.0",
-        "functions": functions
-    }
-    
-    # Write to both locations
-    for path in [MANIFEST_FILE, LOCAL_MANIFEST_FILE]:
-        try:
-            with open(path, "w") as f:
-                json.dump(manifest, f, indent=2)
-            logger.info(f"Updated manifest at {path}")
-        except Exception as e:
-            logger.warning(f"Failed to write manifest to {path}: {e}")
-
-
-def register_action_commands():
-    """Register command handlers for cached actions."""
-    global discovered_actions
-    
-    actions_cache = load_actions_cache()
-    discovered_actions = actions_cache
-    
-    for func_name, action_info in actions_cache.items():
-        action_id = action_info.get("id")
-        title = action_info.get("title", "Unknown")
-        action_type = action_info.get("action_type", "")
-        
-        if not action_id:
-            continue
-        
-        # Create handler for this action
-        def make_handler(aid, atitle, atype):
-            def handler(context: Context = None):
-                display_name = atitle if atitle else atype
-                logger.info(f"Executing action: {display_name} (id={aid})")
-                plugin.stream(f"Executing **{display_name}**...\n")
+        # Create executor that captures action_id and display_name
+        # Includes auto-retry: if execution fails, refresh and retry once
+        def make_executor(aid: str, aname: str):
+            def executor():
+                logger.info(f"Executing action: {aname} (id={aid})")
+                plugin.stream(f"Executing **{aname}**...\n")
                 
                 try:
-                    global mcp_session_id
-                    if not mcp_session_id:
-                        if not initialize_mcp_session():
-                            return "Failed to connect to Stream Deck MCP server."
-                    
-                    result = execute_action(aid)
+                    result = mcp.call_tool("execute_action", {"id": aid})
                     
                     success = result.get("success", True) if isinstance(result, dict) else True
                     if success:
-                        return f"**{display_name}** executed successfully."
+                        return f"**{aname}** executed successfully."
                     else:
                         msg = result.get("message", "Unknown error") if isinstance(result, dict) else str(result)
-                        return f"Failed to execute {display_name}: {msg}"
+                        logger.warning(f"Action failed: {msg}, will NOT auto-retry (action exists)")
+                        return f"Failed to execute {aname}: {msg}"
                         
                 except Exception as e:
-                    logger.error(f"Error executing action {display_name}: {e}")
-                    return f"Error: {e}"
-            
-            return handler
+                    logger.error(f"Action execution error: {e}")
+                    # Try to refresh and retry once
+                    logger.info("Attempting auto-refresh after error...")
+                    plugin.stream("Connection issue detected, refreshing...\n")
+                    
+                    try:
+                        if plugin.refresh_session():
+                            plugin.stream("Retrying...\n")
+                            result = mcp.call_tool("execute_action", {"id": aid})
+                            success = result.get("success", True) if isinstance(result, dict) else True
+                            if success:
+                                return f"**{aname}** executed successfully (after reconnect)."
+                    except Exception as retry_error:
+                        logger.error(f"Retry also failed: {retry_error}")
+                    
+                    return f"Failed to execute {aname}: Connection error. Please try again."
+            return executor
         
-        plugin.command(func_name)(make_handler(action_id, title, action_type))
-        logger.info(f"Registered action command: {func_name} -> '{title}' ({action_type})")
-
+        functions.append(FunctionDef(
+            name=func_name,
+            description=description,
+            tags=tags,
+            executor=make_executor(action_id, display_name)
+        ))
+        
+        # Track discovered action names for auto-retry
+        _discovered_action_names.add(func_name)
+        
+        logger.info(f"Registered: {func_name} -> '{display_name}' (type={action_type})")
+    
+    return functions
 
 # ============================================================================
-# COMMAND HANDLERS
+# INTERNAL HELPERS (not exposed as commands)
 # ============================================================================
 
-@plugin.command("streamdeck_discover")
-def streamdeck_discover_cmd(context: Context = None):
+def _internal_refresh_and_rediscover() -> int:
     """
-    Discover Stream Deck and its executable actions.
+    Internal: Refresh session and rediscover actions.
+    Called automatically when an action is not found.
     
-    This connects to the Stream Deck MCP server, queries for available
-    actions, and registers them as functions in the manifest.
+    Returns: Number of actions discovered
     """
-    global mcp_session_id, discovered_actions
+    global _discovered_action_names
     
-    plugin.stream("**Discovering Stream Deck...**\n\n")
+    logger.info("Auto-refresh: Refreshing session and rediscovering actions...")
     
     try:
-        # Step 1: Connect to MCP server
-        plugin.stream("Connecting to Stream Deck MCP server...\n")
+        if not plugin.refresh_session():
+            logger.error("Auto-refresh: Failed to refresh session")
+            return 0
         
-        if not initialize_mcp_session():
-            return "Failed to connect to Stream Deck MCP server.\n\nMake sure the Stream Deck MCP server is running."
-        
-        plugin.stream("Connected.\n\n")
-        
-        # Step 2: Query for available actions
-        plugin.stream("Querying available actions...\n")
-        
-        actions = get_executable_actions()
-        
-        if not actions:
-            return "No executable actions found.\n\nConfigure some actions in the Stream Deck app, then try again."
-        
-        plugin.stream(f"Found **{len(actions)} actions**.\n\n")
-        
-        # Step 3: Process and cache actions
-        plugin.stream("Registering actions...\n")
-        
-        actions_cache = save_actions_cache(actions)
-        discovered_actions = actions_cache
-        
-        # Step 4: Update manifest
-        update_manifest_with_actions(actions_cache)
-        
-        # Step 5: Register commands
-        register_action_commands()
-        
-        plugin.stream("Done.\n\n")
-        
-        # Step 6: Build response with discovered actions
-        response = f"**Stream Deck Discovery Complete**\n\n"
-        response += f"Found **{len(actions_cache)} actions** ready to use:\n\n"
-        
-        for func_name, action_info in actions_cache.items():
-            title = action_info.get("title", "Unknown")
-            action_type = action_info.get("action_type", "")
-            action_desc = action_info.get("description", "")
-            
-            # Show title with action type in parentheses, plus description
-            response += f"- **{title}**"
-            if action_type and action_type != title:
-                response += f" ({action_type})"
-            if action_desc:
-                response += f" - {action_desc}"
-            response += "\n"
-        
-        response += f"\nJust ask me to execute any of these actions."
-        
-        return response
+        count = plugin.rediscover()
+        logger.info(f"Auto-refresh: Discovered {count} actions")
+        return count
         
     except Exception as e:
-        logger.error(f"Discovery failed: {e}", exc_info=True)
-        return f"Discovery failed: {e}"
+        logger.error(f"Auto-refresh failed: {e}")
+        return 0
 
 
 @plugin.command("on_input")
@@ -629,19 +426,15 @@ def on_input(content: str):
         return "Goodbye."
     
     plugin.set_keep_session(True)
-    return "Use `streamdeck_discover` to find available actions, or call an action function directly."
+    return "What Stream Deck action would you like to execute?"
 
 
 # ============================================================================
-# INITIALIZATION
+# MAIN
 # ============================================================================
-
-# Load cached actions and register commands at startup
-logger.info("Initializing Stream Deck plugin...")
-register_action_commands()
-logger.info(f"Registered commands: {list(plugin._commands.keys())}")
-
+logger.info(f"Initializing Stream Deck plugin v{manifest.get('version', '2.0.0')}...")
+logger.info(f"MCP URL: {mcp_url}")
 
 if __name__ == "__main__":
     logger.info(f"Starting {PLUGIN_NAME} plugin...")
-    plugin.run()
+    plugin.run()  # Auto-discovers at startup via MCPPlugin
