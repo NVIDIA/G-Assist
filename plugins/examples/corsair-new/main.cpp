@@ -102,7 +102,6 @@ static std::string automationErrorToString(AutomationSdkErrorCode err) {
 bool g_initialized = false;
 CorsairDeviceInfo g_devices[CORSAIR_DEVICE_COUNT_MAX];
 int g_numDevices = 0;
-gassist::Plugin* g_plugin = nullptr;
 
 // ============================================================================
 // Utility Functions
@@ -143,7 +142,7 @@ static bool getColor(const std::string& colorName, Color& out) {
         out = it->second;
         return true;
     }
-        return false;
+    return false;
 }
 
 // Device type name mapping
@@ -238,39 +237,8 @@ static bool ensureInitialized() {
 }
 
 // ============================================================================
-// Auto-Discovery Helpers
+// Lighting Helper
 // ============================================================================
-
-// Find first device of a specific type
-static bool findDevice(CorsairDeviceType type, CorsairDeviceId& outId, std::string& outName) {
-    for (int i = 0; i < g_numDevices; i++) {
-        if (g_devices[i].type == type) {
-            memcpy(outId, g_devices[i].id, sizeof(CorsairDeviceId));
-            outName = g_devices[i].model;
-            return true;
-        }
-    }
-    return false;
-}
-
-// Find all devices of a specific type
-struct DeviceInfo {
-    CorsairDeviceId id;
-    std::string name;
-};
-
-static std::vector<DeviceInfo> findDevices(CorsairDeviceType type) {
-    std::vector<DeviceInfo> results;
-    for (int i = 0; i < g_numDevices; i++) {
-        if (type == CDT_Unknown || g_devices[i].type == type) {
-            DeviceInfo info;
-            memcpy(info.id, g_devices[i].id, sizeof(CorsairDeviceId));
-            info.name = g_devices[i].model;
-            results.push_back(info);
-        }
-    }
-    return results;
-}
 
 // Set lighting on a specific device
 static bool setDeviceLighting(const CorsairDeviceId& id, const Color& color) {
@@ -376,7 +344,7 @@ static json cmdSetMouseDpi(const json& args) {
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiPreset returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
-                    return json(std::format("Activated DPI preset '{}' on {}.", presetName, deviceName));
+                    return json(std::format("Set {} to DPI preset '{}'.", deviceName, presetName));
                 }
             }
         }
@@ -415,7 +383,7 @@ static json cmdSetMouseDpi(const json& args) {
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiStage returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
-                    return json(std::format("Activated DPI stage '{}' on {}.", stageName, deviceName));
+                    return json(std::format("Set {} to DPI stage '{}'.", deviceName, stageName));
                 }
             }
         }
@@ -426,16 +394,15 @@ static json cmdSetMouseDpi(const json& args) {
         logMsg(std::format("[DPI] AutomationSdkActivateDpiStage(Stage1) returned: {}", automationErrorToString(code)));
         
         if (code == Success) {
-            return json(std::format("Note: Exact DPI {} not available. Activated stage '{}' on {}.", 
-                dpi, stages[0].name, deviceName));
+            return json(std::format("DPI {} not available on {}. Set to '{}' instead.", 
+                dpi, deviceName, stages[0].name));
         }
     }
     
     // All approaches failed
     logMsg("[DPI] ERROR: All DPI setting approaches failed");
     return json(std::format(
-        "Could not set DPI on {}. The Automation SDK may not support this mouse for DPI control. "
-        "Try setting DPI directly in iCUE.", deviceName));
+        "Could not set DPI on {}. Try setting DPI directly in iCUE.", deviceName));
 }
 
 // Set lighting with optional device targeting
@@ -449,7 +416,7 @@ static json cmdSetLighting(const json& args) {
     
     Color color;
     if (!getColor(colorName, color)) {
-        return json(std::format("Unknown color '{}'. Try: red, blue, green, cyan, magenta, yellow, white, orange, purple, pink, gold, or 'off'.", colorName));
+        return json(std::format("Unknown color '{}'. Try: red, green, blue, cyan, magenta, yellow, white, orange, purple, pink, gold, teal, gray, or 'off'.", colorName));
     }
     
     std::vector<std::string> updated;
@@ -466,7 +433,7 @@ static json cmdSetLighting(const json& args) {
             
             if (setDeviceLighting(id, color)) {
                 updated.push_back(g_devices[i].model);
-                    } else {
+            } else {
                 failed.push_back(g_devices[i].model);
             }
         }
@@ -482,17 +449,25 @@ static json cmdSetLighting(const json& args) {
     
     std::string result;
     if (!updated.empty()) {
-        result = std::format("Set {} lighting to {}", updated.size() == 1 ? updated[0] : std::to_string(updated.size()) + " devices", colorName);
         if (colorName == "off") {
-            result = std::format("Turned off lighting on {}", updated.size() == 1 ? updated[0] : std::to_string(updated.size()) + " devices");
+            result = "Lighting off:\n";
+        } else {
+            result = std::format("Lighting set to {}:\n", colorName);
+        }
+        for (const auto& name : updated) {
+            result += std::format("- {}\n", name);
         }
     }
+    
     if (!failed.empty()) {
-        if (!result.empty()) result += ". ";
-        result += std::format("Failed to update: {}", failed.size());
+        if (!result.empty()) result += "\n";
+        result += "Failed:\n";
+        for (const auto& name : failed) {
+            result += std::format("- {}\n", name);
+        }
     }
     
-    return json(result + ".");
+    return json(result);
 }
 
 // Set headset EQ with auto-discovery
@@ -519,12 +494,12 @@ static json cmdSetHeadsetEq(const json& args) {
     const auto& device = devices[0];
 
     // Get available presets
-            int presetsSize = 0;
-            AutomationSdkEqualizerPreset presets[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
-            code = AutomationSdkGetEqualizerPresets(device.id, presets, AUTOMATION_SDK_ITEMS_COUNT_MAX, &presetsSize);
+    int presetsSize = 0;
+    AutomationSdkEqualizerPreset presets[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
+    code = AutomationSdkGetEqualizerPresets(device.id, presets, AUTOMATION_SDK_ITEMS_COUNT_MAX, &presetsSize);
     
-    if (code != Success) {
-        return json("Failed to get EQ presets from headset.");
+    if (code != Success || presetsSize == 0) {
+        return json(std::format("No EQ presets available for {}.", device.name));
     }
     
     // Find matching preset (case-insensitive)
@@ -536,20 +511,19 @@ static json cmdSetHeadsetEq(const json& args) {
             code = AutomationSdkActivateEqualizerPreset(device.id, presets[i].id);
             if (code == Success) {
                 return json(std::format("Set {} EQ to '{}'.", device.name, presets[i].name));
-                    } else {
-                return json(std::format("Failed to set EQ preset on {}.", device.name));
+            } else {
+                return json(std::format("Failed to apply EQ preset '{}' to {}.", presets[i].name, device.name));
             }
         }
     }
     
     // Preset not found - list available presets
-    std::string available = "Available EQ presets: ";
+    std::string available = std::format("EQ preset '{}' not found.\n\nAvailable presets for {}:\n", presetName, device.name);
     for (int i = 0; i < presetsSize; i++) {
-        if (i > 0) available += ", ";
-        available += presets[i].name;
+        available += std::format("- {}\n", presets[i].name);
     }
     
-    return json(std::format("EQ preset '{}' not found. {}", presetName, available));
+    return json(available);
 }
 
 // Set iCUE profile
@@ -567,8 +541,8 @@ static json cmdSetProfile(const json& args) {
     AutomationSdkProfile profiles[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
     auto code = AutomationSdkGetProfiles(profiles, AUTOMATION_SDK_ITEMS_COUNT_MAX, &size);
     
-    if (code != Success) {
-        return json("Failed to get iCUE profiles.");
+    if (code != Success || size == 0) {
+        return json("No iCUE profiles found. Create profiles in iCUE to use this feature.");
     }
     
     // Find matching profile (case-insensitive)
@@ -579,21 +553,20 @@ static json cmdSetProfile(const json& args) {
             
             code = AutomationSdkActivateProfile(profiles[i].id);
             if (code == Success) {
-                return json(std::format("Activated iCUE profile '{}'.", profiles[i].name));
+                return json(std::format("Switched to profile '{}'.", profiles[i].name));
             } else {
-                return json(std::format("Failed to activate profile '{}'.", profiles[i].name));
+                return json(std::format("Failed to switch to profile '{}'.", profiles[i].name));
             }
         }
     }
     
     // Profile not found - list available
-    std::string available = "Available profiles: ";
+    std::string available = std::format("Profile '{}' not found.\n\nAvailable profiles:\n", profileName);
     for (int i = 0; i < size; i++) {
-        if (i > 0) available += ", ";
-        available += profiles[i].name;
+        available += std::format("- {}\n", profiles[i].name);
     }
     
-    return json(std::format("Profile '{}' not found. {}", profileName, available));
+    return json(available);
 }
 
 // Get connected devices
@@ -612,45 +585,66 @@ static json cmdGetDevices(const json& args) {
         return json("No Corsair devices found. Please connect a Corsair device and ensure iCUE is running.");
     }
     
-    std::string result = std::format("Found {} Corsair device(s):\n", g_numDevices);
-    
-    for (int i = 0; i < g_numDevices; i++) {
-        logMsg(std::format("[DEVICES] Device {}: model='{}', type={}", 
-            i, g_devices[i].model, static_cast<int>(g_devices[i].type)));
-        result += std::format("- {} ({})\n", g_devices[i].model, getDeviceTypeName(g_devices[i].type));
-    }
-    
-    // Query Automation SDK capabilities
-    result += "\n--- Automation SDK Status ---\n";
-    
-    // DPI devices
+    // Query device capabilities first
     int dpiSize = 0;
     AutomationSdkDevice dpiDevices[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
     auto dpiCode = AutomationSdkGetDpiDevices(dpiDevices, AUTOMATION_SDK_ITEMS_COUNT_MAX, &dpiSize);
     logMsg(std::format("[DEVICES] AutomationSdkGetDpiDevices: code={}, size={}", 
         automationErrorToString(dpiCode), dpiSize));
-    result += std::format("DPI devices: {} (code={}, size={})\n", 
-        dpiSize > 0 ? "available" : "none/unsupported", automationErrorToString(dpiCode), dpiSize);
     
-    // EQ devices  
     int eqSize = 0;
     AutomationSdkDevice eqDevices[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
     auto eqCode = AutomationSdkGetEqualizerDevices(eqDevices, AUTOMATION_SDK_ITEMS_COUNT_MAX, &eqSize);
     logMsg(std::format("[DEVICES] AutomationSdkGetEqualizerDevices: code={}, size={}", 
         automationErrorToString(eqCode), eqSize));
-    result += std::format("EQ devices: {} (code={}, size={})\n",
-        eqSize > 0 ? "available" : "none/unsupported", automationErrorToString(eqCode), eqSize);
     
-    // Cooling devices
     int coolSize = 0;
     AutomationSdkDevice coolDevices[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
     auto coolCode = AutomationSdkGetCoolingDevices(coolDevices, AUTOMATION_SDK_ITEMS_COUNT_MAX, &coolSize);
     logMsg(std::format("[DEVICES] AutomationSdkGetCoolingDevices: code={}, size={}", 
         automationErrorToString(coolCode), coolSize));
-    result += std::format("Cooling devices: {} (code={}, size={})\n",
-        coolSize > 0 ? "available" : "none/unsupported", automationErrorToString(coolCode), coolSize);
     
-    // Profiles
+    // Helper to check if device name matches any in a list
+    auto hasFeature = [](const char* model, AutomationSdkDevice* devices, int count) {
+        for (int i = 0; i < count; i++) {
+            if (std::string(model).find(devices[i].name) != std::string::npos ||
+                std::string(devices[i].name).find(model) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+    
+    // Build device list with per-device features
+    std::string result = "Corsair Devices:\n";
+    for (int i = 0; i < g_numDevices; i++) {
+        logMsg(std::format("[DEVICES] Device {}: model='{}', type={}", 
+            i, g_devices[i].model, static_cast<int>(g_devices[i].type)));
+        
+        // Build feature list for this device
+        std::vector<std::string> features;
+        if (dpiCode == Success && hasFeature(g_devices[i].model, dpiDevices, dpiSize)) {
+            features.push_back("DPI control");
+        }
+        if (eqCode == Success && hasFeature(g_devices[i].model, eqDevices, eqSize)) {
+            features.push_back("EQ presets");
+        }
+        if (coolCode == Success && hasFeature(g_devices[i].model, coolDevices, coolSize)) {
+            features.push_back("cooling presets");
+        }
+        
+        result += std::format("- **{}** ({})\n", g_devices[i].model, getDeviceTypeName(g_devices[i].type));
+        if (!features.empty()) {
+            result += "  Supports: ";
+            for (size_t j = 0; j < features.size(); j++) {
+                if (j > 0) result += ", ";
+                result += features[j];
+            }
+            result += "\n";
+        }
+    }
+    
+    // Profiles are global to iCUE, not per-device
     logMsg("[DEVICES] Querying profiles...");
     int profileCount = 0;
     AutomationSdkProfile profiles[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
@@ -659,16 +653,13 @@ static json cmdGetDevices(const json& args) {
         automationErrorToString(profileCode), profileCount));
     
     if (profileCode == Success && profileCount > 0) {
-        result += "\nAvailable profiles: ";
+        result += "\nProfiles: ";
         for (int i = 0; i < profileCount; i++) {
             logMsg(std::format("[DEVICES] Profile {}: '{}'", i, profiles[i].name));
             if (i > 0) result += ", ";
             result += profiles[i].name;
         }
         result += "\n";
-    } else {
-        result += std::format("Profiles: none/unavailable (code={}, count={})\n",
-            automationErrorToString(profileCode), profileCount);
     }
     
     logMsg("[DEVICES] Returning result");
@@ -705,7 +696,6 @@ int main() {
     logMsg("[MAIN] DLL directory setup complete");
     
     gassist::Plugin plugin("corsair", "2.0.0", "Control Corsair iCUE devices");
-    g_plugin = &plugin;
     logMsg("[MAIN] Plugin instance created");
     
     // Register commands

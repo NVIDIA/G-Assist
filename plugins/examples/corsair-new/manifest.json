@@ -26,7 +26,7 @@
       "properties": {
         "color": {
           "type": "string",
-          "description": "Color name (red, blue, green, cyan, magenta, yellow, white, orange, purple, pink, gold, off) or 'off' to turn off"
+          "description": "Color name (red, green, blue, cyan, magenta, yellow, white, orange, purple, pink, gold, teal, gray) or 'off' to turn off"
         },
         "device": {
           "type": "string",
