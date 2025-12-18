@@ -215,23 +215,37 @@ static bool ensureInitialized() {
         }
     };
     
+    // Step 1: Connect to iCUE SDK first
     logMsg("[INIT] Calling CorsairConnect...");
     auto status = CorsairConnect(callback, nullptr);
     logMsg(std::format("[INIT] CorsairConnect returned: {}", corsairErrorToString(status)));
     
+    if (status != CE_Success) {
+        logMsg("[INIT] iCUE SDK connection failed");
+        return false;
+    }
+    
+    // Step 2: Wait for iCUE to fully initialize and enumerate devices
+    logMsg("[INIT] Waiting 1000ms for iCUE device enumeration to complete...");
+    Sleep(1000);
+    logMsg(std::format("[INIT] After wait: {} devices found", g_numDevices));
+    
+    // Step 3: NOW connect to Automation SDK (after iCUE is ready)
     logMsg("[INIT] Calling AutomationSdkConnect...");
-    auto autoStatus = AutomationSdkConnect("com.corsair.g_assist_plugin");
+    auto autoStatus = AutomationSdkConnect("com.nvidia.g_assist_corsair");
     logMsg(std::format("[INIT] AutomationSdkConnect returned: {}", automationErrorToString(autoStatus)));
     
-    g_initialized = (status == CE_Success) && (autoStatus == Success);
-    logMsg(std::format("[INIT] Initialization result: {}", g_initialized ? "SUCCESS" : "FAILED"));
-    
-    // Wait briefly for device enumeration
-    if (g_initialized) {
-        logMsg("[INIT] Waiting 500ms for device enumeration...");
-        Sleep(500);
-        logMsg(std::format("[INIT] After wait: {} devices found", g_numDevices));
+    if (autoStatus != Success) {
+        logMsg("[INIT] Automation SDK connection failed");
+        // Continue anyway - iCUE SDK works for lighting
     }
+    
+    // Step 4: Give Automation SDK time to sync with iCUE
+    logMsg("[INIT] Waiting 500ms for Automation SDK to sync...");
+    Sleep(500);
+    
+    g_initialized = (status == CE_Success);
+    logMsg(std::format("[INIT] Initialization result: {}", g_initialized ? "SUCCESS" : "FAILED"));
     
     return g_initialized;
 }
@@ -284,43 +298,101 @@ static json cmdSetMouseDpi(const json& args) {
         return json("Invalid DPI value. Please specify a value between 100 and 26000.");
     }
     
+    // =====================================================================
+    // DIAGNOSTIC: Query what Automation SDK thinks are DPI-capable devices
+    // =====================================================================
+    logMsg("[DPI] --- Automation SDK DPI Device Query ---");
+    int automationDpiCount = 0;
+    AutomationSdkDevice automationDpiDevices[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
+    auto dpiQueryCode = AutomationSdkGetDpiDevices(automationDpiDevices, AUTOMATION_SDK_ITEMS_COUNT_MAX, &automationDpiCount);
+    logMsg(std::format("[DPI] AutomationSdkGetDpiDevices returned: code={}, count={}", 
+        automationErrorToString(dpiQueryCode), automationDpiCount));
+    
+    if (dpiQueryCode == Success && automationDpiCount > 0) {
+        for (int i = 0; i < automationDpiCount; i++) {
+            logMsg(std::format("[DPI]   Automation DPI Device {}: id='{}', name='{}'", 
+                i, automationDpiDevices[i].id, automationDpiDevices[i].name));
+        }
+    } else {
+        logMsg("[DPI]   WARNING: Automation SDK reports NO DPI-capable devices!");
+        logMsg("[DPI]   This could mean:");
+        logMsg("[DPI]   - Mouse doesn't support DPI control via Automation SDK");
+        logMsg("[DPI]   - iCUE needs to be restarted");
+        logMsg("[DPI]   - Mouse firmware may need update");
+    }
+    
+    // =====================================================================
     // Find mouse from iCUE SDK devices
+    // =====================================================================
+    logMsg("[DPI] --- iCUE SDK Device List ---");
     CorsairDeviceInfo* mouseDevice = nullptr;
     for (int i = 0; i < g_numDevices; i++) {
-        if (g_devices[i].type == CDT_Mouse) {
+        logMsg(std::format("[DPI]   iCUE Device {}: model='{}', type={}, id='{}'", 
+            i, g_devices[i].model, static_cast<int>(g_devices[i].type), g_devices[i].id));
+        if (g_devices[i].type == CDT_Mouse && !mouseDevice) {
             mouseDevice = &g_devices[i];
-            logMsg(std::format("[DPI] Found mouse: '{}' id='{}'", mouseDevice->model, mouseDevice->id));
-            break;
+            logMsg(std::format("[DPI]   ^ Selected as target mouse"));
         }
     }
     
     if (!mouseDevice) {
-        logMsg("[DPI] ERROR: No mouse found in device list");
+        logMsg("[DPI] ERROR: No mouse found in iCUE device list");
         return json("No Corsair mouse found. Please connect a Corsair mouse.");
     }
     
-    // Try approach 1: Direct SetDpiValue using mouse ID from iCUE SDK
-    logMsg("[DPI] Approach 1: Trying AutomationSdkSetDpiValue with iCUE device ID...");
-    auto code = AutomationSdkSetDpiValue(mouseDevice->id, dpi);
-    logMsg(std::format("[DPI] AutomationSdkSetDpiValue returned: {}", automationErrorToString(code)));
+    logMsg(std::format("[DPI] Target mouse: '{}', iCUE ID='{}'", mouseDevice->model, mouseDevice->id));
+    
+    // =====================================================================
+    // Check if iCUE mouse ID matches any Automation SDK DPI device
+    // =====================================================================
+    bool foundInAutomationSdk = false;
+    std::string automationSdkId = "";
+    for (int i = 0; i < automationDpiCount; i++) {
+        if (strcmp(automationDpiDevices[i].id, mouseDevice->id) == 0) {
+            foundInAutomationSdk = true;
+            automationSdkId = automationDpiDevices[i].id;
+            logMsg(std::format("[DPI] MATCH: iCUE mouse ID matches Automation SDK DPI device ID"));
+            break;
+        }
+    }
+    if (!foundInAutomationSdk && automationDpiCount > 0) {
+        logMsg("[DPI] WARNING: iCUE mouse ID does NOT match any Automation SDK DPI device ID!");
+        logMsg("[DPI]   iCUE device IDs and Automation SDK device IDs may be different namespaces.");
+        logMsg("[DPI]   Will try using Automation SDK device ID instead...");
+        automationSdkId = automationDpiDevices[0].id;  // Use first Automation SDK DPI device
+        logMsg(std::format("[DPI]   Using Automation SDK ID: '{}'", automationSdkId));
+    }
+    
+    // Determine which ID to use for DPI calls
+    const char* dpiDeviceId = (automationDpiCount > 0 && !foundInAutomationSdk) 
+        ? automationSdkId.c_str() 
+        : mouseDevice->id;
+    logMsg(std::format("[DPI] Using device ID for DPI calls: '{}'", dpiDeviceId));
+    
+    // Try approach 1: Direct SetDpiValue
+    logMsg("[DPI] Approach 1: Trying AutomationSdkSetDpiValue...");
+    auto code = AutomationSdkSetDpiValue(dpiDeviceId, dpi);
+    logMsg(std::format("[DPI] AutomationSdkSetDpiValue('{}', {}) returned: {}", 
+        dpiDeviceId, dpi, automationErrorToString(code)));
     
     if (code == Success) {
         logMsg(std::format("[DPI] SUCCESS via direct SetDpiValue: {} DPI = {}", mouseDevice->model, dpi));
         return json(std::format("Set {} DPI to {}.", mouseDevice->model, dpi));
     }
+    logMsg(std::format("[DPI] Approach 1 FAILED: code={}", automationErrorToString(code)));
     
     // Try approach 2: Get DPI presets and find closest match
     logMsg("[DPI] Approach 2: Trying DPI presets...");
     int presetCount = 0;
     AutomationSdkDpiPreset presets[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
-    code = AutomationSdkGetDpiPresets(mouseDevice->id, presets, AUTOMATION_SDK_ITEMS_COUNT_MAX, &presetCount);
-    logMsg(std::format("[DPI] AutomationSdkGetDpiPresets returned: {}, count={}", 
-        automationErrorToString(code), presetCount));
+    code = AutomationSdkGetDpiPresets(dpiDeviceId, presets, AUTOMATION_SDK_ITEMS_COUNT_MAX, &presetCount);
+    logMsg(std::format("[DPI] AutomationSdkGetDpiPresets('{}') returned: code={}, count={}", 
+        dpiDeviceId, automationErrorToString(code), presetCount));
     
     if (code == Success && presetCount > 0) {
         // Log available presets
         for (int i = 0; i < presetCount; i++) {
-            logMsg(std::format("[DPI] Preset {}: name='{}', id='{}'", i, presets[i].name, presets[i].id));
+            logMsg(std::format("[DPI]   Preset {}: name='{}', id='{}'", i, presets[i].name, presets[i].id));
         }
         
         // Try to find a preset that matches the requested DPI (by name)
@@ -329,7 +401,7 @@ static json cmdSetMouseDpi(const json& args) {
             std::string presetName = presets[i].name;
             if (presetName.find(dpiStr) != std::string::npos) {
                 logMsg(std::format("[DPI] Found matching preset: '{}'", presetName));
-                code = AutomationSdkActivateDpiPreset(mouseDevice->id, presets[i].id);
+                code = AutomationSdkActivateDpiPreset(dpiDeviceId, presets[i].id);
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiPreset returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
@@ -345,20 +417,22 @@ static json cmdSetMouseDpi(const json& args) {
             presetList += presets[i].name;
         }
         logMsg(std::format("[DPI] No preset matches {}. Available: {}", dpi, presetList));
+    } else {
+        logMsg(std::format("[DPI] Approach 2 FAILED: code={}, count={}", automationErrorToString(code), presetCount));
     }
     
     // Try approach 3: DPI stages
     logMsg("[DPI] Approach 3: Trying DPI stages...");
     int stageCount = 0;
     AutomationSdkDpiStage stages[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
-    code = AutomationSdkGetDpiStages(mouseDevice->id, stages, AUTOMATION_SDK_ITEMS_COUNT_MAX, &stageCount);
-    logMsg(std::format("[DPI] AutomationSdkGetDpiStages returned: {}, count={}", 
-        automationErrorToString(code), stageCount));
+    code = AutomationSdkGetDpiStages(dpiDeviceId, stages, AUTOMATION_SDK_ITEMS_COUNT_MAX, &stageCount);
+    logMsg(std::format("[DPI] AutomationSdkGetDpiStages('{}') returned: code={}, count={}", 
+        dpiDeviceId, automationErrorToString(code), stageCount));
     
     if (code == Success && stageCount > 0) {
         // Log available stages
         for (int i = 0; i < stageCount; i++) {
-            logMsg(std::format("[DPI] Stage {}: name='{}', index={}", 
+            logMsg(std::format("[DPI]   Stage {}: name='{}', index={}", 
                 i, stages[i].name, static_cast<int>(stages[i].index)));
         }
         
@@ -368,7 +442,7 @@ static json cmdSetMouseDpi(const json& args) {
             std::string stageName = stages[i].name;
             if (stageName.find(dpiStr) != std::string::npos) {
                 logMsg(std::format("[DPI] Found matching stage: '{}'", stageName));
-                code = AutomationSdkActivateDpiStage(mouseDevice->id, stages[i].index);
+                code = AutomationSdkActivateDpiStage(dpiDeviceId, stages[i].index);
                 logMsg(std::format("[DPI] AutomationSdkActivateDpiStage returned: {}", automationErrorToString(code)));
                 
                 if (code == Success) {
@@ -379,19 +453,36 @@ static json cmdSetMouseDpi(const json& args) {
         
         // No exact match - try first stage as fallback
         logMsg("[DPI] No matching stage, trying Stage1...");
-        code = AutomationSdkActivateDpiStage(mouseDevice->id, Stage1);
+        code = AutomationSdkActivateDpiStage(dpiDeviceId, Stage1);
         logMsg(std::format("[DPI] AutomationSdkActivateDpiStage(Stage1) returned: {}", automationErrorToString(code)));
         
         if (code == Success) {
             return json(std::format("DPI {} not available on {}. Set to '{}' instead.", 
                 dpi, deviceName, stages[0].name));
         }
+    } else {
+        logMsg(std::format("[DPI] Approach 3 FAILED: code={}, count={}", automationErrorToString(code), stageCount));
     }
     
-    // All approaches failed
-    logMsg("[DPI] ERROR: All DPI setting approaches failed");
+    // All approaches failed - comprehensive diagnostic summary
+    logMsg("[DPI] ========== ALL APPROACHES FAILED - SUMMARY ==========");
+    logMsg(std::format("[DPI] Mouse model: {}", mouseDevice->model));
+    logMsg(std::format("[DPI] iCUE SDK device ID: {}", mouseDevice->id));
+    logMsg(std::format("[DPI] Automation SDK DPI devices found: {}", automationDpiCount));
+    logMsg(std::format("[DPI] ID match between iCUE and Automation SDK: {}", foundInAutomationSdk ? "YES" : "NO"));
+    logMsg(std::format("[DPI] Device ID used for calls: {}", dpiDeviceId));
+    logMsg("[DPI] Possible reasons for failure:");
+    logMsg("[DPI]   1. Mouse model not supported by Automation SDK for DPI control");
+    logMsg("[DPI]   2. iCUE version may be outdated (needs 5.x+)");
+    logMsg("[DPI]   3. iCUE SDK Control may be disabled in iCUE settings");
+    logMsg("[DPI]   4. Another application may have exclusive DPI control");
+    logMsg("[DPI]   5. Device ID mismatch between iCUE SDK and Automation SDK");
+    logMsg("[DPI] Recommendation: Check corsair_plugin.log for full trace");
+    logMsg("[DPI] ==========================================================");
+    
     return json(std::format(
-        "Could not set DPI on {}. Try setting DPI directly in iCUE.", deviceName));
+        "Could not set DPI on {}. The Automation SDK may not support this mouse for DPI control. "
+        "Check the plugin log file for diagnostics. Try setting DPI directly in iCUE.", mouseDevice->model));
 }
 
 // Set lighting with optional device targeting
