@@ -209,6 +209,7 @@ goto :eof
 :: ============================================================
 :deploy_plugin
 echo Deploying to %P_DEPLOY_DIR%...
+set "DEPLOY_ERRORS=0"
 
 :: ============================================================
 :: PRE-DEPLOYMENT: Validate source manifest
@@ -225,72 +226,140 @@ if errorlevel 1 (
 if not exist "%P_DEPLOY_DIR%" mkdir "%P_DEPLOY_DIR%"
 
 :: Copy common files
-if exist "%P_DIR%\manifest.json" copy /Y "%P_DIR%\manifest.json" "%P_DEPLOY_DIR%\" >nul
-if exist "%P_DIR%\config.json" copy /Y "%P_DIR%\config.json" "%P_DEPLOY_DIR%\" >nul
+if exist "%P_DIR%\manifest.json" (
+    copy /Y "%P_DIR%\manifest.json" "%P_DEPLOY_DIR%\" >nul 2>&1
+    if errorlevel 1 (
+        echo   [ERROR] Failed to copy manifest.json - file may be locked
+        set "DEPLOY_ERRORS=1"
+    )
+)
+if exist "%P_DIR%\config.json" copy /Y "%P_DIR%\config.json" "%P_DEPLOY_DIR%\" >nul 2>&1
 
 :: Copy type-specific files
 if "%P_TYPE%"=="python" (
-    if exist "%P_DIR%\plugin.py" copy /Y "%P_DIR%\plugin.py" "%P_DEPLOY_DIR%\" >nul
-    if exist "%P_LIBS%" xcopy /E /I /Y "%P_LIBS%" "%P_DEPLOY_DIR%\libs" >nul
+    if exist "%P_DIR%\plugin.py" (
+        copy /Y "%P_DIR%\plugin.py" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy plugin.py - file may be locked
+            set "DEPLOY_ERRORS=1"
+        )
+    )
+    if exist "%P_LIBS%" (
+        xcopy /E /I /Y "%P_LIBS%" "%P_DEPLOY_DIR%\libs" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy libs/ - files may be locked by running plugin
+            echo   [TIP] Stop G-Assist or run as Administrator and try again
+            set "DEPLOY_ERRORS=1"
+        )
+    )
 )
 
 if "%P_TYPE%"=="cpp" (
     :: For C++, copy built executable and any DLLs
     set "CPP_BUILD_DIR=%P_DIR%\build\Release"
+    set "EXE_FOUND=0"
     
     :: Try build/Release first (CMake output)
     if exist "!CPP_BUILD_DIR!\*.exe" (
         echo Copying executable from build/Release...
-        copy /Y "!CPP_BUILD_DIR!\*.exe" "%P_DEPLOY_DIR%\" >nul
+        copy /Y "!CPP_BUILD_DIR!\*.exe" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy executable - file may be locked
+            set "DEPLOY_ERRORS=1"
+        ) else (
+            set "EXE_FOUND=1"
+        )
         
         :: Copy any DLLs from build directory
         if exist "!CPP_BUILD_DIR!\*.dll" (
             echo Copying DLLs from build/Release...
-            copy /Y "!CPP_BUILD_DIR!\*.dll" "%P_DEPLOY_DIR%\" >nul
+            copy /Y "!CPP_BUILD_DIR!\*.dll" "%P_DEPLOY_DIR%\" >nul 2>&1
         )
     ) else if exist "%P_DIR%\x64\Release\*.exe" (
         :: Try x64/Release (Visual Studio output)
         echo Copying executable from x64/Release...
-        copy /Y "%P_DIR%\x64\Release\*.exe" "%P_DEPLOY_DIR%\" >nul
+        copy /Y "%P_DIR%\x64\Release\*.exe" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy executable - file may be locked
+            set "DEPLOY_ERRORS=1"
+        ) else (
+            set "EXE_FOUND=1"
+        )
         
         if exist "%P_DIR%\x64\Release\*.dll" (
             echo Copying DLLs from x64/Release...
-            copy /Y "%P_DIR%\x64\Release\*.dll" "%P_DEPLOY_DIR%\" >nul
+            copy /Y "%P_DIR%\x64\Release\*.dll" "%P_DEPLOY_DIR%\" >nul 2>&1
         )
     ) else if exist "%P_DIR%\Release\*.exe" (
         :: Try Release folder
         echo Copying executable from Release...
-        copy /Y "%P_DIR%\Release\*.exe" "%P_DEPLOY_DIR%\" >nul
+        copy /Y "%P_DIR%\Release\*.exe" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy executable - file may be locked
+            set "DEPLOY_ERRORS=1"
+        ) else (
+            set "EXE_FOUND=1"
+        )
         
         if exist "%P_DIR%\Release\*.dll" (
             echo Copying DLLs from Release...
-            copy /Y "%P_DIR%\Release\*.dll" "%P_DEPLOY_DIR%\" >nul
+            copy /Y "%P_DIR%\Release\*.dll" "%P_DEPLOY_DIR%\" >nul 2>&1
         )
     ) else if exist "%P_DIR%\*.exe" (
         :: Try root folder
         echo Copying executable from plugin folder...
-        copy /Y "%P_DIR%\*.exe" "%P_DEPLOY_DIR%\" >nul
+        copy /Y "%P_DIR%\*.exe" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy executable - file may be locked
+            set "DEPLOY_ERRORS=1"
+        ) else (
+            set "EXE_FOUND=1"
+        )
         
         if exist "%P_DIR%\*.dll" (
             echo Copying DLLs from plugin folder...
-            copy /Y "%P_DIR%\*.dll" "%P_DEPLOY_DIR%\" >nul
+            copy /Y "%P_DIR%\*.dll" "%P_DEPLOY_DIR%\" >nul 2>&1
         )
-    ) else (
-        echo WARNING: No executable found. Build the plugin first with CMake.
+    )
+    
+    if "!EXE_FOUND!"=="0" if "!DEPLOY_ERRORS!"=="0" (
+        echo   [WARNING] No executable found. Build the plugin first with CMake.
     )
     
     :: Copy any DLLs from libs folder to deployed plugin's libs/
     dir "%P_LIBS%\*.dll" >nul 2>&1 && (
         echo Copying runtime DLLs to libs/...
         if not exist "%P_DEPLOY_DIR%\libs" mkdir "%P_DEPLOY_DIR%\libs"
-        copy /Y "%P_LIBS%\*.dll" "%P_DEPLOY_DIR%\libs\" >nul
+        copy /Y "%P_LIBS%\*.dll" "%P_DEPLOY_DIR%\libs\" >nul 2>&1
     )
 )
 
 if "%P_TYPE%"=="nodejs" (
-    if exist "%P_DIR%\plugin.js" copy /Y "%P_DIR%\plugin.js" "%P_DEPLOY_DIR%\" >nul
-    if exist "%P_DIR%\launch.bat" copy /Y "%P_DIR%\launch.bat" "%P_DEPLOY_DIR%\" >nul
-    if exist "%P_LIBS%\gassist-sdk.js" copy /Y "%P_LIBS%\gassist-sdk.js" "%P_DEPLOY_DIR%\" >nul
+    if exist "%P_DIR%\plugin.js" (
+        copy /Y "%P_DIR%\plugin.js" "%P_DEPLOY_DIR%\" >nul 2>&1
+        if errorlevel 1 (
+            echo   [ERROR] Failed to copy plugin.js - file may be locked
+            set "DEPLOY_ERRORS=1"
+        )
+    )
+    if exist "%P_DIR%\launch.bat" copy /Y "%P_DIR%\launch.bat" "%P_DEPLOY_DIR%\" >nul 2>&1
+    if exist "%P_LIBS%\gassist-sdk.js" copy /Y "%P_LIBS%\gassist-sdk.js" "%P_DEPLOY_DIR%\" >nul 2>&1
+)
+
+:: Check for deployment errors
+if "%DEPLOY_ERRORS%"=="1" (
+    echo.
+    echo ************************************************************
+    echo   DEPLOYMENT INCOMPLETE - Some files could not be copied!
+    echo ************************************************************
+    echo.
+    echo   Files may be locked by a running plugin or G-Assist engine.
+    echo.
+    echo   To fix:
+    echo     1. Close G-Assist application
+    echo     2. Or run this script as Administrator
+    echo     3. Then run: setup.bat %P_NAME% -deploy
+    echo.
 )
 
 :: ============================================================

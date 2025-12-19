@@ -459,6 +459,12 @@ class MCPPlugin(Plugin):
     and registers them as plugin commands. Falls back to cached functions
     if MCP server is unavailable.
     
+    Features:
+    - Auto-discovery of MCP tools at startup
+    - Automatic session refresh to prevent staleness
+    - Periodic polling for new/changed tools with manifest updates
+    - Fallback to cached functions when MCP unavailable
+    
     MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18
     
     Manifest Schema for MCP Plugins:
@@ -481,7 +487,9 @@ class MCPPlugin(Plugin):
         plugin = MCPPlugin(
             name="stream-deck",
             version="2.0.0",
-            mcp_url="http://localhost:9090/mcp"
+            mcp_url="http://localhost:9090/mcp",
+            poll_interval=60,  # Poll for new tools every 60 seconds
+            auto_refresh_session=True  # Keep session fresh automatically
         )
 
         @plugin.discoverer
@@ -496,7 +504,7 @@ class MCPPlugin(Plugin):
                 for a in result.get("actions", [])
             ]
 
-        plugin.run()  # Auto-discovers at startup, writes manifest
+        plugin.run()  # Auto-discovers at startup, polls for new tools
     """
     
     def __init__(
@@ -511,6 +519,10 @@ class MCPPlugin(Plugin):
         session_timeout: float = 300.0,
         discovery_timeout: float = 5.0,
         launch_on_startup: bool = True,
+        # Auto-refresh and polling
+        poll_interval: float = 60.0,
+        auto_refresh_session: bool = True,
+        session_refresh_margin: float = 30.0,
         # Manifest
         base_functions: List[Dict[str, Any]] = None,
         source_dir: str = None
@@ -528,6 +540,9 @@ class MCPPlugin(Plugin):
             session_timeout: Session idle timeout before refresh
             discovery_timeout: Shorter timeout for startup discovery
             launch_on_startup: If True, engine should launch this plugin on startup
+            poll_interval: Interval in seconds to poll for new tools (0 = disabled)
+            auto_refresh_session: If True, automatically refresh session before expiry
+            session_refresh_margin: Seconds before expiry to refresh session
             base_functions: Static functions to always include in manifest
             source_dir: Source directory for writing manifest (auto-detected if None)
         """
@@ -539,6 +554,9 @@ class MCPPlugin(Plugin):
         self._session_timeout = session_timeout
         self._discovery_timeout = discovery_timeout
         self._launch_on_startup = launch_on_startup
+        self._poll_interval = poll_interval
+        self._auto_refresh_session = auto_refresh_session
+        self._session_refresh_margin = session_refresh_margin
         
         # Auto-detect source directory from call stack
         if source_dir is None:
@@ -553,8 +571,14 @@ class MCPPlugin(Plugin):
         # MCP client (created on demand)
         self._mcp: Optional["MCPClient"] = None
         
+        # Session manager (created after MCP client)
+        self._session_manager: Optional["MCPSessionManager"] = None
+        
         # Discovery function (set via decorator)
         self._discoverer: Optional[Callable[["MCPClient"], List["FunctionDef"]]] = None
+        
+        # Custom action poller (set via decorator, for dynamic data like Stream Deck actions)
+        self._action_poller: Optional[Callable[["MCPClient"], List[Dict[str, Any]]]] = None
         
         # Import here to avoid circular imports
         from .mcp import FunctionRegistry
@@ -568,13 +592,15 @@ class MCPPlugin(Plugin):
         self._registry.set_mcp_config({
             "enabled": True,
             "server_url": mcp_url,
-            "launch_on_startup": launch_on_startup
+            "launch_on_startup": launch_on_startup,
+            "poll_interval": poll_interval,
+            "auto_refresh_session": auto_refresh_session
         })
         
         # Track discovered function executors
         self._executors: Dict[str, Callable] = {}
         
-        logger.info(f"MCPPlugin '{name}' initialized (MCP: {mcp_url or 'custom transport'})")
+        logger.info(f"MCPPlugin '{name}' initialized (MCP: {mcp_url or 'custom transport'}, poll={poll_interval}s, auto_refresh={auto_refresh_session})")
     
     @property
     def mcp(self) -> Optional["MCPClient"]:
@@ -615,10 +641,96 @@ class MCPPlugin(Plugin):
         logger.debug(f"Registered discoverer: {func.__name__}")
         return func
     
+    def action_poller(self, func: Callable[["MCPClient"], List[Dict[str, Any]]]) -> Callable:
+        """
+        Decorator to register a custom action polling function.
+        
+        Use this when polling for dynamic data (like Stream Deck actions)
+        that isn't exposed via MCP tools/list.
+        
+        The function receives an MCPClient and returns a list of items with 'id' keys.
+        When items change, the discoverer is re-run to update functions.
+        
+        Example:
+            @plugin.action_poller
+            def poll_actions(mcp: MCPClient) -> List[Dict]:
+                result = mcp.call_tool("get_executable_actions")
+                return result.get("actions", [])
+        """
+        self._action_poller = func
+        logger.debug(f"Registered action poller: {func.__name__}")
+        return func
+    
     def run(self):
-        """Start plugin with auto-discovery at startup."""
+        """Start plugin with auto-discovery and session management."""
         self._startup_discovery()
-        super().run()
+        self._start_session_manager()
+        try:
+            super().run()
+        finally:
+            self._stop_session_manager()
+    
+    def _start_session_manager(self):
+        """Start the session manager for auto-refresh and polling."""
+        if not self.mcp or (not self._auto_refresh_session and self._poll_interval <= 0):
+            return
+        
+        from .mcp import MCPSessionManager
+        
+        # Use action_poller if provided (for dynamic data like Stream Deck actions)
+        # Otherwise use default MCP tools/list polling
+        custom_poll_fn = self._action_poller if self._action_poller else None
+        
+        self._session_manager = MCPSessionManager(
+            client=self.mcp,
+            poll_interval=self._poll_interval if (self._discoverer or self._action_poller) else 0,
+            session_refresh_margin=self._session_refresh_margin,
+            on_tools_changed=self._on_tools_changed,
+            on_session_refreshed=self._on_session_refreshed,
+            on_error=self._on_session_error,
+            custom_poll_fn=custom_poll_fn
+        )
+        self._session_manager.start()
+        logger.info(f"Session manager started (custom_poll={'yes' if custom_poll_fn else 'no'})")
+    
+    def _stop_session_manager(self):
+        """Stop the session manager."""
+        if self._session_manager:
+            self._session_manager.stop()
+            self._session_manager = None
+            logger.info("Session manager stopped")
+    
+    def _on_tools_changed(
+        self, 
+        added: List[Dict[str, Any]], 
+        removed: List[Dict[str, Any]], 
+        all_tools: List[Dict[str, Any]]
+    ):
+        """Handle tools changed event from session manager."""
+        if not self._discoverer:
+            return
+        
+        logger.info(f"Tools changed detected: +{len(added)}, -{len(removed)}")
+        
+        # Re-run discovery to update function registry
+        try:
+            if self.mcp and self.mcp.is_connected:
+                functions = self._discoverer(self.mcp)
+                if functions:
+                    self._register_discovered_functions(functions)
+                    self._registry.save_cache()
+                    self._registry.update_manifest(self.version, self.description)
+                    logger.info(f"Updated manifest with {len(functions)} functions")
+        except Exception as e:
+            logger.error(f"Failed to update functions after tools change: {e}")
+    
+    def _on_session_refreshed(self):
+        """Handle session refresh event."""
+        logger.debug("MCP session refreshed")
+    
+    def _on_session_error(self, error: Exception):
+        """Handle session manager error."""
+        logger.error(f"Session manager error: {error}")
     
     def _startup_discovery(self):
         """Perform function discovery at startup."""
@@ -724,16 +836,40 @@ class MCPPlugin(Plugin):
             
             logger.debug(f"Loaded cached command: {name}")
     
+    @property
+    def session_manager(self) -> Optional["MCPSessionManager"]:
+        """Get the session manager (if running)."""
+        return self._session_manager
+    
     def refresh_session(self) -> bool:
         """
         Force refresh the MCP session.
         
         Returns True if successful, False otherwise.
         """
+        # Use session manager if available
+        if self._session_manager and self._session_manager.is_running:
+            return self._session_manager.refresh_session_now()
+        
+        # Otherwise do it manually
         if self.mcp:
             self.mcp.disconnect()
             return self.mcp.connect()
         return False
+    
+    def poll_tools_now(self) -> List[Dict[str, Any]]:
+        """
+        Force an immediate poll for new tools from the MCP server.
+        
+        Returns the list of current tools.
+        """
+        if self._session_manager and self._session_manager.is_running:
+            return self._session_manager.poll_now()
+        
+        # Manual poll
+        if self.mcp and self.mcp.is_connected:
+            return self.mcp.list_tools()
+        return []
     
     def rediscover(self) -> int:
         """

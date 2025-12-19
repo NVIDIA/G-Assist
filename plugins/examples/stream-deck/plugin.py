@@ -104,29 +104,58 @@ def load_manifest() -> dict:
 # PLUGIN DEFINITION - Using MCPPlugin for auto-discovery
 # ============================================================================
 # 
-# MCP configuration lives in manifest.json:
-#   "mcp": { "enabled": true, "server_url": "...", "launch_on_startup": true }
+# All MCP configuration comes from manifest.json:
+#   "mcp": { "enabled": true, "server_url": "...", "launch_on_startup": true, ... }
 # 
 # The engine reads the manifest, sees launch_on_startup=true, and launches
 # this plugin at startup for auto-discovery.
 #
 manifest = load_manifest()
 mcp_config = manifest.get("mcp", {})
-mcp_url = mcp_config.get("server_url", "http://localhost:9090/mcp")
+
+if not mcp_config.get("server_url"):
+    logger.error("FATAL: No 'server_url' in manifest.json mcp config")
+    sys.exit(1)
 
 plugin = MCPPlugin(
     name=PLUGIN_NAME,
     version=manifest.get("version", "2.0.0"),
     description=manifest.get("description", "Stream Deck plugin"),
-    mcp_url=mcp_url,
-    mcp_timeout=30,
-    session_timeout=300,
-    discovery_timeout=5.0,
-    launch_on_startup=mcp_config.get("launch_on_startup", True)
+    # All MCP settings from manifest
+    mcp_url=mcp_config["server_url"],
+    mcp_timeout=mcp_config.get("timeout", 30),
+    session_timeout=mcp_config.get("session_timeout", 300),
+    discovery_timeout=mcp_config.get("discovery_timeout", 5.0),
+    launch_on_startup=mcp_config.get("launch_on_startup", True),
+    poll_interval=mcp_config.get("poll_interval", 60),
+    auto_refresh_session=mcp_config.get("auto_refresh_session", True),
+    session_refresh_margin=mcp_config.get("session_refresh_margin", 30)
 )
 
 # ============================================================================
-# DISCOVERY FUNCTION - Called at startup and on rediscover()
+# ACTION POLLER - Called periodically to detect new/changed actions
+# ============================================================================
+# This polls the MCP server for actions and triggers re-discovery when changed
+# ============================================================================
+@plugin.action_poller
+def poll_stream_deck_actions(mcp: MCPClient) -> list:
+    """
+    Poll for Stream Deck actions to detect changes.
+    
+    Called periodically by the session manager. Returns raw actions list.
+    When actions change, the discoverer is automatically re-run.
+    """
+    try:
+        result = mcp.call_tool("get_executable_actions")
+        actions = result.get("actions", []) if isinstance(result, dict) else []
+        logger.debug(f"Polled {len(actions)} actions")
+        return actions
+    except Exception as e:
+        logger.warning(f"Action poll failed: {e}")
+        return []
+
+# ============================================================================
+# DISCOVERY FUNCTION - Called at startup and when actions change
 # ============================================================================
 # Global: Track discovered actions for auto-retry
 # ============================================================================
@@ -433,7 +462,7 @@ def on_input(content: str):
 # MAIN
 # ============================================================================
 logger.info(f"Initializing Stream Deck plugin v{manifest.get('version', '2.0.0')}...")
-logger.info(f"MCP URL: {mcp_url}")
+logger.info(f"MCP URL: {mcp_config['server_url']}")
 
 if __name__ == "__main__":
     logger.info(f"Starting {PLUGIN_NAME} plugin...")
