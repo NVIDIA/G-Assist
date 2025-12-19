@@ -21,7 +21,7 @@
     },
     {
       "name": "corsair_set_lighting",
-      "description": "Change LED color on any Corsair device. Auto-detects device type or targets specific device. Use 'all' for all devices.",
+      "description": "Change LED color on Corsair devices. Optionally supports targeting by device name or by type.",
       "tags": ["lighting", "LED", "RGB", "color", "Corsair", "iCUE", "keyboard", "mouse", "headset"],
       "properties": {
         "color": {
@@ -30,7 +30,7 @@
         },
         "device": {
           "type": "string",
-          "description": "Optional: 'keyboard', 'mouse', 'headset', 'mousemat', 'fans', 'cooler', 'ram', 'all'. If not specified, applies to all devices."
+          "description": "[optional] Target device by name or type."
         }
       },
       "required": ["color"]
@@ -58,6 +58,12 @@
         }
       },
       "required": ["name"]
+    },
+    {
+      "name": "corsair_get_profiles",
+      "description": "List all available iCUE profiles. Use this to see what profiles can be activated.",
+      "tags": ["profile", "list", "Corsair", "iCUE"],
+      "properties": {}
     },
     {
       "name": "corsair_get_devices",
