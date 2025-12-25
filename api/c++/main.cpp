@@ -13,6 +13,9 @@
  * - Proper synchronization between requests and responses
  */
 
+// Prevent Windows min/max macros from conflicting with std::min/std::max
+#define NOMINMAX
+
 #include <iostream>
 #include <string>
 #include <mutex>
@@ -26,7 +29,17 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include "nvapi.h"
+
+// ============================================================================
+// Miniaudio - Single-header audio library for microphone capture
+// ============================================================================
+#define MINIAUDIO_IMPLEMENTATION
+#define MA_NO_DECODING      // We don't need file decoding
+#define MA_NO_ENCODING      // We don't need file encoding
+#define MA_NO_GENERATION    // We don't need waveform generation
+#include "miniaudio.h"
 
 // ============================================================================
 // Synchronization Primitives
@@ -81,6 +94,33 @@ bool callbackFinished = false;
 std::atomic<bool> spinnerActive(false);
 std::chrono::steady_clock::time_point requestStartTime;
 std::chrono::steady_clock::time_point firstTokenTime;
+
+// ============================================================================
+// Microphone Capture State (Thread-Safe Audio Buffer)
+// ============================================================================
+
+std::mutex micBufferMutex;
+std::vector<float> micBuffer;              // Accumulated audio samples from microphone
+std::atomic<bool> micCaptureActive(false); // Flag to control capture loop
+const int MIC_SAMPLE_RATE = 16000;         // 16kHz for ASR
+const int MIC_CHANNELS = 1;                // Mono
+
+/**
+ * Miniaudio callback - called from audio thread when samples are available
+ * We copy samples into our buffer for the main thread to consume
+ */
+void MicrophoneDataCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    (void)pOutput; // Capture-only, no playback
+
+    if (pInput == nullptr || !micCaptureActive.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    const float* inputSamples = static_cast<const float*>(pInput);
+
+    std::lock_guard<std::mutex> lock(micBufferMutex);
+    micBuffer.insert(micBuffer.end(), inputSamples, inputSamples + frameCount);
+}
 
 // ============================================================================
 // Content Type Constants
@@ -780,6 +820,263 @@ void DemoASRStreaming() {
     std::cin.get();
 }
 
+/**
+ * Demo: ASR Streaming with LIVE Microphone
+ * Uses miniaudio to capture audio from a user-selected recording device
+ */
+void DemoASRMicrophone() {
+    std::cout << "\n\n";
+    std::cout << "===============================================================" << std::endl;
+    std::cout << "           RISE ASR STREAMING DEMO (Live Microphone)           " << std::endl;
+    std::cout << "===============================================================" << std::endl;
+
+    // -------------------------------------------------------------------------
+    // Step 1: Enumerate available microphones
+    // -------------------------------------------------------------------------
+    ma_context context;
+    if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {
+        std::cerr << "[ERROR] Failed to initialize audio context." << std::endl;
+        std::cout << "Press Enter to continue...";
+        std::cin.get();
+        return;
+    }
+
+    ma_device_info* pCaptureDevices;
+    ma_uint32 captureDeviceCount;
+    ma_device_info* pPlaybackDevices;
+    ma_uint32 playbackDeviceCount;
+
+    if (ma_context_get_devices(&context, &pPlaybackDevices, &playbackDeviceCount,
+                               &pCaptureDevices, &captureDeviceCount) != MA_SUCCESS) {
+        std::cerr << "[ERROR] Failed to enumerate audio devices." << std::endl;
+        ma_context_uninit(&context);
+        std::cout << "Press Enter to continue...";
+        std::cin.get();
+        return;
+    }
+
+    if (captureDeviceCount == 0) {
+        std::cerr << "[ERROR] No microphones found on this system." << std::endl;
+        ma_context_uninit(&context);
+        std::cout << "Press Enter to continue...";
+        std::cin.get();
+        return;
+    }
+
+    std::cout << "\nAvailable Microphones:" << std::endl;
+    std::cout << "----------------------------------------" << std::endl;
+    for (ma_uint32 i = 0; i < captureDeviceCount; i++) {
+        std::cout << "  [" << i << "] " << pCaptureDevices[i].name;
+        if (pCaptureDevices[i].isDefault) {
+            std::cout << " (default)";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "----------------------------------------" << std::endl;
+
+    // -------------------------------------------------------------------------
+    // Step 2: Let user select a microphone
+    // -------------------------------------------------------------------------
+    std::cout << "\nEnter microphone number (or press Enter for default): ";
+    std::string micChoice;
+    std::getline(std::cin, micChoice);
+
+    ma_device_id* pSelectedDeviceId = nullptr;
+    std::string selectedDeviceName = "(default)";
+
+    if (!micChoice.empty()) {
+        int micIndex = -1;
+        try {
+            micIndex = std::stoi(micChoice);
+        } catch (...) {
+            micIndex = -1;
+        }
+
+        if (micIndex >= 0 && micIndex < (int)captureDeviceCount) {
+            pSelectedDeviceId = &pCaptureDevices[micIndex].id;
+            selectedDeviceName = pCaptureDevices[micIndex].name;
+        } else {
+            std::cout << "[WARN] Invalid selection, using default microphone." << std::endl;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 3: Initialize the selected microphone
+    // -------------------------------------------------------------------------
+    std::cout << "\nSpeak into your microphone for real-time transcription." << std::endl;
+    std::cout << "Press ENTER at any time to stop recording.\n" << std::endl;
+
+    ma_device_config deviceConfig;
+    ma_device device;
+
+    deviceConfig = ma_device_config_init(ma_device_type_capture);
+    deviceConfig.capture.pDeviceID = pSelectedDeviceId;  // NULL = default, or specific device
+    deviceConfig.capture.format    = ma_format_f32;      // Float32 samples
+    deviceConfig.capture.channels  = MIC_CHANNELS;       // Mono
+    deviceConfig.sampleRate        = MIC_SAMPLE_RATE;    // 16kHz
+    deviceConfig.dataCallback      = MicrophoneDataCallback;
+    deviceConfig.pUserData         = nullptr;
+
+    if (ma_device_init(&context, &deviceConfig, &device) != MA_SUCCESS) {
+        std::cerr << "[ERROR] Failed to initialize microphone device." << std::endl;
+        ma_context_uninit(&context);
+        std::cout << "Press Enter to continue...";
+        std::cin.get();
+        return;
+    }
+
+    std::cout << "[INFO] Microphone: " << device.capture.name << std::endl;
+    std::cout << "[INFO] Sample Rate: " << MIC_SAMPLE_RATE << " Hz, Channels: " << MIC_CHANNELS << std::endl;
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "Recording... (Press ENTER to stop)" << std::endl;
+    std::cout << "========================================\n" << std::endl;
+
+    // Clear buffer and start capture
+    {
+        std::lock_guard<std::mutex> lock(micBufferMutex);
+        micBuffer.clear();
+    }
+    micCaptureActive.store(true, std::memory_order_release);
+
+    if (ma_device_start(&device) != MA_SUCCESS) {
+        std::cerr << "[ERROR] Failed to start microphone." << std::endl;
+        ma_device_uninit(&device);
+        std::cout << "Press Enter to continue...";
+        std::cin.get();
+        return;
+    }
+
+    // Drain semaphore before starting
+    while (responseCompleteSemaphore.try_acquire()) {}
+
+    const int SAMPLES_PER_CHUNK = 700;  // Match WAV demo chunk size (~44ms at 16kHz)
+    int chunkId = 0;
+
+    // Thread to check for Enter key press
+    std::atomic<bool> stopRequested(false);
+    std::thread inputThread([&stopRequested]() {
+        std::cin.get();
+        stopRequested.store(true, std::memory_order_release);
+    });
+
+    // Main loop: pull samples from buffer, send to API
+    while (!stopRequested.load(std::memory_order_acquire)) {
+        std::vector<float> chunkSamples;
+
+        // Try to get a chunk of samples
+        {
+            std::lock_guard<std::mutex> lock(micBufferMutex);
+            if (micBuffer.size() >= SAMPLES_PER_CHUNK) {
+                chunkSamples.assign(micBuffer.begin(), micBuffer.begin() + SAMPLES_PER_CHUNK);
+                micBuffer.erase(micBuffer.begin(), micBuffer.begin() + SAMPLES_PER_CHUNK);
+            }
+        }
+
+        if (chunkSamples.empty()) {
+            // Not enough samples yet, wait a bit
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            continue;
+        }
+
+        // Reset for this chunk
+        {
+            std::lock_guard<std::mutex> lock(responseMutex);
+            currentResponse.clear();
+            responseCompleted = false;
+            firstTokenReceived = false;
+            callbackFinished = false;
+        }
+
+        // Encode to base64
+        const uint8_t* chunkData = reinterpret_cast<const uint8_t*>(chunkSamples.data());
+        size_t chunkBytes = chunkSamples.size() * sizeof(float);
+        std::string base64Audio = Base64Encode(chunkData, chunkBytes);
+
+        // Format payload: "CHUNK:<id>:<sample_rate>:<base64_data>"
+        std::string payload = "CHUNK:" + std::to_string(chunkId) + ":" + 
+                              std::to_string(MIC_SAMPLE_RATE) + ":" + base64Audio;
+
+        // Validate payload size
+        if (payload.length() >= sizeof(NV_REQUEST_RISE_SETTINGS_V1::content)) {
+            std::cerr << "\n[ERROR] Payload too large: " << payload.length() << " bytes" << std::endl;
+            break;
+        }
+
+        // Setup and send request
+        NV_REQUEST_RISE_SETTINGS_V1 requestSettings = { 0 };
+        requestSettings.version = NV_REQUEST_RISE_SETTINGS_VER1;
+        requestSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
+        strncpy_s(requestSettings.content, sizeof(requestSettings.content),
+                  payload.c_str(), payload.length());
+        requestSettings.completed = 0;  // More chunks coming
+
+        NvAPI_Status status = NvAPI_RequestRise(&requestSettings);
+        if (status != NVAPI_OK) {
+            std::cerr << "\n[ERROR] Failed to send audio chunk" << std::endl;
+            break;
+        }
+
+        // Wait for response
+        responseCompleteSemaphore.acquire();
+
+        chunkId++;
+    }
+
+    // Stop microphone and clean up
+    micCaptureActive.store(false, std::memory_order_release);
+    ma_device_stop(&device);
+    ma_device_uninit(&device);
+    ma_context_uninit(&context);
+
+    // Wait for input thread
+    if (inputThread.joinable()) {
+        inputThread.detach();  // Don't block if user already pressed Enter
+    }
+
+    // Send STOP to get final transcription
+    std::cout << "\n[INFO] Finalizing transcription..." << std::endl;
+
+    // Drain semaphore
+    while (responseCompleteSemaphore.try_acquire()) {}
+
+    {
+        std::lock_guard<std::mutex> lock(responseMutex);
+        currentResponse.clear();
+        responseCompleted = false;
+        firstTokenReceived = false;
+        callbackFinished = false;
+    }
+
+    NV_REQUEST_RISE_SETTINGS_V1 stopSettings = { 0 };
+    stopSettings.version = NV_REQUEST_RISE_SETTINGS_VER1;
+    stopSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
+    strncpy_s(stopSettings.content, sizeof(stopSettings.content), "STOP:", 5);
+    stopSettings.completed = 0;
+
+    NvAPI_Status status = NvAPI_RequestRise(&stopSettings);
+    if (status == NVAPI_OK) {
+        // Wait for final transcription
+        responseCompleteSemaphore.acquire();
+
+        std::lock_guard<std::mutex> lock(responseMutex);
+        if (currentResponse.find("ASR_FINAL:") == 0) {
+            std::string finalTranscript = currentResponse.substr(10);
+            std::cout << "\n========================================" << std::endl;
+            std::cout << "FINAL TRANSCRIPTION:" << std::endl;
+            std::cout << "========================================" << std::endl;
+            std::cout << finalTranscript << std::endl;
+            std::cout << "========================================\n" << std::endl;
+        } else if (!currentResponse.empty()) {
+            std::cout << "\nFinal: " << currentResponse << std::endl;
+        }
+    } else {
+        std::cerr << "\n[ERROR] Failed to send STOP signal" << std::endl;
+    }
+
+    std::cout << "\nPress Enter to continue...";
+    std::cin.get();
+}
+
 
 // ============================================================================
 // Main Menu
@@ -792,7 +1089,8 @@ void ShowMenu() {
     std::cout << "===============================================================" << std::endl;
     std::cout << "\n1. LLM Chat Demo (Interactive Streaming)" << std::endl;
     std::cout << "2. ASR Streaming Demo (WAV File)" << std::endl;
-    std::cout << "3. Exit" << std::endl;
+    std::cout << "3. ASR Streaming Demo (Live Microphone)" << std::endl;
+    std::cout << "4. Exit" << std::endl;
     std::cout << "\nChoice: ";
 }
 
@@ -828,7 +1126,10 @@ int main(int argc, char* argv[]) {
         else if (choice == "2") {
             DemoASRStreaming();
         }
-        else if (choice == "3" || choice == "exit" || choice == "quit") {
+        else if (choice == "3") {
+            DemoASRMicrophone();
+        }
+        else if (choice == "4" || choice == "exit" || choice == "quit") {
             std::cout << "\n[GOODBYE] Thank you for using RISE Demo Client!" << std::endl;
             break;
         }

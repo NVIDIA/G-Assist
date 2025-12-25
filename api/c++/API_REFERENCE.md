@@ -1,6 +1,6 @@
 # RISE API Reference
 
-Complete API reference for the RISE (Runtime Inference System Engine) C++ interface.
+Complete API reference for the RISE C++ interface.
 
 ## Table of Contents
 
@@ -11,6 +11,9 @@ Complete API reference for the RISE (Runtime Inference System Engine) C++ interf
 - [Response Formats](#response-formats)
 - [Error Codes](#error-codes)
 - [Constants and Limits](#constants-and-limits)
+- [Code Examples](#code-examples)
+  - [Live Microphone Capture for ASR](#live-microphone-capture-for-asr)
+  - [Complete LLM Request Example](#complete-llm-request-example)
 
 ## Core Functions
 
@@ -544,6 +547,210 @@ Always use these constants for the `version` field in structures.
 
 ## Code Examples
 
+### Live Microphone Capture for ASR
+
+This example demonstrates real-time speech-to-text using live microphone input with the miniaudio library.
+
+#### Prerequisites
+
+Include the miniaudio single-header library in your project:
+
+```cpp
+// Prevent Windows min/max macro conflicts
+#define NOMINMAX
+
+// Miniaudio configuration
+#define MINIAUDIO_IMPLEMENTATION
+#define MA_NO_DECODING      // We don't need file decoding
+#define MA_NO_ENCODING      // We don't need file encoding
+#define MA_NO_GENERATION    // We don't need waveform generation
+#include "miniaudio.h"
+```
+
+#### Thread-Safe Audio Buffer
+
+Set up a thread-safe buffer for the audio callback:
+
+```cpp
+#include <mutex>
+#include <vector>
+#include <atomic>
+
+std::mutex micBufferMutex;
+std::vector<float> micBuffer;              // Accumulated audio samples
+std::atomic<bool> micCaptureActive(false); // Control flag
+const int MIC_SAMPLE_RATE = 16000;         // 16kHz for ASR
+const int MIC_CHANNELS = 1;                // Mono
+
+// Miniaudio callback - called from audio thread
+void MicrophoneDataCallback(ma_device* pDevice, void* pOutput, 
+                            const void* pInput, ma_uint32 frameCount) {
+    (void)pOutput; // Capture-only, no playback
+
+    if (pInput == nullptr || !micCaptureActive.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    const float* inputSamples = static_cast<const float*>(pInput);
+
+    std::lock_guard<std::mutex> lock(micBufferMutex);
+    micBuffer.insert(micBuffer.end(), inputSamples, inputSamples + frameCount);
+}
+```
+
+#### Enumerate and Select Microphone
+
+```cpp
+// Initialize audio context
+ma_context context;
+if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {
+    std::cerr << "Failed to initialize audio context" << std::endl;
+    return;
+}
+
+// Get available devices
+ma_device_info* pCaptureDevices;
+ma_uint32 captureDeviceCount;
+ma_device_info* pPlaybackDevices;
+ma_uint32 playbackDeviceCount;
+
+ma_context_get_devices(&context, &pPlaybackDevices, &playbackDeviceCount,
+                       &pCaptureDevices, &captureDeviceCount);
+
+// List available microphones
+for (ma_uint32 i = 0; i < captureDeviceCount; i++) {
+    std::cout << "[" << i << "] " << pCaptureDevices[i].name;
+    if (pCaptureDevices[i].isDefault) {
+        std::cout << " (default)";
+    }
+    std::cout << std::endl;
+}
+
+// Select device (NULL for default, or &pCaptureDevices[index].id for specific)
+ma_device_id* pSelectedDeviceId = nullptr;  // Use default
+```
+
+#### Initialize and Start Microphone
+
+```cpp
+ma_device_config deviceConfig;
+ma_device device;
+
+deviceConfig = ma_device_config_init(ma_device_type_capture);
+deviceConfig.capture.pDeviceID = pSelectedDeviceId;  // NULL = default
+deviceConfig.capture.format    = ma_format_f32;      // Float32 samples
+deviceConfig.capture.channels  = MIC_CHANNELS;       // Mono
+deviceConfig.sampleRate        = MIC_SAMPLE_RATE;    // 16kHz
+deviceConfig.dataCallback      = MicrophoneDataCallback;
+deviceConfig.pUserData         = nullptr;
+
+if (ma_device_init(&context, &deviceConfig, &device) != MA_SUCCESS) {
+    std::cerr << "Failed to initialize microphone" << std::endl;
+    return;
+}
+
+// Clear buffer and start capture
+{
+    std::lock_guard<std::mutex> lock(micBufferMutex);
+    micBuffer.clear();
+}
+micCaptureActive.store(true, std::memory_order_release);
+
+if (ma_device_start(&device) != MA_SUCCESS) {
+    std::cerr << "Failed to start microphone" << std::endl;
+    ma_device_uninit(&device);
+    return;
+}
+```
+
+#### Stream Audio Chunks to RISE
+
+```cpp
+const int SAMPLES_PER_CHUNK = 700;  // ~44ms at 16kHz
+int chunkId = 0;
+
+while (!stopRequested) {
+    std::vector<float> chunkSamples;
+
+    // Get samples from buffer
+    {
+        std::lock_guard<std::mutex> lock(micBufferMutex);
+        if (micBuffer.size() >= SAMPLES_PER_CHUNK) {
+            chunkSamples.assign(micBuffer.begin(), 
+                               micBuffer.begin() + SAMPLES_PER_CHUNK);
+            micBuffer.erase(micBuffer.begin(), 
+                           micBuffer.begin() + SAMPLES_PER_CHUNK);
+        }
+    }
+
+    if (chunkSamples.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+    }
+
+    // Encode to base64
+    const uint8_t* chunkData = reinterpret_cast<const uint8_t*>(chunkSamples.data());
+    size_t chunkBytes = chunkSamples.size() * sizeof(float);
+    std::string base64Audio = Base64Encode(chunkData, chunkBytes);
+
+    // Format payload: "CHUNK:<id>:<sample_rate>:<base64_data>"
+    std::string payload = "CHUNK:" + std::to_string(chunkId) + ":" + 
+                          std::to_string(MIC_SAMPLE_RATE) + ":" + base64Audio;
+
+    // Send to RISE
+    NV_REQUEST_RISE_SETTINGS_V1 requestSettings = { 0 };
+    requestSettings.version = NV_REQUEST_RISE_SETTINGS_VER1;
+    requestSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
+    strncpy_s(requestSettings.content, sizeof(requestSettings.content),
+              payload.c_str(), payload.length());
+    requestSettings.completed = 0;  // More chunks coming
+
+    NvAPI_RequestRise(&requestSettings);
+
+    // Wait for interim transcription response
+    responseCompleteSemaphore.acquire();
+
+    chunkId++;
+}
+```
+
+#### Stop Capture and Get Final Transcription
+
+```cpp
+// Stop microphone
+micCaptureActive.store(false, std::memory_order_release);
+ma_device_stop(&device);
+ma_device_uninit(&device);
+ma_context_uninit(&context);
+
+// Send STOP signal to finalize transcription
+NV_REQUEST_RISE_SETTINGS_V1 stopSettings = { 0 };
+stopSettings.version = NV_REQUEST_RISE_SETTINGS_VER1;
+stopSettings.contentType = NV_RISE_CONTENT_TYPE_TEXT;
+strncpy_s(stopSettings.content, sizeof(stopSettings.content), "STOP:", 5);
+stopSettings.completed = 0;  // Must be 0, not 1
+
+NvAPI_RequestRise(&stopSettings);
+
+// Wait for final transcription (ASR_FINAL:...)
+responseCompleteSemaphore.acquire();
+
+// Extract final text
+if (currentResponse.find("ASR_FINAL:") == 0) {
+    std::string finalTranscript = currentResponse.substr(10);
+    std::cout << "Final: " << finalTranscript << std::endl;
+}
+```
+
+#### ASR Response Types
+
+| Response Prefix | Description |
+|-----------------|-------------|
+| `ASR_INTERIM:` | Partial transcription during streaming |
+| `ASR_FINAL:` | Complete transcription after STOP signal |
+
+---
+
 ### Complete LLM Request Example
 
 ```cpp
@@ -624,7 +831,7 @@ int main() {
 
 ---
 
-**Last Updated:** 2024  
+**Last Updated:** December 2025  
 **API Version:** V1  
 **Compatible With:** RISE/G-Assist 1.x
 
