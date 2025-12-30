@@ -505,8 +505,25 @@ static json cmdSetLighting(const json& args) {
     bool targetAll = (deviceFilter == "all" || deviceFilter.empty());
     CorsairDeviceType targetType = targetAll ? CDT_Unknown : getDeviceType(deviceFilter);
     
+    // Check if device filter matches a specific device name (not a type)
+    bool targetByName = (!targetAll && targetType == CDT_Unknown);
+    
     for (int i = 0; i < g_numDevices; i++) {
-        if (targetAll || g_devices[i].type == targetType) {
+        bool shouldTarget = false;
+        
+        if (targetAll) {
+            // Target all devices
+            shouldTarget = true;
+        } else if (targetByName) {
+            // Match by device model name (case-insensitive partial match)
+            std::string modelLower = toLowerCase(g_devices[i].model);
+            shouldTarget = (modelLower.find(deviceFilter) != std::string::npos);
+        } else {
+            // Match by device type
+            shouldTarget = (g_devices[i].type == targetType);
+        }
+        
+        if (shouldTarget) {
             CorsairDeviceId id;
             memcpy(id, g_devices[i].id, sizeof(CorsairDeviceId));
             
@@ -521,6 +538,13 @@ static json cmdSetLighting(const json& args) {
     if (updated.empty() && failed.empty()) {
         if (targetAll) {
             return json("No Corsair devices found. Please connect a Corsair device.");
+        } else if (targetByName) {
+            // Build list of available devices to help user
+            std::string available = std::format("No device matching '{}' found.\n\nAvailable devices:\n", deviceFilter);
+            for (int i = 0; i < g_numDevices; i++) {
+                available += std::format("- {}\n", g_devices[i].model);
+            }
+            return json(available);
         } else {
             return json(std::format("No Corsair {} found.", deviceFilter));
         }
@@ -528,21 +552,34 @@ static json cmdSetLighting(const json& args) {
     
     std::string result;
     if (!updated.empty()) {
-        if (colorName == "off") {
-            result = "Lighting off:\n";
+        if (updated.size() == 1) {
+            // Single device - clean one-liner
+            if (colorName == "off") {
+                result = std::format("Turned off lighting on {}.", updated[0]);
+            } else {
+                result = std::format("Set {} to {}.", updated[0], colorName);
+            }
         } else {
-            result = std::format("Lighting set to {}:\n", colorName);
-        }
-        for (const auto& name : updated) {
-            result += std::format("- {}\n", name);
+            // Multiple devices - list them
+            if (colorName == "off") {
+                result = std::format("Turned off lighting on {} devices: ", updated.size());
+            } else {
+                result = std::format("Set {} devices to {}: ", updated.size(), colorName);
+            }
+            for (size_t i = 0; i < updated.size(); i++) {
+                if (i > 0) result += ", ";
+                result += updated[i];
+            }
+            result += ".";
         }
     }
     
     if (!failed.empty()) {
-        if (!result.empty()) result += "\n";
-        result += "Failed:\n";
-        for (const auto& name : failed) {
-            result += std::format("- {}\n", name);
+        if (!result.empty()) result += " ";
+        if (failed.size() == 1) {
+            result += std::format("Failed to set {}.", failed[0]);
+        } else {
+            result += std::format("Failed to set {} devices.", failed.size());
         }
     }
     
@@ -646,6 +683,28 @@ static json cmdSetProfile(const json& args) {
     }
     
     return json(available);
+}
+
+// Get available iCUE profiles
+static json cmdGetProfiles(const json& args) {
+    if (!ensureInitialized()) {
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+    }
+    
+    int size = 0;
+    AutomationSdkProfile profiles[AUTOMATION_SDK_ITEMS_COUNT_MAX] = {};
+    auto code = AutomationSdkGetProfiles(profiles, AUTOMATION_SDK_ITEMS_COUNT_MAX, &size);
+    
+    if (code != Success || size == 0) {
+        return json("No iCUE profiles found. Create profiles in iCUE to use this feature.");
+    }
+    
+    std::string result = std::format("Found {} iCUE profile{}:\n", size, size == 1 ? "" : "s");
+    for (int i = 0; i < size; i++) {
+        result += std::format("- {}\n", profiles[i].name);
+    }
+    
+    return json(result);
 }
 
 // Get connected devices
@@ -783,6 +842,7 @@ int main() {
     plugin.command("corsair_set_lighting", cmdSetLighting);
     plugin.command("corsair_set_headset_eq", cmdSetHeadsetEq);
     plugin.command("corsair_set_profile", cmdSetProfile);
+    plugin.command("corsair_get_profiles", cmdGetProfiles);
     plugin.command("corsair_get_devices", cmdGetDevices);
     logMsg("[MAIN] Commands registered");
     

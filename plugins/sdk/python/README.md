@@ -49,9 +49,9 @@ if __name__ == "__main__":
     plugin.run()
 ```
 
-### MCP Plugin (Auto-Discovery)
+### MCP Plugin (Auto-Discovery with Auto-Refresh)
 
-Connect to MCP servers and auto-discover functions:
+Connect to MCP servers with automatic session refresh and tool polling:
 
 ```python
 from gassist_sdk import MCPPlugin
@@ -60,15 +60,18 @@ from gassist_sdk.mcp import FunctionDef, sanitize_name
 # Create plugin with MCP server configuration
 plugin = MCPPlugin(
     name="stream-deck",
-    version="1.0.0",
+    version="2.0.0",
     mcp_url="http://localhost:9090/mcp",
-    discovery_timeout=5.0  # Quick timeout for startup
+    discovery_timeout=5.0,      # Quick timeout for startup
+    poll_interval=60,           # Poll for new tools every 60 seconds
+    auto_refresh_session=True,  # Keep session fresh automatically
+    session_refresh_margin=30   # Refresh 30 seconds before expiry
 )
 
 # Define how to discover functions from the MCP server
 @plugin.discoverer
 def discover_actions(mcp):
-    """Called at startup and on rediscover()."""
+    """Called at startup, on rediscover(), and when tools change."""
     result = mcp.call_tool("get_executable_actions")
     
     functions = []
@@ -85,23 +88,12 @@ def discover_actions(mcp):
     
     return functions
 
-# Static commands (always available)
-@plugin.command("streamdeck_discover")
-def discover_cmd():
-    """Re-discover Stream Deck actions."""
-    count = plugin.rediscover()
-    return f"Discovered {count} actions"
-
-@plugin.command("streamdeck_refresh")
-def refresh_cmd():
-    """Refresh connection."""
-    if plugin.refresh_session():
-        return "Connection refreshed"
-    return "Failed to refresh"
-
 if __name__ == "__main__":
-    plugin.run()  # Auto-discovers at startup!
+    plugin.run()  # Auto-discovers at startup, polls for new tools!
 ```
+
+**Note:** With `poll_interval` and `auto_refresh_session`, manual refresh/discover 
+commands are no longer needed - the SDK handles everything automatically!
 
 ## Features
 
@@ -232,6 +224,63 @@ The SDK handles MCP session lifecycle automatically:
 - HTTP errors (400/401/403) trigger session refresh
 - Cached functions work offline when server unavailable
 
+### Auto-Refresh and Tool Polling
+
+MCPPlugin includes built-in session management:
+
+```python
+plugin = MCPPlugin(
+    name="my-plugin",
+    mcp_url="http://localhost:9090/mcp",
+    poll_interval=60,           # Poll server for new tools every 60s (0 = disabled)
+    auto_refresh_session=True,  # Keep session fresh automatically
+    session_refresh_margin=30   # Refresh 30s before session expires
+)
+```
+
+When enabled:
+- **Auto-refresh**: Proactively refreshes the MCP session before it expires
+- **Tool polling**: Periodically checks for new/changed tools and updates the manifest
+- **Change callbacks**: Your `@plugin.discoverer` is re-run when tools change
+
+### MCPSessionManager (Advanced)
+
+For custom session management, use MCPSessionManager directly:
+
+```python
+from gassist_sdk.mcp import MCPClient, MCPSessionManager
+
+mcp = MCPClient(url="http://localhost:9090/mcp")
+
+def on_tools_changed(added, removed, all_tools):
+    print(f"Tools changed: +{len(added)}, -{len(removed)}")
+    for tool in added:
+        print(f"  New tool: {tool['name']}")
+
+manager = MCPSessionManager(
+    client=mcp,
+    poll_interval=30,           # Poll every 30 seconds
+    session_refresh_margin=60,  # Refresh 60s before expiry
+    on_tools_changed=on_tools_changed,
+    on_session_refreshed=lambda: print("Session refreshed"),
+    on_error=lambda e: print(f"Error: {e}")
+)
+
+# Start background management
+manager.start()
+
+# ... your code ...
+
+# Force immediate poll
+current_tools = manager.poll_now()
+
+# Force immediate session refresh
+manager.refresh_session_now()
+
+# Stop when done
+manager.stop()
+```
+
 ### MCP Manifest Schema
 
 MCP plugins declare their configuration in `manifest.json`:
@@ -240,28 +289,39 @@ MCP plugins declare their configuration in `manifest.json`:
 {
   "manifestVersion": 1,
   "name": "stream-deck",
-  "version": "2.0.0",
-  "description": "Stream Deck plugin",
+  "version": "2.1.0",
+  "description": "Stream Deck plugin with auto-refresh",
   "executable": "plugin.py",
   "persistent": true,
   "protocol_version": "2.0",
   "mcp": {
     "enabled": true,
     "server_url": "http://localhost:9090/mcp",
-    "launch_on_startup": true
+    "launch_on_startup": true,
+    "poll_interval": 60,
+    "auto_refresh_session": true
   },
   "functions": []
 }
 ```
+
+**MCP Configuration Options:**
+- `enabled`: Enable MCP functionality
+- `server_url`: MCP server endpoint URL
+- `launch_on_startup`: Engine launches plugin at startup for auto-discovery
+- `poll_interval`: Seconds between tool polls (0 = disabled)
+- `auto_refresh_session`: Automatically refresh session before expiry
 
 When `launch_on_startup` is `true`:
 1. Engine launches the plugin at startup
 2. Plugin connects to MCP server and discovers functions
 3. Plugin writes updated manifest with discovered functions
 4. Engine re-reads manifest to pick up new functions
+5. Background manager polls for new tools and keeps session fresh
 
 This eliminates the need for "bootstrap" functions - the manifest starts empty
-and is populated by auto-discovery.
+and is populated by auto-discovery. Tools are automatically updated when
+the MCP server adds/removes capabilities.
 
 ### FunctionDef
 
@@ -302,7 +362,7 @@ Plugin(
 
 ### MCPPlugin Class
 
-Extends Plugin with MCP auto-discovery:
+Extends Plugin with MCP auto-discovery and session management:
 
 ```python
 MCPPlugin(
@@ -314,6 +374,9 @@ MCPPlugin(
     mcp_timeout: float = 30.0,    # Request timeout
     session_timeout: float = 300.0,  # Session idle timeout
     discovery_timeout: float = 5.0,  # Startup discovery timeout
+    poll_interval: float = 60.0,  # Auto-poll interval for new tools (0 = disabled)
+    auto_refresh_session: bool = True,  # Auto-refresh session before expiry
+    session_refresh_margin: float = 30.0,  # Seconds before expiry to refresh
     base_functions: List[dict],   # Static functions for manifest
 )
 ```
@@ -322,8 +385,37 @@ MCPPlugin(
 
 - `plugin.discoverer` - Decorator to register discovery function
 - `plugin.mcp` - Property to access MCPClient
+- `plugin.session_manager` - Property to access MCPSessionManager (if running)
 - `plugin.refresh_session()` - Force session refresh
 - `plugin.rediscover()` - Re-run discovery, returns function count
+- `plugin.poll_tools_now()` - Force immediate tool poll, returns tool list
+
+### MCPSessionManager Class
+
+Background session and tool management:
+
+```python
+MCPSessionManager(
+    client: MCPClient,            # MCP client to manage
+    poll_interval: float = 60.0,  # Tool poll interval (0 = disabled)
+    session_refresh_margin: float = 30.0,  # Seconds before expiry to refresh
+    on_tools_changed: Callable,   # Callback(added, removed, all_tools)
+    on_session_refreshed: Callable,  # Callback when session refreshed
+    on_error: Callable,           # Callback when error occurs
+)
+```
+
+#### Methods
+
+- `manager.start()` - Start background management thread
+- `manager.stop(timeout)` - Stop background thread
+- `manager.poll_now()` - Force immediate tool poll
+- `manager.refresh_session_now()` - Force immediate session refresh
+
+#### Properties
+
+- `manager.is_running` - Check if manager is running
+- `manager.known_tools` - Get last known tools list
 
 ### MCPClient Class
 

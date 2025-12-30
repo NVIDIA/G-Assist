@@ -554,6 +554,257 @@ class MCPServerInfo:
 # MCP CLIENT
 # =============================================================================
 
+class MCPSessionManager:
+    """
+    Manages MCP session connectivity and automatic tool polling.
+    
+    Features:
+    - Automatic session refresh before expiry
+    - Periodic polling for new/changed tools
+    - Callbacks for tool changes
+    - Thread-safe background operation
+    
+    Example:
+        def on_tools_changed(added, removed, all_tools):
+            print(f"Tools changed: +{len(added)}, -{len(removed)}")
+        
+        manager = MCPSessionManager(
+            client=mcp_client,
+            poll_interval=60,  # Poll every 60 seconds
+            session_refresh_margin=30,  # Refresh 30s before expiry
+            on_tools_changed=on_tools_changed
+        )
+        manager.start()
+        # ... later
+        manager.stop()
+    """
+    
+    def __init__(
+        self,
+        client: "MCPClient",
+        poll_interval: float = 60.0,
+        session_refresh_margin: float = 30.0,
+        on_tools_changed: Callable[[List[Dict], List[Dict], List[Dict]], None] = None,
+        on_session_refreshed: Callable[[], None] = None,
+        on_error: Callable[[Exception], None] = None,
+        custom_poll_fn: Callable[["MCPClient"], List[Dict]] = None
+    ):
+        """
+        Initialize session manager.
+        
+        Args:
+            client: MCPClient instance to manage
+            poll_interval: Interval in seconds between tool polls (0 = disabled)
+            session_refresh_margin: Seconds before session expiry to refresh
+            on_tools_changed: Callback(added_tools, removed_tools, all_tools)
+            on_session_refreshed: Callback when session is refreshed
+            on_error: Callback when an error occurs
+            custom_poll_fn: Custom function to get items to poll for changes.
+                           If provided, called instead of list_tools().
+                           Receives MCPClient, returns list of dicts with 'id' or 'name' keys.
+                           Use this for polling dynamic data like Stream Deck actions.
+        """
+        self._client = client
+        self._poll_interval = poll_interval
+        self._session_refresh_margin = session_refresh_margin
+        self._on_tools_changed = on_tools_changed
+        self._on_session_refreshed = on_session_refreshed
+        self._on_error = on_error
+        self._custom_poll_fn = custom_poll_fn
+        
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._last_tools: Dict[str, Dict] = {}  # name/id -> item
+        self._lock = threading.Lock()
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if manager is running."""
+        return self._running and self._thread is not None and self._thread.is_alive()
+    
+    @property
+    def known_tools(self) -> List[Dict]:
+        """Get last known tools list."""
+        with self._lock:
+            return list(self._last_tools.values())
+    
+    def start(self) -> bool:
+        """Start the background management thread."""
+        if self._running:
+            return True
+        
+        self._running = True
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+        logger.info(f"MCPSessionManager started (poll_interval={self._poll_interval}s)")
+        return True
+    
+    def stop(self, timeout: float = 5.0) -> None:
+        """Stop the background management thread."""
+        if not self._running:
+            return
+        
+        self._running = False
+        self._stop_event.set()
+        
+        if self._thread:
+            self._thread.join(timeout=timeout)
+            self._thread = None
+        
+        logger.info("MCPSessionManager stopped")
+    
+    def poll_now(self) -> List[Dict]:
+        """
+        Force an immediate poll for tools.
+        
+        Returns the current tool list.
+        """
+        try:
+            return self._poll_tools()
+        except Exception as e:
+            logger.error(f"Poll failed: {e}")
+            if self._on_error:
+                self._on_error(e)
+            return list(self._last_tools.values())
+    
+    def refresh_session_now(self) -> bool:
+        """Force an immediate session refresh."""
+        try:
+            return self._refresh_session()
+        except Exception as e:
+            logger.error(f"Session refresh failed: {e}")
+            if self._on_error:
+                self._on_error(e)
+            return False
+    
+    def _run_loop(self) -> None:
+        """Background thread main loop."""
+        last_poll_time = 0.0
+        
+        while self._running and not self._stop_event.is_set():
+            try:
+                now = time.time()
+                
+                # Check if session needs refresh
+                if self._should_refresh_session():
+                    self._refresh_session()
+                
+                # Check if we should poll for tools
+                if self._poll_interval > 0:
+                    if now - last_poll_time >= self._poll_interval:
+                        self._poll_tools()
+                        last_poll_time = now
+                
+            except Exception as e:
+                logger.error(f"MCPSessionManager loop error: {e}")
+                if self._on_error:
+                    try:
+                        self._on_error(e)
+                    except Exception:
+                        pass
+            
+            # Sleep in small increments to allow quick shutdown
+            self._stop_event.wait(timeout=1.0)
+    
+    def _should_refresh_session(self) -> bool:
+        """Check if session should be refreshed."""
+        transport = getattr(self._client, '_transport', None)
+        if isinstance(transport, HTTPTransport):
+            if not transport.session_id:
+                return True
+            
+            # Check if session is about to expire
+            idle_time = time.time() - transport._session_last_used
+            time_until_expiry = transport._session_timeout - idle_time
+            
+            return time_until_expiry < self._session_refresh_margin
+        
+        return False
+    
+    def _refresh_session(self) -> bool:
+        """Refresh the MCP session."""
+        try:
+            transport = getattr(self._client, '_transport', None)
+            if isinstance(transport, HTTPTransport):
+                old_session = transport.session_id
+                transport.refresh_session()
+                self._client._initialized = False
+                
+                if self._client.connect():
+                    logger.info(f"Session refreshed: {old_session[:8] if old_session else 'none'}... -> {transport.session_id[:8] if transport.session_id else 'none'}...")
+                    if self._on_session_refreshed:
+                        try:
+                            self._on_session_refreshed()
+                        except Exception as e:
+                            logger.error(f"Session refresh callback error: {e}")
+                    return True
+                else:
+                    logger.error("Failed to reconnect after session refresh")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Session refresh error: {e}")
+            return False
+    
+    def _poll_tools(self) -> List[Dict]:
+        """Poll for tools/items and detect changes."""
+        if not self._client.is_connected:
+            if not self._client.connect():
+                logger.warning("Cannot poll - not connected")
+                return list(self._last_tools.values())
+        
+        try:
+            # Use custom poll function if provided, otherwise use list_tools
+            if self._custom_poll_fn:
+                current_items = self._custom_poll_fn(self._client)
+            else:
+                current_items = self._client.list_tools()
+            
+            # Build lookup by 'id' or 'name' (for flexibility)
+            def get_key(item):
+                return item.get('id', item.get('name', str(id(item))))
+            
+            current_items_by_key = {get_key(t): t for t in current_items}
+            
+            with self._lock:
+                old_keys = set(self._last_tools.keys())
+                new_keys = set(current_items_by_key.keys())
+                
+                added_keys = new_keys - old_keys
+                removed_keys = old_keys - new_keys
+                
+                if added_keys or removed_keys:
+                    added = [current_items_by_key[k] for k in added_keys]
+                    removed = [self._last_tools[k] for k in removed_keys]
+                    
+                    logger.info(f"Items changed: +{len(added)}, -{len(removed)}")
+                    if added:
+                        logger.info(f"  Added: {list(added_keys)[:5]}{'...' if len(added_keys) > 5 else ''}")
+                    if removed:
+                        logger.info(f"  Removed: {list(removed_keys)[:5]}{'...' if len(removed_keys) > 5 else ''}")
+                    
+                    self._last_tools = current_items_by_key
+                    
+                    if self._on_tools_changed:
+                        try:
+                            self._on_tools_changed(added, removed, current_items)
+                        except Exception as e:
+                            logger.error(f"Tools changed callback error: {e}")
+                else:
+                    # Still update in case item definitions changed
+                    self._last_tools = current_items_by_key
+            
+            return current_items
+            
+        except Exception as e:
+            logger.error(f"Tool polling error: {e}")
+            raise
+
+
 class MCPClient:
     """
     MCP (Model Context Protocol) Client.
@@ -932,6 +1183,7 @@ class MCPClient:
 __all__ = [
     # MCP Client
     "MCPClient",
+    "MCPSessionManager",
     "MCPError",
     "MCPCapabilities",
     "MCPServerInfo",

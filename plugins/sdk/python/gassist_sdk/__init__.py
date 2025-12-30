@@ -22,8 +22,10 @@ MCP Plugin Example (auto-discovery from MCP servers):
 
     plugin = MCPPlugin(
         name="stream-deck",
-        version="1.0.0",
-        mcp_url="http://localhost:9090/mcp"
+        version="2.0.0",
+        mcp_url="http://localhost:9090/mcp",
+        poll_interval=60,  # Auto-poll for new tools every 60 seconds
+        auto_refresh_session=True  # Keep session fresh automatically
     )
 
     @plugin.discoverer
@@ -39,7 +41,7 @@ MCP Plugin Example (auto-discovery from MCP servers):
         ]
 
     if __name__ == "__main__":
-        plugin.run()  # Auto-discovers at startup
+        plugin.run()  # Auto-discovers at startup, polls for new tools
 
 MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18
 """
@@ -49,6 +51,7 @@ from .types import Context, SystemInfo, CommandResult
 from .protocol import ProtocolError, ConnectionClosed
 from .mcp import (
     MCPClient,
+    MCPSessionManager,
     MCPError,
     MCPTransport,
     StdioTransport,
@@ -59,7 +62,7 @@ from .mcp import (
     HAS_REQUESTS,
 )
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 __all__ = [
     # Core Plugin
     "Plugin",
@@ -72,8 +75,9 @@ __all__ = [
     # Protocol Errors
     "ProtocolError",
     "ConnectionClosed",
-    # MCP Client
+    # MCP Client & Session Management
     "MCPClient",
+    "MCPSessionManager",
     "MCPError",
     "MCPTransport",
     "StdioTransport",

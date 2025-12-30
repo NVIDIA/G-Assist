@@ -366,7 +366,7 @@ I'm opening Google AI Studio in your browser...
    6. I'm opening the key file in Notepad...
    7. Paste your API key and SAVE the file
 
-After saving, send me any message (like "done") and I'll verify it!
+Save the file and try your query again.
 """
     
     try:
@@ -429,10 +429,13 @@ def query_gemini(query: str = None, context: Context = None):
     """
     global API_KEY, client, SETUP_COMPLETE, conversation_history
     
-    # Check if setup is needed
+    # Check if setup is needed - try to load API key silently first
     if not SETUP_COMPLETE or not client:
-        logger.info("[QUERY] API not configured, running setup wizard")
-        return run_setup_wizard()
+        logger.info("[QUERY] API not initialized, attempting to load API key...")
+        if not load_api_key():
+            # Key doesn't exist or is invalid - run setup wizard
+            logger.info("[QUERY] API key not configured, running setup wizard")
+            return run_setup_wizard()
     
     load_model_config()
     
@@ -494,12 +497,15 @@ def on_input(content: str):
     
     logger.info(f"[INPUT] Received: {content[:50]}...")
     
-    # If setup isn't complete, any input triggers verification (user typed "done" after setting up key)
+    # If setup isn't complete, try to load API key and process the query directly
     if not SETUP_COMPLETE:
         logger.info("[INPUT] Setup not complete, verifying API key...")
         if load_api_key():
-            plugin.set_keep_session(True)
-            return "✅ API key verified! Ask me anything, or type 'exit' to leave Gemini mode."
+            # Key is valid - stream confirmation and process the query immediately
+            logger.info("[INPUT] API key verified, processing user query...")
+            plugin.stream("✅ API key configured!\n\n")
+            conversation_history.append({"role": "user", "content": content})
+            return query_gemini(query=content)
         else:
             return run_setup_wizard()
     

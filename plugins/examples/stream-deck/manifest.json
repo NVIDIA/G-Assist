@@ -1,15 +1,21 @@
 {
   "manifestVersion": 1,
   "name": "stream-deck",
-  "version": "2.0.0",
-  "description": "Stream Deck plugin - auto-discovers and executes Stream Deck actions using MCP SDK",
+  "version": "2.1.0",
+  "description": "Stream Deck plugin - auto-discovers and executes Stream Deck actions using MCP SDK with auto-refresh",
   "executable": "plugin.py",
   "persistent": true,
   "protocol_version": "2.0",
   "mcp": {
     "enabled": true,
     "server_url": "http://localhost:9090/mcp",
-    "launch_on_startup": true
+    "launch_on_startup": true,
+    "timeout": 30,
+    "session_timeout": 300,
+    "discovery_timeout": 5.0,
+    "poll_interval": 60,
+    "auto_refresh_session": true,
+    "session_refresh_margin": 30
   },
   "functions": []
 }
