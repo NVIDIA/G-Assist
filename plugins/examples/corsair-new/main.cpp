@@ -145,27 +145,6 @@ static bool getColor(const std::string& colorName, Color& out) {
     return false;
 }
 
-// Device type name mapping
-static CorsairDeviceType getDeviceType(const std::string& name) {
-    static const std::map<std::string, CorsairDeviceType> types = {
-        {"keyboard",   CDT_Keyboard},
-        {"mouse",      CDT_Mouse},
-        {"headset",    CDT_Headset},
-        {"headphone",  CDT_Headset},
-        {"mousemat",   CDT_Mousemat},
-        {"fans",       CDT_FanLedController},
-        {"cooler",     CDT_Cooler},
-        {"ram",        CDT_MemoryModule},
-        {"dram",       CDT_MemoryModule},
-        {"memory",     CDT_MemoryModule},
-        {"motherboard", CDT_Motherboard},
-        {"gpu",        CDT_GraphicsCard},
-    };
-    
-    auto it = types.find(toLowerCase(name));
-    return (it != types.end()) ? it->second : CDT_Unknown;
-}
-
 static std::string getDeviceTypeName(CorsairDeviceType type) {
     static const std::map<CorsairDeviceType, std::string> names = {
         {CDT_Keyboard, "keyboard"},
@@ -250,11 +229,23 @@ static bool ensureInitialized() {
     return g_initialized;
 }
 
+// Refresh device list (call after ensureInitialized, quick since already connected)
+static void refreshDevices() {
+    if (!g_initialized) return;
+    
+    CorsairDeviceFilter filter;
+    filter.deviceTypeMask = CDT_All;
+    auto err = CorsairGetDevices(&filter, CORSAIR_DEVICE_COUNT_MAX, g_devices, &g_numDevices);
+    if (err != CE_Success) {
+        logMsg(std::format("[REFRESH] CorsairGetDevices failed: {}", corsairErrorToString(err)));
+    }
+}
+
 // ============================================================================
-// Lighting Helper
+// Lighting Helpers
 // ============================================================================
 
-// Set lighting on a specific device
+// Set lighting on a specific device by ID
 static bool setDeviceLighting(const CorsairDeviceId& id, const Color& color) {
     CorsairLedPosition leds[CORSAIR_DEVICE_LEDCOUNT_MAX];
     int numLeds = 0;
@@ -275,6 +266,96 @@ static bool setDeviceLighting(const CorsairDeviceId& id, const Color& color) {
     return CorsairSetLedColors(id, numLeds, colors.data()) == CE_Success;
 }
 
+// Set lighting on all devices of a specific type
+// Returns: { success_count, fail_count, device_names[] }
+struct LightingResult {
+    std::vector<std::string> updated;
+    std::vector<std::string> failed;
+};
+
+static LightingResult setDeviceTypeLighting(CorsairDeviceType targetType, const Color& color) {
+    LightingResult result;
+    
+    for (int i = 0; i < g_numDevices; i++) {
+        if (g_devices[i].type == targetType) {
+            CorsairDeviceId id;
+            memcpy(id, g_devices[i].id, sizeof(CorsairDeviceId));
+            
+            if (setDeviceLighting(id, color)) {
+                result.updated.push_back(g_devices[i].model);
+            } else {
+                result.failed.push_back(g_devices[i].model);
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Format lighting result into a user-friendly message
+static std::string formatLightingResult(const LightingResult& result, 
+                                         const std::string& colorName,
+                                         const std::string& deviceTypeName) {
+    if (result.updated.empty() && result.failed.empty()) {
+        return std::format("No Corsair {} found. Please ensure your {} is connected and visible in iCUE.", 
+            deviceTypeName, deviceTypeName);
+    }
+    
+    std::string msg;
+    if (!result.updated.empty()) {
+        if (result.updated.size() == 1) {
+            if (colorName == "off") {
+                msg = std::format("Turned off lighting on {}.", result.updated[0]);
+            } else {
+                msg = std::format("Set {} to {}.", result.updated[0], colorName);
+            }
+        } else {
+            if (colorName == "off") {
+                msg = std::format("Turned off lighting on {} devices: ", result.updated.size());
+            } else {
+                msg = std::format("Set {} devices to {}: ", result.updated.size(), colorName);
+            }
+            for (size_t i = 0; i < result.updated.size(); i++) {
+                if (i > 0) msg += ", ";
+                msg += result.updated[i];
+            }
+            msg += ".";
+        }
+    }
+    
+    if (!result.failed.empty()) {
+        if (!msg.empty()) msg += " ";
+        if (result.failed.size() == 1) {
+            msg += std::format("Failed to set {}.", result.failed[0]);
+        } else {
+            msg += std::format("Failed to set {} devices.", result.failed.size());
+        }
+    }
+    
+    return msg;
+}
+
+// Generic per-device-type lighting command handler
+static json cmdSetDeviceTypeLighting(const json& args, CorsairDeviceType type, const std::string& typeName) {
+    if (!ensureInitialized()) {
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
+    }
+    refreshDevices();
+    
+    std::string colorName = args.value("color", "");
+    if (colorName.empty()) {
+        return json("No color specified.");
+    }
+    
+    Color color;
+    if (!getColor(colorName, color)) {
+        return json(std::format("Unknown color '{}'. Try: red, green, blue, cyan, magenta, yellow, white, black, orange, purple, pink, gold, teal, gray, or 'off'.", colorName));
+    }
+    
+    auto result = setDeviceTypeLighting(type, color);
+    return json(formatLightingResult(result, colorName, typeName));
+}
+
 // ============================================================================
 // Command Handlers
 // ============================================================================
@@ -287,8 +368,9 @@ static json cmdSetMouseDpi(const json& args) {
     
     if (!ensureInitialized()) {
         logMsg("[DPI] ERROR: ensureInitialized() returned false");
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
+    refreshDevices();
     
     int dpi = args.value("dpi", 0);
     logMsg(std::format("[DPI] Requested DPI value: {}", dpi));
@@ -337,7 +419,7 @@ static json cmdSetMouseDpi(const json& args) {
     
     if (!mouseDevice) {
         logMsg("[DPI] ERROR: No mouse found in iCUE device list");
-        return json("No Corsair mouse found. Please connect a Corsair mouse.");
+        return json("No Corsair mouse found. Please ensure your mouse is connected and visible in iCUE.");
     }
     
     logMsg(std::format("[DPI] Target mouse: '{}', iCUE ID='{}'", mouseDevice->model, mouseDevice->id));
@@ -457,8 +539,8 @@ static json cmdSetMouseDpi(const json& args) {
         logMsg(std::format("[DPI] AutomationSdkActivateDpiStage(Stage1) returned: {}", automationErrorToString(code)));
         
         if (code == Success) {
-            return json(std::format("DPI {} not available on {}. Set to '{}' instead.", 
-                dpi, mouseDevice->model, stages[0].name));
+            return json(std::format("DPI {} not available. Set to '{}' instead.", 
+                dpi, stages[0].name));
         }
     } else {
         logMsg(std::format("[DPI] Approach 3 FAILED: code={}, count={}", automationErrorToString(code), stageCount));
@@ -484,117 +566,104 @@ static json cmdSetMouseDpi(const json& args) {
         "Could not set DPI on {}. Try setting DPI directly in iCUE.", mouseDevice->model));
 }
 
-// Set lighting with optional device targeting
-static json cmdSetLighting(const json& args) {
+// ============================================================================
+// Per-Device-Type Lighting Commands
+// ============================================================================
+
+// Set keyboard lighting
+static json cmdSetKeyboardLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Keyboard, "keyboard");
+}
+
+// Set mouse lighting
+static json cmdSetMouseLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Mouse, "mouse");
+}
+
+// Set headset lighting
+static json cmdSetHeadsetLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Headset, "headset");
+}
+
+// Set mousemat lighting
+static json cmdSetMousematLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Mousemat, "mousemat");
+}
+
+// Set fan controller lighting
+static json cmdSetFanLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_FanLedController, "fan controller");
+}
+
+// Set cooler lighting (AIO, CPU coolers)
+static json cmdSetCoolerLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Cooler, "cooler");
+}
+
+// Set RAM/memory lighting
+static json cmdSetRamLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_MemoryModule, "RAM");
+}
+
+// Set GPU lighting
+static json cmdSetGpuLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_GraphicsCard, "GPU");
+}
+
+// Set motherboard lighting
+static json cmdSetMotherboardLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_Motherboard, "motherboard");
+}
+
+// Set headset stand lighting
+static json cmdSetHeadsetStandLighting(const json& args) {
+    return cmdSetDeviceTypeLighting(args, CDT_HeadsetStand, "headset stand");
+}
+
+// Set all devices lighting
+static json cmdSetAllLighting(const json& args) {
     if (!ensureInitialized()) {
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
+    refreshDevices();
     
     std::string colorName = args.value("color", "");
-    std::string deviceFilter = toLowerCase(args.value("device", "all"));
+    if (colorName.empty()) {
+        return json("No color specified.");
+    }
     
     Color color;
     if (!getColor(colorName, color)) {
-        return json(std::format("Unknown color '{}'. Try: red, green, blue, cyan, magenta, yellow, white, orange, purple, pink, gold, teal, gray, or 'off'.", colorName));
+        return json(std::format("Unknown color '{}'. Try: red, green, blue, cyan, magenta, yellow, white, black, orange, purple, pink, gold, teal, gray, or 'off'.", colorName));
     }
     
     std::vector<std::string> updated;
     std::vector<std::string> failed;
     
-    // Determine which devices to target
-    bool targetAll = (deviceFilter == "all" || deviceFilter.empty());
-    CorsairDeviceType targetType = targetAll ? CDT_Unknown : getDeviceType(deviceFilter);
-    
-    // Check if device filter matches a specific device name (not a type)
-    bool targetByName = (!targetAll && targetType == CDT_Unknown);
-    
     for (int i = 0; i < g_numDevices; i++) {
-        bool shouldTarget = false;
+        CorsairDeviceId id;
+        memcpy(id, g_devices[i].id, sizeof(CorsairDeviceId));
         
-        if (targetAll) {
-            // Target all devices
-            shouldTarget = true;
-        } else if (targetByName) {
-            // Match by device model name (case-insensitive partial match)
-            std::string modelLower = toLowerCase(g_devices[i].model);
-            shouldTarget = (modelLower.find(deviceFilter) != std::string::npos);
+        if (setDeviceLighting(id, color)) {
+            updated.push_back(g_devices[i].model);
         } else {
-            // Match by device type
-            shouldTarget = (g_devices[i].type == targetType);
-        }
-        
-        if (shouldTarget) {
-            CorsairDeviceId id;
-            memcpy(id, g_devices[i].id, sizeof(CorsairDeviceId));
-            
-            if (setDeviceLighting(id, color)) {
-                updated.push_back(g_devices[i].model);
-            } else {
-                failed.push_back(g_devices[i].model);
-            }
+            failed.push_back(g_devices[i].model);
         }
     }
     
-    if (updated.empty() && failed.empty()) {
-        if (targetAll) {
-            return json("No Corsair devices found. Please connect a Corsair device.");
-        } else if (targetByName) {
-            // Build list of available devices to help user
-            std::string available = std::format("No device matching '{}' found.\n\nAvailable devices:\n", deviceFilter);
-            for (int i = 0; i < g_numDevices; i++) {
-                available += std::format("- {}\n", g_devices[i].model);
-            }
-            return json(available);
-        } else {
-            return json(std::format("No Corsair {} found.", deviceFilter));
-        }
-    }
-    
-    std::string result;
-    if (!updated.empty()) {
-        if (updated.size() == 1) {
-            // Single device - clean one-liner
-            if (colorName == "off") {
-                result = std::format("Turned off lighting on {}.", updated[0]);
-            } else {
-                result = std::format("Set {} to {}.", updated[0], colorName);
-            }
-        } else {
-            // Multiple devices - list them
-            if (colorName == "off") {
-                result = std::format("Turned off lighting on {} devices: ", updated.size());
-            } else {
-                result = std::format("Set {} devices to {}: ", updated.size(), colorName);
-            }
-            for (size_t i = 0; i < updated.size(); i++) {
-                if (i > 0) result += ", ";
-                result += updated[i];
-            }
-            result += ".";
-        }
-    }
-    
-    if (!failed.empty()) {
-        if (!result.empty()) result += " ";
-        if (failed.size() == 1) {
-            result += std::format("Failed to set {}.", failed[0]);
-        } else {
-            result += std::format("Failed to set {} devices.", failed.size());
-        }
-    }
-    
-    return json(result);
+    LightingResult result{updated, failed};
+    return json(formatLightingResult(result, colorName, "device"));
 }
 
 // Set headset EQ with auto-discovery
 static json cmdSetHeadsetEq(const json& args) {
     if (!ensureInitialized()) {
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
     
     std::string presetName = args.value("preset", "");
     if (presetName.empty()) {
-        return json("Please specify an EQ preset name.");
+        return json("No EQ preset specified.");
     }
     
     // Find equalizer-capable devices
@@ -603,7 +672,7 @@ static json cmdSetHeadsetEq(const json& args) {
     auto code = AutomationSdkGetEqualizerDevices(devices, AUTOMATION_SDK_ITEMS_COUNT_MAX, &size);
     
     if (code != Success || size == 0) {
-        return json("No Corsair headset with EQ support found. Please connect a Corsair headset.");
+        return json("No Corsair headset with EQ support found. Please ensure your headset is connected and visible in iCUE. Note: not all headset models support EQ control.");
     }
 
     // Use first headset
@@ -645,12 +714,12 @@ static json cmdSetHeadsetEq(const json& args) {
 // Set iCUE profile
 static json cmdSetProfile(const json& args) {
     if (!ensureInitialized()) {
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
     
     std::string profileName = args.value("name", "");
     if (profileName.empty()) {
-        return json("Please specify a profile name.");
+        return json("No profile name specified.");
     }
 
     int size = 0;
@@ -688,7 +757,7 @@ static json cmdSetProfile(const json& args) {
 // Get available iCUE profiles
 static json cmdGetProfiles(const json& args) {
     if (!ensureInitialized()) {
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
     
     int size = 0;
@@ -713,14 +782,15 @@ static json cmdGetDevices(const json& args) {
     
     if (!ensureInitialized()) {
         logMsg("[DEVICES] ERROR: ensureInitialized() returned false");
-        return json("Unable to connect to iCUE. Please ensure iCUE is running and the plugin has permissions.");
+        return json("Unable to connect to iCUE. Please ensure iCUE is running and iCUE SDK is enabled in settings.");
     }
+    refreshDevices();
     
     logMsg(std::format("[DEVICES] g_numDevices = {}", g_numDevices));
     
     if (g_numDevices == 0) {
         logMsg("[DEVICES] No devices found via CorsairGetDevices");
-        return json("No Corsair devices found. Please connect a Corsair device and ensure iCUE is running.");
+        return json("No Corsair devices found. Please ensure your devices are connected and visible in iCUE.");
     }
     
     // Query device capabilities first
@@ -833,17 +903,34 @@ int main() {
     setupDllDirectory();
     logMsg("[MAIN] DLL directory setup complete");
     
-    gassist::Plugin plugin("corsair", "2.0.0", "Control Corsair iCUE devices");
+    gassist::Plugin plugin("corsair", "2.1.0", "Control Corsair iCUE devices");
     logMsg("[MAIN] Plugin instance created");
     
     // Register commands
     logMsg("[MAIN] Registering commands...");
+    
+    // DPI control
     plugin.command("corsair_set_mouse_dpi", cmdSetMouseDpi);
-    plugin.command("corsair_set_lighting", cmdSetLighting);
+    
+    // Per-device-type lighting commands
+    plugin.command("corsair_set_keyboard_lighting", cmdSetKeyboardLighting);
+    plugin.command("corsair_set_mouse_lighting", cmdSetMouseLighting);
+    plugin.command("corsair_set_headset_lighting", cmdSetHeadsetLighting);
+    plugin.command("corsair_set_mousemat_lighting", cmdSetMousematLighting);
+    plugin.command("corsair_set_fan_lighting", cmdSetFanLighting);
+    plugin.command("corsair_set_cooler_lighting", cmdSetCoolerLighting);
+    plugin.command("corsair_set_ram_lighting", cmdSetRamLighting);
+    plugin.command("corsair_set_gpu_lighting", cmdSetGpuLighting);
+    plugin.command("corsair_set_motherboard_lighting", cmdSetMotherboardLighting);
+    plugin.command("corsair_set_headset_stand_lighting", cmdSetHeadsetStandLighting);
+    plugin.command("corsair_set_all_lighting", cmdSetAllLighting);
+    
+    // Other controls
     plugin.command("corsair_set_headset_eq", cmdSetHeadsetEq);
     plugin.command("corsair_set_profile", cmdSetProfile);
     plugin.command("corsair_get_profiles", cmdGetProfiles);
     plugin.command("corsair_get_devices", cmdGetDevices);
+    
     logMsg("[MAIN] Commands registered");
     
     // Run the plugin

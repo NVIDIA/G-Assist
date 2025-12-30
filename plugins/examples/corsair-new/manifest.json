@@ -1,75 +1,193 @@
 {
   "manifestVersion": 1,
   "name": "corsair",
-  "version": "2.0.0",
-  "description": "Control Corsair iCUE devices - lighting, DPI, EQ, and profiles",
-  "protocol_version": "2.0",
+  "version": "2.1.0",
+  "description": "Control Corsair iCUE RGB lighting devices including keyboards, mice, headsets, fans, coolers, RAM, and more.",
   "executable": "g-assist-plugin-corsair.exe",
   "persistent": true,
+  "protocol_version": "2.0",
   "functions": [
     {
-      "name": "corsair_set_mouse_dpi",
-      "description": "Set mouse DPI (sensitivity). Auto-detects connected Corsair mouse. Common values: 400 (precision), 800 (balanced), 1600 (fast), 3200 (very fast).",
-      "tags": ["mouse", "DPI", "sensitivity", "Corsair", "iCUE"],
-      "properties": {
-        "dpi": {
-          "type": "number",
-          "description": "DPI value between 100-26000"
-        }
-      },
-      "required": ["dpi"]
-    },
-    {
-      "name": "corsair_set_lighting",
-      "description": "Change LED color on Corsair devices. Optionally supports targeting by device name or by type.",
-      "tags": ["lighting", "LED", "RGB", "color", "Corsair", "iCUE", "keyboard", "mouse", "headset"],
+      "name": "corsair_set_keyboard_lighting",
+      "description": "Changes the RGB color of Corsair keyboard LEDs. Controls all zones on supported Corsair keyboards like K70, K95, K100. Use this when the user wants to change keyboard backlight color, set keyboard RGB lighting, or customize keyboard illumination.",
+      "tags": ["lighting", "keyboard", "Corsair", "iCUE", "RGB", "backlight", "illumination", "keyboard color", "LED"],
       "properties": {
         "color": {
           "type": "string",
-          "description": "Color name (red, green, blue, cyan, magenta, yellow, white, orange, purple, pink, gold, teal, gray) or 'off' to turn off"
-        },
-        "device": {
-          "type": "string",
-          "description": "[optional] Target device by name or type."
+          "description": "[required] The color to set the keyboard LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change keyboard to blue' (color='blue'), 'Set keyboard lighting to red' (color='red'), 'Turn keyboard off' (color='off')."
         }
       },
       "required": ["color"]
     },
     {
+      "name": "corsair_set_mouse_lighting",
+      "description": "Changes the RGB color of Corsair mouse LEDs. Controls all zones on supported Corsair mice like M65, Dark Core, Sabre, Scimitar. Use this when the user wants to change mouse lighting color, set mouse RGB effects, or customize mouse illumination.",
+      "tags": ["lighting", "mouse", "Corsair", "iCUE", "RGB", "illumination", "mouse color", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the mouse LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change mouse to green' (color='green'), 'Set mouse lighting to purple' (color='purple'), 'Turn mouse off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_headset_lighting",
+      "description": "Changes the RGB color of Corsair headset/headphone LEDs. Controls all zones on supported Corsair headsets like VOID, Virtuoso, HS series. Use this when the user wants to change headset lighting color, set headphone RGB effects, or customize headphone illumination.",
+      "tags": ["lighting", "headphones", "headset", "Corsair", "iCUE", "RGB", "illumination", "headset color", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the headset LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Common query phrases: 'change to [color]', 'set [color]', 'make it [color]', 'turn [color]'. Examples: 'Change headset to cyan' (color='cyan'), 'Set headphones lighting to pink' (color='pink'), 'Turn headphones off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_mousemat_lighting",
+      "description": "Changes the RGB color of Corsair mousemat/mousepad LEDs. Controls all zones on supported Corsair mousemats like MM800, MM700. Use this when the user wants to change mousepad lighting color or customize mousepad illumination.",
+      "tags": ["lighting", "mousemat", "mousepad", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the mousemat LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change mousemat to blue' (color='blue'), 'Turn mousemat off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_fan_lighting",
+      "description": "Changes the RGB color of Corsair fan controller and fan LEDs. Controls Commander Pro, Lighting Node, and RGB fans like LL, QL, SP series. Use this when the user wants to change fan lighting color or customize case fan illumination.",
+      "tags": ["lighting", "fans", "fan controller", "case fans", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the fan LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change fans to green' (color='green'), 'Turn fans off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_cooler_lighting",
+      "description": "Changes the RGB color of Corsair cooler LEDs. Controls AIO liquid coolers like H100i, H150i, Elite Capellix and CPU air coolers. Use this when the user wants to change cooler lighting color or customize AIO pump illumination.",
+      "tags": ["lighting", "cooler", "AIO", "CPU cooler", "liquid cooler", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the cooler LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change cooler to blue' (color='blue'), 'Turn cooler off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_ram_lighting",
+      "description": "Changes the RGB color of Corsair RAM/memory module LEDs. Controls Dominator and Vengeance RGB series memory. Use this when the user wants to change RAM lighting color or customize memory illumination.",
+      "tags": ["lighting", "RAM", "memory", "DRAM", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the RAM LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change RAM to green' (color='green'), 'Turn RAM off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_gpu_lighting",
+      "description": "Changes the RGB color of Corsair GPU/graphics card LEDs. Controls Corsair-branded graphics cards with RGB lighting. Use this when the user wants to change GPU lighting color or customize graphics card illumination.",
+      "tags": ["lighting", "GPU", "graphics card", "video card", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the GPU LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change GPU to red' (color='red'), 'Turn GPU off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_motherboard_lighting",
+      "description": "Changes the RGB color of Corsair motherboard LEDs. Controls motherboards with iCUE integration. Use this when the user wants to change motherboard lighting color or customize mobo illumination.",
+      "tags": ["lighting", "motherboard", "mobo", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the motherboard LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change motherboard to purple' (color='purple'), 'Turn motherboard off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_headset_stand_lighting",
+      "description": "Changes the RGB color of Corsair headset stand LEDs. Controls the ST100 RGB Premium Headset Stand. Use this when the user wants to change headset stand lighting color.",
+      "tags": ["lighting", "headset stand", "stand", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set the headset stand LEDs. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change headset stand to blue' (color='blue'), 'Turn headset stand off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_all_lighting",
+      "description": "Changes the RGB color of ALL connected Corsair devices at once. Controls every Corsair device including keyboards, mice, headsets, fans, coolers, RAM. Use this when the user wants to set all their Corsair gear to the same color or turn everything off.",
+      "tags": ["lighting", "all devices", "all", "everything", "Corsair", "iCUE", "RGB", "illumination", "LED"],
+      "properties": {
+        "color": {
+          "type": "string",
+          "description": "[required] The color to set on all Corsair devices. Common values: 'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'white', 'orange', 'purple', 'pink', 'teal', 'gold', 'gray', 'off' (turns off lighting). Examples: 'Change all lights to blue' (color='blue'), 'Set everything to red' (color='red'), 'Turn all Corsair off' (color='off')."
+        }
+      },
+      "required": ["color"]
+    },
+    {
+      "name": "corsair_set_mouse_dpi",
+      "description": "Set mouse DPI (sensitivity) on Corsair mice. Auto-detects connected Corsair mouse. Use this when the user wants to change mouse sensitivity, adjust DPI, or set mouse speed.",
+      "tags": ["mouse", "DPI", "sensitivity", "speed", "Corsair", "iCUE"],
+      "properties": {
+        "dpi": {
+          "type": "number",
+          "description": "[required] The DPI value to set (100-26000). Common values: 400 (precision), 800 (balanced), 1600 (fast), 3200 (very fast). Examples: 'Set mouse DPI to 800' (dpi=800), 'Change sensitivity to 1600' (dpi=1600)."
+        }
+      },
+      "required": ["dpi"]
+    },
+    {
       "name": "corsair_set_headset_eq",
-      "description": "Set headset equalizer preset. Auto-detects connected Corsair headset.",
-      "tags": ["headset", "headphone", "EQ", "equalizer", "audio", "Corsair", "iCUE", "sound"],
+      "description": "Set headset equalizer preset on Corsair headsets. Auto-detects connected Corsair headset. Use this when the user wants to change audio EQ, set sound preset, or optimize audio for gaming/music/movies.",
+      "tags": ["headset", "headphones", "EQ", "equalizer", "audio", "sound", "Corsair", "iCUE"],
       "properties": {
         "preset": {
           "type": "string",
-          "description": "EQ preset name like 'Pure Direct', 'Bass Boost', 'FPS', 'Movie', 'Music', 'Clear Chat', or custom preset name"
+          "description": "[required] The EQ preset name. Common values: 'Pure Direct', 'Bass Boost', 'FPS Competition', 'Movie Theater', 'Music', 'Clear Chat'. Examples: 'Set EQ to bass boost' (preset='Bass Boost'), 'Use FPS mode' (preset='FPS Competition')."
         }
       },
       "required": ["preset"]
     },
     {
       "name": "corsair_set_profile",
-      "description": "Switch to an iCUE profile. Profiles contain saved lighting and device settings.",
-      "tags": ["profile", "preset", "Corsair", "iCUE", "settings"],
+      "description": "Switch to an iCUE profile. Profiles contain saved lighting effects and device settings. Use this when the user wants to activate a profile, switch themes, or load saved settings.",
+      "tags": ["profile", "preset", "theme", "Corsair", "iCUE", "settings"],
       "properties": {
         "name": {
           "type": "string",
-          "description": "Profile name to activate (case-insensitive)"
+          "description": "[required] The profile name to activate (case-insensitive). Examples: 'Switch to gaming profile' (name='gaming'), 'Activate work mode' (name='work')."
         }
       },
       "required": ["name"]
     },
     {
       "name": "corsair_get_profiles",
-      "description": "List all available iCUE profiles. Use this to see what profiles can be activated.",
+      "description": "List all available iCUE profiles. Use this when the user wants to see what profiles exist or check available presets.",
       "tags": ["profile", "list", "Corsair", "iCUE"],
-      "properties": {}
+      "properties": {},
+      "required": []
     },
     {
       "name": "corsair_get_devices",
-      "description": "List all connected Corsair devices with their capabilities. Use this to see what devices are available.",
-      "tags": ["devices", "list", "info", "Corsair", "iCUE", "status"],
-      "properties": {}
+      "description": "List all connected Corsair devices with their capabilities. Use this when the user wants to see what devices are connected or check available Corsair gear.",
+      "tags": ["devices", "list", "info", "status", "Corsair", "iCUE"],
+      "properties": {},
+      "required": []
     }
   ]
 }
