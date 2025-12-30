@@ -23,6 +23,8 @@
 #include "LogitechLEDLib.h"
 
 #include <Windows.h>
+#include <TlHelp32.h>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -71,6 +73,41 @@ fs::path GetPluginDirectory() {
 
 fs::path GetConfigPath() {
     return GetPluginDirectory() / "config.json";
+}
+
+// ============================================================================
+// G Hub Diagnostics
+// ============================================================================
+
+bool CheckLogiDllAvailable() {
+    HMODULE hModule = LoadLibraryA("LogitechLED.dll");
+    if (hModule) {
+        FreeLibrary(hModule);
+        return true;
+    }
+    return false;
+}
+
+bool IsGHubRunning() {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+    
+    PROCESSENTRY32W entry;
+    entry.dwSize = sizeof(entry);
+    
+    bool found = false;
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (_wcsicmp(entry.szExeFile, L"lghub.exe") == 0 ||
+                _wcsicmp(entry.szExeFile, L"lghub_agent.exe") == 0) {
+                found = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    
+    CloseHandle(snapshot);
+    return found;
 }
 
 // ============================================================================
@@ -184,6 +221,16 @@ Color ToSdkColor(const Color& color) {
 // LED Control Functions
 // ============================================================================
 
+// Pre-flight check helper - throws descriptive error if G Hub is not running
+void EnsureGHubAvailable() {
+    if (!IsGHubRunning()) {
+        throw std::runtime_error(
+            "Logitech G Hub is not running. Ensure G Hub is running and try again.");
+    }
+    // Note: We don't check DLL availability here - LogiLedInit() is the definitive check
+    // The DLL check was unreliable because it could fail even when G Hub was starting up
+}
+
 bool SetDeviceLighting(LogiLed::DeviceType device, const Color& color) {
     const int MAX_ZONES = 10;
     for (int zone = 0; zone < MAX_ZONES; ++zone) {
@@ -225,7 +272,7 @@ std::string BuildSetupInstructions(const std::string& reason = "") {
     }
     instructions += std::format(
         "1. Open the configuration file:\n   {}\n"
-        "2. Ensure Logitech G Hub is installed and 'Allow programs to control lighting' is enabled.\n"
+        "2. Ensure Logitech G Hub is installed and 'Game lighting control' is enabled in Settings.\n"
         "3. Set \"features.setup_complete\" to true and save the file.\n"
         "4. Type 'done' here once finished.\n",
         GetConfigPath().string());
@@ -237,6 +284,22 @@ std::string BuildSetupInstructions(const std::string& reason = "") {
 // ============================================================================
 
 int main() {
+    // Early startup logging to confirm plugin started (before any SDK calls)
+    try {
+        fs::create_directories(GetPluginDirectory());
+        std::ofstream startup_log(GetPluginDirectory() / "startup.log", std::ios::app);
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        char time_buffer[26];
+        ctime_s(time_buffer, sizeof(time_buffer), &time_t_now);
+        startup_log << "Plugin starting at " << time_buffer;
+        startup_log << "  DLL available: " << (CheckLogiDllAvailable() ? "yes" : "no") << std::endl;
+        startup_log << "  G Hub running: " << (IsGHubRunning() ? "yes" : "no") << std::endl;
+        startup_log.flush();
+    } catch (...) {
+        // Ignore logging errors - don't let logging prevent plugin from starting
+    }
+
     // Create plugin with Protocol V2 SDK
     gassist::Plugin plugin("logiled", "2.0.0",
         "Control Logitech RGB lighting devices including keyboards, mice, and headsets.");
@@ -258,13 +321,16 @@ int main() {
             return BuildSetupInstructions();
         }
 
+        // Pre-flight check: ensure G Hub is available
+        EnsureGHubAvailable();
+
         // Initialize Logitech LED SDK
         state.initialized = LogiLedInit();
         if (!state.initialized) {
             throw std::runtime_error(
                 "Oops! The Logitech Illumination Plugin for G-Assist couldn't update your lighting. To fix this:\n"
                 "1. Ensure Logitech G Hub is installed and running.\n"
-                "2. In G Hub, enable 'Allow programs to control lighting' (Settings > Allow Games and Applications to Control Illumination).\n"
+                "2. In G Hub, go to Settings > General Settings and enable 'Game lighting control'.\n"
                 "3. In Windows, go to Settings > Personalization > Dynamic Lighting and disable 'Use Dynamic Lighting on my devices.'\n"
                 "4. Close and reopen G-Assist.\n");
         }
@@ -293,11 +359,14 @@ int main() {
             return "Keyboard control is disabled in the configuration.";
         }
 
+        // Pre-flight check: ensure G Hub is available
+        EnsureGHubAvailable();
+
         // Ensure SDK is initialized
         if (!state.initialized) {
             state.initialized = LogiLedInit();
             if (!state.initialized) {
-                throw std::runtime_error("Failed to initialize Logitech LED SDK.");
+                throw std::runtime_error("Failed to initialize Logitech LED SDK. Ensure 'Game lighting control' is enabled in G Hub, or restart G Hub.");
             }
         }
 
@@ -322,11 +391,14 @@ int main() {
             return "Mouse control is disabled in the configuration.";
         }
 
+        // Pre-flight check: ensure G Hub is available
+        EnsureGHubAvailable();
+
         // Ensure SDK is initialized
         if (!state.initialized) {
             state.initialized = LogiLedInit();
             if (!state.initialized) {
-                throw std::runtime_error("Failed to initialize Logitech LED SDK.");
+                throw std::runtime_error("Failed to initialize Logitech LED SDK. Ensure 'Game lighting control' is enabled in G Hub, or restart G Hub.");
             }
         }
 
@@ -351,11 +423,14 @@ int main() {
             return "Headset control is disabled in the configuration.";
         }
 
+        // Pre-flight check: ensure G Hub is available
+        EnsureGHubAvailable();
+
         // Ensure SDK is initialized
         if (!state.initialized) {
             state.initialized = LogiLedInit();
             if (!state.initialized) {
-                throw std::runtime_error("Failed to initialize Logitech LED SDK.");
+                throw std::runtime_error("Failed to initialize Logitech LED SDK. Ensure 'Game lighting control' is enabled in G Hub, or restart G Hub.");
             }
         }
 
@@ -391,9 +466,7 @@ int main() {
         // Setup complete, initialize SDK
         state.initialized = LogiLedInit();
         if (!state.initialized) {
-            throw std::runtime_error(
-                "Failed to initialize Logitech LED SDK. "
-                "Please ensure G Hub is running and 'Allow programs to control lighting' is enabled.");
+            throw std::runtime_error("Failed to initialize Logitech LED SDK. Ensure 'Game lighting control' is enabled in G Hub, or restart G Hub.");
         }
 
         state.wizardActive = false;

@@ -98,7 +98,8 @@ Once everything is set up, you can control your Logitech devices through G-Assis
 ## Troubleshooting Tips
 - **Installer failing?** Make sure Visual Studio 2022 is installed with C++ development tools
 - **Build failing?** Ensure all dependencies (LED SDK, JSON library) are extracted to the correct locations
-- **Commands not working?** Verify G HUB is running and "Allow programs to control lighting" is enabled
+- **Commands not working?** Verify G HUB is running and "Game lighting control" is enabled in Settings
+- **Lighting not changing?** On Windows 11, go to Settings > Personalization > Dynamic Lighting and disable "Use Dynamic Lighting on my devices"
 - **Device not responding?** Check if your device is supported by LED SDK 9.00
 - **Plugin not loading?** Check the installation directory and ensure G-Assist is restarted
 - **Security errors during install?** Run the installer as Administrator
