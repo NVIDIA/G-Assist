@@ -292,7 +292,7 @@ def stream_gemini_response(context: list, timeout_seconds: int = 30) -> str:
         
         if current_time - start_time > timeout_seconds:
             logger.error(f"GEMINI: Timeout after {timeout_seconds}s")
-            plugin.stream("\n\n[Response timed out. Please try again.]")
+            plugin.stream("\n\nResponse timed out. Please try again.")
             break
         
         # Send keep-alive every 2 seconds while waiting for first chunk
@@ -315,7 +315,25 @@ def stream_gemini_response(context: list, timeout_seconds: int = 30) -> str:
                 break
             elif msg_type == "error":
                 logger.error(f"GEMINI: Stream error: {msg_data}")
-                plugin.stream(f"\n\n[Error: {msg_data}]")
+                error_upper = msg_data.upper()
+                
+                # Categorize based on Gemini API error codes
+                if 'DEADLINE_EXCEEDED' in error_upper or '504' in msg_data:
+                    plugin.stream("\n\nRequest timed out. Try a shorter question.")
+                elif 'RESOURCE_EXHAUSTED' in error_upper or '429' in msg_data:
+                    plugin.stream("\n\nRate limit reached. Please wait a moment and try again.")
+                elif 'UNAVAILABLE' in error_upper or '503' in msg_data:
+                    plugin.stream("\n\nService temporarily unavailable. Please try again later.")
+                elif 'INTERNAL' in error_upper or '500' in msg_data:
+                    plugin.stream("\n\nServer error. Try a shorter question or try again later.")
+                elif 'PERMISSION_DENIED' in error_upper or '403' in msg_data:
+                    plugin.stream("\n\nPermission denied. Check your API key permissions.")
+                elif 'INVALID_ARGUMENT' in error_upper or '400' in msg_data:
+                    plugin.stream("\n\nInvalid request. Try rephrasing your question.")
+                elif 'SAFETY' in error_upper or 'BLOCKED' in error_upper:
+                    plugin.stream("\n\nResponse blocked by safety filters. Try rephrasing.")
+                else:
+                    plugin.stream("\n\nCouldn't get a response. Please try again.")
                 break
                 
         except queue.Empty:
@@ -340,7 +358,7 @@ def run_setup_wizard() -> str:
     # Check if key exists and is valid
     if load_api_key():
         plugin.set_keep_session(True)
-        return """✅ Google Gemini plugin is configured and ready!
+        return """Google Gemini plugin is configured and ready!
 
 You can now ask me questions and I'll search the web for answers.
 I'll stay in conversation mode - just keep typing your questions!
@@ -348,25 +366,35 @@ I'll stay in conversation mode - just keep typing your questions!
 Type "exit" to leave Gemini mode."""
     
     # Show setup instructions
-    message = """
-🔧 GOOGLE GEMINI PLUGIN - FIRST TIME SETUP
-==========================================
+    message = """_
+**Gemini Plugin - First Time Setup**
 
-Welcome! Let's get your Google Gemini API key. This takes about 1 minute.
+Welcome! Let's get your Google Gemini API key. This takes about **1 minute**.
 
 I'm opening Google AI Studio in your browser...
 
-📋 YOUR TASK - Get Your API Key:
-   1. Click "Create API Key" button
-   2. Choose "Create API key in new project" (easiest)
-   3. Give your project a name (e.g., "G-Assist")
-   4. Click "Create" - your API key will appear
-   5. Click "Copy" to copy the API key
-   
-   6. I'm opening the key file in Notepad...
-   7. Paste your API key and SAVE the file
+---
 
-Save the file and try your query again.
+**Step 1: Get Your API Key**
+
+1. Click **Create API Key**
+2. Choose **Create API key in new project** (easiest)
+3. Name your project (e.g., "G-Assist")
+4. Click **Create** — your API key will appear
+5. Click **Copy** to copy it
+
+---
+
+**Step 2: Save Your Key**
+
+I'm opening the key file in Notepad...
+
+1. Paste your API key
+2. Save the file
+
+Save the file and try your query again!
+
+---
 """
     
     try:
@@ -407,8 +435,8 @@ Save the file and try your query again.
                 
     except Exception as e:
         logger.error(f"[WIZARD] Error: {e}")
-        message += f"\n\n⚠️ Error opening browser: {e}"
-        message += "\nPlease manually visit: https://aistudio.google.com/app/apikey"
+        message += "\n\nCouldn't open browser automatically."
+        message += "\nPlease visit: https://aistudio.google.com/app/apikey"
     
     plugin.set_keep_session(True)
     return message
@@ -442,7 +470,7 @@ def query_gemini(query: str = None, context: Context = None):
     logger.info(f"GEMINI: Processing query: {query[:50] if query else 'None'}...")
     
     # Send immediate acknowledgment
-    plugin.stream("Searching... ")
+    plugin.stream("Searching..._ ")
     
     # Build context
     if context and context.messages:
@@ -457,6 +485,7 @@ def query_gemini(query: str = None, context: Context = None):
             conversation_history.append({"role": "user", "content": query})
     
     if not ctx:
+        plugin.set_keep_session(True)
         return "No query provided."
     
     try:
@@ -472,7 +501,7 @@ def query_gemini(query: str = None, context: Context = None):
         logger.error(f"GEMINI: API error: {error_str}")
         
         if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
-            plugin.stream("\n\n⚠️ Rate limit reached. Please try again in a moment.")
+            plugin.stream("\n\nRate limit reached. Please try again in a moment.")
             plugin.set_keep_session(True)
             return ""
         
@@ -480,9 +509,11 @@ def query_gemini(query: str = None, context: Context = None):
             SETUP_COMPLETE = False
             API_KEY = None
             client = None
-            return f"❌ API key invalid: {error_str}\n\n" + run_setup_wizard()
+            return "API key is invalid. Please check your key and try again.\n\n" + run_setup_wizard()
         
-        return f"❌ API error: {error_str}"
+        # Keep session active so user can retry
+        plugin.set_keep_session(True)
+        return "Something went wrong with the API. Please try again."
 
 
 @plugin.command("on_input")
@@ -503,7 +534,7 @@ def on_input(content: str):
         if load_api_key():
             # Key is valid - stream confirmation and process the query immediately
             logger.info("[INPUT] API key verified, processing user query...")
-            plugin.stream("✅ API key configured!\n\n")
+            plugin.stream("API key configured!\n\n")
             conversation_history.append({"role": "user", "content": content})
             return query_gemini(query=content)
         else:
@@ -516,13 +547,13 @@ def on_input(content: str):
         logger.info("[INPUT] Exit command received")
         conversation_history = []
         plugin.set_keep_session(False)
-        return "👋 Exiting Gemini mode. Conversation history cleared."
+        return "Exiting Gemini mode. Conversation history cleared."
     
     # Check for clear history
     if content.lower().strip() in ['clear', 'reset', 'new conversation', 'clear history']:
         conversation_history = []
         plugin.set_keep_session(True)
-        return "🔄 Conversation history cleared. Ask me anything!"
+        return "Conversation history cleared. Ask me anything!"
     
     # Add user message to history
     conversation_history.append({"role": "user", "content": content})

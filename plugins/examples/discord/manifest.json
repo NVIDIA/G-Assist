@@ -42,7 +42,7 @@
       "properties": {
         "caption": {
           "type": "string",
-          "description": "[optional] An option caption for the video attachment"
+          "description": "[optional] An optional caption for the video attachment"
         }
       }
     },

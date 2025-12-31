@@ -85,25 +85,38 @@ plugin = Plugin(
 
 def get_setup_instructions() -> str:
     """Return setup wizard instructions."""
-    return f"""
-STOCK PLUGIN - FIRST TIME SETUP
-================================
+    return f"""_
+**Stock Plugin - First Time Setup**
 
-Welcome! Let's get your free Twelve Data API key. This takes about 1 minute.
+Welcome! Let's get your free Twelve Data API key. This takes about **1 minute**.
 
-YOUR TASK - Get Your Free API Key:
-   1. Visit: https://twelvedata.com/pricing
-   2. Click "Get Free API Key" (no credit card required)
-   3. Sign up with your email
-   4. Copy your API key from the dashboard
-   5. Open this file: {CONFIG_FILE}
-   6. Replace the empty quotes with your API key:
-      {{"TWELVE_DATA_API_KEY": "your_key_here"}}
-   7. Save the file
+---
 
-After saving, send me ANY message (like "done") and I'll verify it!
+**Step 1: Get Your Free API Key**
 
-Note: The free tier includes 800 API calls per day - plenty for personal use!
+1. Visit [Twelve Data](https://twelvedata.com/pricing)
+2. Click **Get Free API Key** (no credit card required)
+3. Sign up with your email
+4. Copy your API key from the dashboard
+
+---
+
+**Step 2: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Add your API key:
+```
+{{"TWELVE_DATA_API_KEY": "your_key_here"}}
+```
+
+_(The free tier includes 800 API calls per day — plenty for personal use!)_
+
+Save the file and try the command again!
+
 """
 
 # ============================================================================
@@ -200,7 +213,7 @@ def on_input(content: str = ""):
     load_config()
     if SETUP_COMPLETE and API_KEY:
         plugin.set_keep_session(False)
-        return "✓ API key configured! You can now ask about stock prices. Try: 'What's the price of NVDA?'"
+        return "API key configured! You can now ask about stock prices. Try: 'What's the price of NVDA?'"
     else:
         plugin.set_keep_session(True)
         return get_setup_instructions()

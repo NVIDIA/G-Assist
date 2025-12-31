@@ -85,44 +85,62 @@ def load_config():
 
 def get_setup_instructions() -> str:
     """Return setup wizard instructions."""
-    return f"""
-IFTTT PLUGIN - FIRST TIME SETUP
-================================
+    return f"""_
+**IFTTT Plugin - First Time Setup**
 
-Welcome! Let's set up your IFTTT webhook. This takes about 5 minutes.
+Welcome! Let's set up your IFTTT webhook. This takes about **5 minutes**.
 
-STEP 1 - Create IFTTT Account:
-   1. Visit: https://ifttt.com/join
-   2. Sign up for a free account
+---
 
-STEP 2 - Get Webhook Key:
-   1. Visit: https://ifttt.com/maker_webhooks
-   2. Click "Documentation"
-   3. Your webhook key is shown at the top
-   4. Copy the key (it's after "/use/")
+**Step 1: Create IFTTT Account**
 
-STEP 3 - Create an Applet:
-   1. Visit: https://ifttt.com/create
-   2. Click "+ If This"
-   3. Search for "Webhooks" and select it
-   4. Choose "Receive a web request"
-   5. Enter an event name (e.g., "gaming_setup")
-   6. Click "+ Then That"
-   7. Choose your action (e.g., control lights, send notification)
-   8. Complete the applet setup
+1. Visit [IFTTT](https://ifttt.com/join)
+2. Sign up for a free account
 
-STEP 4 - Configure Plugin:
-   1. Open this file: {CONFIG_FILE}
-   2. Replace the values:
-      {{"webhook_key": "your_webhook_key_here",
-       "event_name": "your_event_name_here",
-       "main_rss_url": "https://feeds.feedburner.com/ign/pc-articles",
-       "alternate_rss_url": "https://feeds.feedburner.com/ign/all"}}
-   3. Save the file
+---
 
-After saving, send me ANY message (like "done") and I'll verify it!
+**Step 2: Get Webhook Key**
 
-Note: The plugin will include IGN gaming news headlines when triggering your applet!
+1. Visit [IFTTT Webhooks](https://ifttt.com/maker_webhooks)
+2. Click **Documentation**
+3. Your webhook key is shown at the top
+4. Copy the key (it's after "/use/")
+
+---
+
+**Step 3: Create an Applet**
+
+1. Visit [IFTTT Create](https://ifttt.com/create)
+2. Click **+ If This** → search for **Webhooks** → select it
+3. Choose **Receive a web request**
+4. Enter an event name (e.g., "gaming_setup")
+5. Click **+ Then That** → choose your action
+6. Complete the applet setup
+
+---
+
+**Step 4: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Update it with your values:
+```
+{{
+  "webhook_key": "your_webhook_key_here",
+  "event_name": "your_event_name_here",
+  "main_rss_url": "https://feeds.feedburner.com/ign/pc-articles",
+  "alternate_rss_url": "https://feeds.feedburner.com/ign/all"
+}}
+```
+
+_(The plugin includes IGN gaming news headlines when triggering your applet!)_
+
+Save the file and try the command again!
+
+---
 """
 
 

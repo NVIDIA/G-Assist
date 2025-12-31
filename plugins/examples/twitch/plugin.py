@@ -116,58 +116,69 @@ def get_oauth_token() -> Optional[str]:
 
 def get_setup_instructions_step1() -> str:
     """Return first step of setup wizard."""
-    return """
-TWITCH PLUGIN - FIRST TIME SETUP (1/2)
-========================================
+    return """_
+**Twitch Plugin - First Time Setup (1/2)**
 
-Welcome! Let's set up your Twitch app. This takes about 5 minutes.
+Welcome! Let's set up your Twitch app. This takes about **5 minutes**.
 
-STEP 1 - Create Twitch App:
-   I'm opening the Twitch Developer Console for you now...
-   
-   1. Log in with your Twitch account
-   2. Click "Register Your Application"
-   3. Fill in the form:
-      - Name: "G-Assist Plugin"
-      - OAuth Redirect URLs: "http://localhost"
-      - Category: "Application Integration"
-   4. Click "Create"
+---
 
-When you're done creating the app, send me ANY message (like "ready") to continue!
+**Step 1: Create Twitch App**
+
+I'm opening the Twitch Developer Console for you now...
+
+1. Log in with your Twitch account
+2. Click **Register Your Application**
+3. Fill in the form:
+   - Name: `G-Assist Plugin`
+   - OAuth Redirect URLs: `http://localhost`
+   - Category: **Application Integration**
+4. Click **Create**
+
+---
+
+When you're done, send me any message to continue!
+
 """
 
 
 def get_setup_instructions_step2() -> str:
     """Return second step of setup wizard."""
-    return f"""
-TWITCH PLUGIN - FIRST TIME SETUP (2/2)
-========================================
+    return f"""_
+**Twitch Plugin - First Time Setup (2/2)**
 
 Great! Now let's add your credentials.
 
-STEP 2 - Get Credentials:
-   1. Click "Manage" on your new app
-   2. Copy your "Client ID"
-   3. Click "New Secret" and copy the client secret
-   
-   IMPORTANT: Keep your client secret private!
+---
 
-STEP 3 - Configure Plugin:
-   I'm opening your config file. Please:
-   
-   1. Paste your Client ID between the quotes:
-      "TWITCH_CLIENT_ID": "YOUR_CLIENT_ID_HERE"
-   
-   2. Paste your Client Secret between the quotes:
-      "TWITCH_CLIENT_SECRET": "YOUR_CLIENT_SECRET_HERE"
-   
-   3. Save the file (Ctrl+S)
-   4. Close the editor
+**Step 2: Get Credentials**
 
-Config file location:
-   {CONFIG_FILE}
+1. Click **Manage** on your new app
+2. Copy your **Client ID**
+3. Click **New Secret** and copy it
 
-After saving, send me ANY message (like "done") and I'll verify it!
+_(Keep your client secret private!)_
+
+---
+
+**Step 3: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Paste your credentials:
+```
+{{
+  "TWITCH_CLIENT_ID": "YOUR_CLIENT_ID_HERE",
+  "TWITCH_CLIENT_SECRET": "YOUR_CLIENT_SECRET_HERE"
+}}
+```
+
+Save the file and try the command again!
+
+---
 """
 
 

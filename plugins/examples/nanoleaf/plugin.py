@@ -85,29 +85,42 @@ def load_config() -> Dict[str, Any]:
 
 def get_setup_instructions() -> str:
     """Return setup wizard instructions."""
-    return f"""
-NANOLEAF PLUGIN - FIRST TIME SETUP
-===================================
+    return f"""_
+**Nanoleaf Plugin - First Time Setup**
 
-Welcome! Let's set up your Nanoleaf. This takes about 2 minutes.
+Welcome! Let's set up your Nanoleaf. This takes about **2 minutes**.
 
-STEP 1 - Find Your Nanoleaf IP:
-   1. Open the Nanoleaf app on your phone
-   2. Go to Settings > Device Info
-   3. Find the IP address (e.g., 192.168.1.100)
+---
 
-STEP 2 - Configure Plugin:
-   1. Open this file: {CONFIG_FILE}
-   2. Replace the empty IP with your Nanoleaf IP:
-      {{"ip": "YOUR_NANOLEAF_IP_HERE"}}
-   3. Save the file
+**Step 1: Find Your Nanoleaf IP**
 
-STEP 3 - Authorize (first time only):
-   1. Hold the power button on your Nanoleaf for 5-7 seconds
-   2. The lights will flash, indicating pairing mode
-   3. Send me ANY message to complete setup
+1. Open the Nanoleaf app on your phone
+2. Go to **Settings** → **Device Info**
+3. Find the IP address (e.g., `192.168.1.100`)
 
-After saving, send me ANY message (like "done") and I'll verify it!
+---
+
+**Step 2: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Add your Nanoleaf IP:
+```
+{{"ip": "YOUR_NANOLEAF_IP_HERE"}}
+```
+
+---
+
+**Step 3: Authorize (First Time Only)**
+
+1. Hold the power button on your Nanoleaf for **5-7 seconds**
+2. The lights will flash, indicating pairing mode
+
+Save the file and try the command again!
+
 """
 
 

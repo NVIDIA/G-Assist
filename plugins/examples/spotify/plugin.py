@@ -327,54 +327,66 @@ def get_redirect_uri() -> str:
 
 def get_setup_step1() -> str:
     """First setup step - create Spotify app."""
-    return f"""
-SPOTIFY PLUGIN - SETUP (1/2)
-==============================
+    return f"""_
+**Spotify Plugin - Setup (1/2)**
 
-Let's set up your Spotify plugin. This takes about 2 minutes.
+Let's set up your Spotify plugin. This takes about **2 minutes**.
 
-STEP 1 - Create a Spotify App:
-   I'm opening the Spotify Developer Dashboard now...
-   
-   1. Click "Create App"
-   2. Fill in:
-      - App Name: "G-Assist Spotify"
-      - Redirect URI: {get_redirect_uri()}
-      - Select "Web API" checkbox
-   3. Click "Create"
+---
 
-When done, send me ANY message (like "next") to continue!
+**Step 1: Create a Spotify App**
+
+I'm opening the Spotify Developer Dashboard now...
+
+1. Click **Create App**
+2. Fill in:
+   - App Name: `G-Assist Spotify`
+   - Redirect URI: `{get_redirect_uri()}`
+   - Select **Web API** checkbox
+3. Click **Create**
+
+---
+
+When done, send me any message to continue!
+
 """
 
 
 def get_setup_step2() -> str:
     """Second setup step - enter credentials."""
-    return f"""
-SPOTIFY PLUGIN - SETUP (2/2)
-==============================
+    return f"""_
+**Spotify Plugin - Setup (2/2)**
 
 Great! Now let's add your credentials.
 
-STEP 2 - Get Your Credentials:
-   1. Click "Settings" in your app
-   2. Copy your "Client ID"
-   3. Click "View client secret" and copy it
+---
 
-STEP 3 - Configure Plugin:
-   I'm opening your config file now...
-   
-   Paste your credentials:
-   {{
-     "client_id": "YOUR_CLIENT_ID_HERE",
-     "client_secret": "YOUR_CLIENT_SECRET_HERE",
-     "username": "your_spotify_username"
-   }}
-   
-   Save the file!
+**Step 2: Get Your Credentials**
 
-After saving, send me ANY message (like "done") to verify and authorize!
+1. Click **Settings** in your app
+2. Copy your **Client ID**
+3. Click **View client secret** and copy it
 
-Config file: {CONFIG_FILE}
+---
+
+**Step 3: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Paste your credentials:
+```
+{{
+  "client_id": "YOUR_CLIENT_ID_HERE",
+  "client_secret": "YOUR_CLIENT_SECRET_HERE",
+  "username": "your_spotify_username"
+}}
+```
+
+Save the file and try the command again!
+
 """
 
 

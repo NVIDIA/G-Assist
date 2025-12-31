@@ -87,45 +87,63 @@ def load_config():
 
 def get_setup_instructions() -> str:
     """Return setup wizard instructions."""
-    return f"""
-DISCORD PLUGIN - FIRST TIME SETUP
-==================================
+    return f"""_
+**Discord Plugin - First Time Setup**
 
-Welcome! Let's set up your Discord bot. This takes about 5 minutes.
+Welcome! Let's get you connected to Discord. This takes about **5 minutes**.
 
-STEP 1 - Create Discord Bot:
-   1. Visit: https://discord.com/developers/applications
-   2. Click "New Application" and give it a name
-   3. Go to "Bot" tab and click "Add Bot"
-   4. Click "Reset Token" to generate a new token
-   5. Copy the token (you'll need it for BOT_TOKEN)
-   6. Enable these Privileged Gateway Intents:
-      - MESSAGE CONTENT INTENT
-      - SERVER MEMBERS INTENT
-   7. Save changes
+---
 
-STEP 2 - Add Bot to Your Server:
-   1. Go to "Installation" tab
-   2. Copy the install link (should include permissions=2048)
-   3. Open link in browser and add bot to your server
+**Step 1: Create Your Discord Bot**
 
-STEP 3 - Get Channel ID:
-   1. In Discord, go to User Settings > Advanced
-   2. Enable "Developer Mode"
-   3. Right-click on your target channel
-   4. Click "Copy ID"
+1. Visit the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click **New Application** and name it (e.g., "G-Assist Bot")
+3. Go to the **Bot** tab and click **Add Bot**
+4. Click **Reset Token** and copy it — you'll need this soon
+5. Enable these **Privileged Gateway Intents**:
+   - `MESSAGE CONTENT INTENT`
+   - `SERVER MEMBERS INTENT`
+6. Click **Save Changes**
 
-STEP 4 - Configure Plugin:
-   1. Open this file: {CONFIG_FILE}
-   2. Replace the values:
-      {{"BOT_TOKEN": "your_bot_token_here",
-       "CHANNEL_ID": "your_channel_id_here",
-       "GAME_DIRECTORY": "Desktop"}}
-   3. Save the file
+---
 
-After saving, send me ANY message (like "done") and I'll verify it!
+**Step 2: Add Bot to Your Server**
 
-Note: GAME_DIRECTORY is where clips/screenshots are stored (e.g., "Desktop", "RUST")
+1. Go to the **Installation** tab
+2. Copy the install link and open it in your browser
+3. Select your server and authorize the bot
+
+---
+
+**Step 3: Get Your Channel ID**
+
+1. In Discord, go to **User Settings** → **Advanced**
+2. Enable **Developer Mode**
+3. Right-click your target channel → **Copy Channel ID**
+
+---
+
+**Step 4: Configure the Plugin**
+
+Open the config file at:
+```
+{CONFIG_FILE}
+```
+
+Update it with your values:
+```
+{{
+  "BOT_TOKEN": "paste_your_bot_token_here",
+  "CHANNEL_ID": "paste_your_channel_id_here",
+  "GAME_DIRECTORY": "Desktop"
+}}
+```
+
+_(Set `GAME_DIRECTORY` to your game folder: "Desktop", "RUST", etc.)_
+
+Save the file and try the command again!
+
+--- 
 """
 
 
@@ -173,7 +191,7 @@ def send_message_to_discord_channel(message: str = ""):
         return get_setup_instructions()
     
     if not message:
-        return "No message provided."
+        return "No message provided. Please include a message to send."
     
     plugin.stream("Sending message to Discord...")
     
@@ -185,13 +203,13 @@ def send_message_to_discord_channel(message: str = ""):
         r = requests.post(url, headers=headers, json=payload, timeout=10)
         if r.status_code in [200, 201]:
             logger.info("Message sent successfully.")
-            return "Message sent successfully."
+            return "Message sent successfully!"
         else:
             logger.error(f"Failed to send message: {r.text}")
-            return f"Failed to send message: {r.text}"
+            return "Failed to send message. Please check your bot token and channel ID in the configuration."
     except Exception as e:
         logger.error(f"Error in send_message_to_discord_channel: {str(e)}")
-        return "Error sending message."
+        return "Unable to send message. Please check your internet connection and try again."
 
 
 @plugin.command("send_latest_chart_to_discord_channel")
@@ -213,7 +231,7 @@ def send_latest_chart_to_discord_channel(caption: str = ""):
     
     file_path = find_latest_file(CSV_DIRECTORY, ".csv")
     if not file_path:
-        return "No CSV file found."
+        return "No performance chart found. Charts are created when you record performance data in G-Assist."
     
     plugin.stream("Uploading chart to Discord...")
     
@@ -227,12 +245,13 @@ def send_latest_chart_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
         
         if r.status_code in [200, 201]:
-            return "CSV sent successfully."
+            return "Chart sent successfully!"
         else:
-            return f"Failed to send CSV: {r.text}"
+            logger.error(f"Failed to send chart: {r.text}")
+            return "Failed to send chart. Please check your bot token and channel ID in the configuration."
     except Exception as e:
         logger.error(f"Error in send_latest_chart_to_discord_channel: {str(e)}")
-        return "Error sending CSV."
+        return "Unable to send chart. Please check your internet connection and try again."
 
 
 @plugin.command("send_latest_shadowplay_clip_to_discord_channel")
@@ -251,7 +270,7 @@ def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
         return get_setup_instructions()
     
     if not GAME_DIRECTORY:
-        return "GAME_DIRECTORY not configured."
+        return "Game folder not configured. Please set `GAME_DIRECTORY` in your config file (e.g., \"Desktop\" or \"RUST\")."
     
     plugin.stream("Finding latest clip...")
     
@@ -259,7 +278,7 @@ def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
     file_path = find_latest_file(mp4_directory, ".mp4")
     
     if not file_path:
-        return f"No MP4 file found in {mp4_directory}."
+        return f"No video clip found for '{GAME_DIRECTORY}'. Make sure you have recorded a clip using NVIDIA ShadowPlay."
     
     plugin.stream("Uploading clip to Discord...")
     
@@ -273,12 +292,13 @@ def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=60)
         
         if r.status_code in [200, 201]:
-            return "MP4 sent successfully."
+            return "Clip sent successfully!"
         else:
-            return f"Failed to send MP4: {r.text}"
+            logger.error(f"Failed to send clip: {r.text}")
+            return "Failed to send clip. The file may be too large for Discord (max 25MB) or check your configuration."
     except Exception as e:
         logger.error(f"Error in send_latest_shadowplay_clip_to_discord_channel: {str(e)}")
-        return "Error sending MP4."
+        return "Unable to send clip. Please check your internet connection and try again."
 
 
 @plugin.command("send_latest_screenshot_to_discord_channel")
@@ -297,7 +317,7 @@ def send_latest_screenshot_to_discord_channel(caption: str = ""):
         return get_setup_instructions()
     
     if not GAME_DIRECTORY:
-        return "GAME_DIRECTORY not configured."
+        return "Game folder not configured. Please set `GAME_DIRECTORY` in your config file (e.g., \"Desktop\" or \"RUST\")."
     
     plugin.stream("Finding latest screenshot...")
     
@@ -305,7 +325,7 @@ def send_latest_screenshot_to_discord_channel(caption: str = ""):
     file_path = find_latest_file(screenshot_directory, ".png")
     
     if not file_path:
-        return f"No screenshot found in {screenshot_directory}."
+        return f"No screenshot found for '{GAME_DIRECTORY}'. Make sure you have taken a screenshot using NVIDIA ShadowPlay."
     
     plugin.stream("Uploading screenshot to Discord...")
     
@@ -319,12 +339,13 @@ def send_latest_screenshot_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
         
         if r.status_code in [200, 201]:
-            return "Screenshot sent successfully."
+            return "Screenshot sent successfully!"
         else:
-            return f"Failed to send screenshot: {r.text}"
+            logger.error(f"Failed to send screenshot: {r.text}")
+            return "Failed to send screenshot. Please check your bot token and channel ID in the configuration."
     except Exception as e:
         logger.error(f"Error in send_latest_screenshot_to_discord_channel: {str(e)}")
-        return "Error sending screenshot."
+        return "Unable to send screenshot. Please check your internet connection and try again."
 
 
 @plugin.command("on_input")
