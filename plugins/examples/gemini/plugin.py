@@ -362,7 +362,8 @@ def run_setup_wizard() -> str:
     # Check if key exists and is valid
     if load_api_key():
         plugin.set_keep_session(True)
-        return """Google Gemini plugin is configured and ready!
+        return """_
+Google Gemini plugin is configured and ready!
 
 You can now ask me questions and I'll search the web for answers.
 I'll stay in conversation mode - just keep typing your questions!
@@ -448,13 +449,14 @@ Save the file and try your query again!\r"""
 # ============================================================================
 
 @plugin.command("query_gemini")
-def query_gemini(query: str = None, context: Context = None):
+def query_gemini(query: str = None, context: Context = None, _from_on_input: bool = False):
     """
     Handle Gemini query with optional web search.
     
     Args:
         query: The user's question
         context: Conversation history
+        _from_on_input: Internal flag - True when called from on_input (italics already escaped)
     """
     global API_KEY, client, SETUP_COMPLETE, conversation_history
     
@@ -471,7 +473,9 @@ def query_gemini(query: str = None, context: Context = None):
     logger.info(f"GEMINI: Processing query: {query[:50] if query else 'None'}...")
     
     # Send immediate acknowledgment
-    plugin.stream("Searching..._")
+    if not _from_on_input:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream("_Searching..._")
     
     # Build context
     if context and context.messages:
@@ -487,7 +491,7 @@ def query_gemini(query: str = None, context: Context = None):
     
     if not ctx:
         plugin.set_keep_session(True)
-        return "No query provided."
+        return "_ **Who should I search for?** Please provide a question."
     
     try:
         clean_context = sanitize_history_for_search(ctx)
@@ -510,11 +514,11 @@ def query_gemini(query: str = None, context: Context = None):
             SETUP_COMPLETE = False
             API_KEY = None
             client = None
-            return "API key is invalid. Please check your key and try again.\n\n" + run_setup_wizard()
+            return "_ **API key is invalid.** Please check your key and try again.\n\n" + run_setup_wizard()
         
         # Keep session active so user can retry
         plugin.set_keep_session(True)
-        return "Something went wrong with the API. Please try again."
+        return "_ **Error:** Something went wrong with the API. Please try again."
 
 
 @plugin.command("on_input")
@@ -535,9 +539,10 @@ def on_input(content: str):
         if load_api_key():
             # Key is valid - stream confirmation and process the query immediately
             logger.info("[INPUT] API key verified, processing user query...")
-            plugin.stream("API key configured!\n\n")
+            plugin.stream("_ ")  # Close engine's italic
+            plugin.stream("_Gemini plugin configured!_\n\n")
             conversation_history.append({"role": "user", "content": content})
-            return query_gemini(query=content)
+            return query_gemini(query=content, _from_on_input=True)
         else:
             return run_setup_wizard()
     
@@ -548,13 +553,13 @@ def on_input(content: str):
         logger.info("[INPUT] Exit command received")
         conversation_history = []
         plugin.set_keep_session(False)
-        return "Exiting Gemini mode. Conversation history cleared."
+        return "_ Exiting Gemini mode. Conversation history cleared."
     
     # Check for clear history
     if content.lower().strip() in ['clear', 'reset', 'new conversation', 'clear history']:
         conversation_history = []
         plugin.set_keep_session(True)
-        return "Conversation history cleared. Ask me anything!"
+        return "_ Conversation history cleared. Ask me anything!"
     
     # Add user message to history
     conversation_history.append({"role": "user", "content": content})
