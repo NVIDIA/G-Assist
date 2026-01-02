@@ -306,12 +306,16 @@ def stream_gemini_response(context: list, timeout_seconds: int = 30) -> str:
             msg_type, msg_data = result_queue.get(timeout=0.1)
             
             if msg_type == "chunk":
+                if not received_first_chunk:
+                    plugin.stream("\n")  # Newline before response starts
                 received_first_chunk = True
                 logger.info(f'GEMINI: Response chunk: {msg_data[:30]}...')
                 plugin.stream(msg_data)
                 full_response += msg_data
             elif msg_type == "done":
                 logger.info("GEMINI: Stream completed successfully")
+                if received_first_chunk:
+                    plugin.stream("\r")  # Blank line after response
                 break
             elif msg_type == "error":
                 logger.error(f"GEMINI: Stream error: {msg_data}")
@@ -470,7 +474,7 @@ def query_gemini(query: str = None, context: Context = None):
     logger.info(f"GEMINI: Processing query: {query[:50] if query else 'None'}...")
     
     # Send immediate acknowledgment
-    plugin.stream("Searching..._ ")
+    plugin.stream("Searching..._")
     
     # Build context
     if context and context.messages:
