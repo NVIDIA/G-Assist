@@ -138,10 +138,7 @@ Update it with your values:
 
 _(The plugin includes IGN gaming news headlines when triggering your applet!)_
 
-Save the file and try the command again!
-
----
-"""
+Save the file and try the command again!\r"""
 
 
 def fetch_ign_gaming_news() -> List[str]:

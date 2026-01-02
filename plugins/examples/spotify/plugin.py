@@ -345,11 +345,7 @@ I'm opening the Spotify Developer Dashboard now...
    - Select **Web API** checkbox
 3. Click **Create**
 
----
-
-When done, send me any message to continue!
-
-"""
+When done, send me any message to continue!\r"""
 
 
 def get_setup_step2() -> str:
@@ -385,9 +381,7 @@ Paste your credentials:
 }}
 ```
 
-Save the file and try the command again!
-
-"""
+Save the file and try the command again!\r"""
 
 
 # OAuth Callback Handler

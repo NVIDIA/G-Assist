@@ -396,10 +396,7 @@ I'm opening the key file in Notepad...
 1. Paste your API key
 2. Save the file
 
-Save the file and try your query again!
-
----
-"""
+Save the file and try your query again!\r"""
     
     try:
         # Open browser

@@ -130,16 +130,12 @@ I'm opening the Twitch Developer Console for you now...
 1. Log in with your Twitch account
 2. Click **Register Your Application**
 3. Fill in the form:
-   - Name: `G-Assist Plugin`
-   - OAuth Redirect URLs: `http://localhost`
+   - Name: `G-Assist-Plugin`
+   - OAuth Redirect URLs: `http://localhost:3000`
    - Category: **Application Integration**
 4. Click **Create**
 
----
-
-When you're done, send me any message to continue!
-
-"""
+When you're done, send me any message to continue!\r"""
 
 
 def get_setup_instructions_step2() -> str:
@@ -176,10 +172,7 @@ Paste your credentials:
 }}
 ```
 
-Save the file and try the command again!
-
----
-"""
+Save the file and try the command again!\r"""
 
 
 # ============================================================================

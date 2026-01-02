@@ -141,10 +141,7 @@ Update it with your values:
 
 _(Set `GAME_DIRECTORY` to your game folder: "Desktop", "RUST", etc.)_
 
-Save the file and try the command again!
-
---- 
-"""
+Save the file and try the command again!\r"""
 
 
 def find_latest_file(directory: str, extension: str) -> Optional[str]:
