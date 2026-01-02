@@ -19,7 +19,7 @@ if os.path.exists(_libs_path) and _libs_path not in sys.path:
 import json
 import logging
 import webbrowser
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import requests
 
@@ -61,6 +61,7 @@ TWITCH_CLIENT_ID: Optional[str] = None
 TWITCH_CLIENT_SECRET: Optional[str] = None
 SETUP_COMPLETE = False
 WIZARD_STEP = 0
+PENDING_CALL: Optional[Dict[str, Any]] = None  # {"func": callable, "args": {...}}
 
 
 def load_config() -> Dict[str, Any]:
@@ -114,6 +115,27 @@ def get_oauth_token() -> Optional[str]:
         return None
 
 
+def store_pending_call(func: Callable, **kwargs):
+    """Store a function call to execute after setup completes."""
+    global PENDING_CALL
+    PENDING_CALL = {"func": func, "args": kwargs}
+    logger.info(f"[SETUP] Stored pending call: {func.__name__}({kwargs})")
+
+
+def execute_pending_call() -> Optional[str]:
+    """Execute the stored pending call if one exists. Returns result or None."""
+    global PENDING_CALL
+    if not PENDING_CALL:
+        return None
+    
+    func = PENDING_CALL["func"]
+    args = PENDING_CALL["args"]
+    PENDING_CALL = None  # Clear before executing
+    
+    logger.info(f"[SETUP] Executing pending call: {func.__name__}({args})")
+    return func(_from_pending=True, **args)
+
+
 def get_setup_instructions_step1() -> str:
     """Return first step of setup wizard."""
     return """_
@@ -123,7 +145,7 @@ Welcome! Let's set up your Twitch app. This takes about **5 minutes**.
 
 ---
 
-**Step 1: Create Twitch App**
+**Create Your Twitch App**
 
 I'm opening the Twitch Developer Console for you now...
 
@@ -135,7 +157,7 @@ I'm opening the Twitch Developer Console for you now...
    - Category: **Application Integration**
 4. Click **Create**
 
-When you're done, send me any message to continue!\r"""
+Say **"next"** or **"continue"** when you're ready for the next step.\r"""
 
 
 def get_setup_instructions_step2() -> str:
@@ -147,7 +169,7 @@ Great! Now let's add your credentials.
 
 ---
 
-**Step 2: Get Credentials**
+**Get Your Credentials**
 
 1. Click **Manage** on your new app
 2. Copy your **Client ID**
@@ -157,9 +179,9 @@ _(Keep your client secret private!)_
 
 ---
 
-**Step 3: Configure the Plugin**
+**Add Them to the Config File**
 
-Open the config file at:
+I'm opening the config file for you:
 ```
 {CONFIG_FILE}
 ```
@@ -172,7 +194,7 @@ Paste your credentials:
 }}
 ```
 
-Save the file and try the command again!\r"""
+Say **"next"** or **"continue"** when you've saved the file, and I'll complete your original request.\r"""
 
 
 # ============================================================================
@@ -189,17 +211,21 @@ plugin = Plugin(
 # COMMANDS
 # ============================================================================
 @plugin.command("check_twitch_live_status")
-def check_twitch_live_status(username: str = ""):
+def check_twitch_live_status(username: str = "", _from_pending: bool = False):
     """
     Check if a Twitch user is currently live.
     
     Args:
         username: Twitch username to check
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global oauth_token, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
+        global WIZARD_STEP
+        WIZARD_STEP = 0  # Reset in case of re-setup
+        store_pending_call(check_twitch_live_status, username=username)
         logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         try:
@@ -209,9 +235,11 @@ def check_twitch_live_status(username: str = ""):
         return get_setup_instructions_step1()
     
     if not username:
-        return "Missing required parameter: username"
+        return "**Who should I check?** Please provide a Twitch username."
     
-    plugin.stream(f"Checking if {username} is live...")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream(f"_Checking if {username} is live_...\n\n")
     
     # Get OAuth token if needed
     if not oauth_token:
@@ -219,8 +247,8 @@ def check_twitch_live_status(username: str = ""):
         if not oauth_token:
             plugin.set_keep_session(True)
             return (
-                "Twitch authentication failed. Your credentials may be invalid.\n\n"
-                "Please check your config.json and try again."
+                "**Authentication failed.** Your credentials may be invalid.\n\n"
+                "Please check your `config.json` and try again."
             )
     
     try:
@@ -256,19 +284,20 @@ def check_twitch_live_status(username: str = ""):
             title = ''.join(c for c in stream_info["title"] if ord(c) < 128)
             game = stream_info.get("game_name", "Unknown")
             game = ''.join(c for c in game if ord(c) < 128) if game else "Unknown"
+            viewers = f"{stream_info['viewer_count']:,}"  # Format with commas
             
             return (
-                f"{username} is LIVE!\n"
-                f"Title: {title}\n"
-                f"Game: {game}\n"
-                f"Viewers: {stream_info['viewer_count']}\n"
-                f"Started At: {stream_info['started_at']}"
+                f"**{username}** is **LIVE**!\n\n"
+                f"**Title:** {title}\n"
+                f"**Game:** {game}\n"
+                f"**Viewers:** {viewers}\n"
+                f"**Started:** {stream_info['started_at']}"
             )
-        return f"{username} is OFFLINE"
+        return f"**{username}** is currently **offline**. Check back later!"
         
     except Exception as e:
         logger.error(f"Error checking Twitch live status: {e}")
-        return "Failed to check Twitch live status. Please try again."
+        return "**Error:** Failed to check Twitch live status. Please try again."
 
 
 @plugin.command("on_input")
@@ -282,13 +311,20 @@ def on_input(content: str = ""):
         # Verify with API
         token = get_oauth_token()
         if token:
-            plugin.set_keep_session(False)
-            return "Twitch plugin configured successfully! You can now check if Twitch users are live streaming."
+            plugin.stream("_ ")  # Close engine's italic
+            plugin.stream("_Twitch plugin configured!_\n\n")
+            result = execute_pending_call()
+            if result is not None:
+                plugin.set_keep_session(False)
+                return result
+            else:
+                plugin.set_keep_session(False)
+                return ""
         else:
             plugin.set_keep_session(True)
             return (
-                "Credentials found but verification failed.\n\n"
-                "Please double-check your Client ID and Client Secret in the config file."
+                "**Verification failed.** Credentials found but couldn't authenticate.\n\n"
+                "Please double-check your **Client ID** and **Client Secret** in the config file."
             )
     
     # Advance wizard
@@ -309,11 +345,11 @@ def on_input(content: str = ""):
         # User says done but config not valid
         plugin.set_keep_session(True)
         return (
-            "I checked the config file but the credentials are still empty or invalid.\n\n"
+            "**Credentials not found.** The config file is still empty or invalid.\n\n"
             "Please make sure you:\n"
-            "  1. Pasted your Client ID and Client Secret\n"
-            "  2. SAVED the file\n\n"
-            "Then send me another message to verify."
+            "1. Pasted your **Client ID** and **Client Secret**\n"
+            "2. **Saved** the file\n\n"
+            "Then say **\"next\"** or **\"continue\"** to verify."
         )
 
 

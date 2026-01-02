@@ -72,26 +72,27 @@ Try these commands:
 
 When a streamer is live:
 ```text
-ninja is LIVE!
-Title: Friday Fortnite!
-Game: Fortnite
-Viewers: 45,231
-Started At: 2024-03-14T12:34:56Z
+**ninja** is **LIVE**!
+
+**Title:** Friday Fortnite!
+**Game:** Fortnite
+**Viewers:** 45,231
+**Started:** 2024-03-14T12:34:56Z
 ```
 
 When a streamer is offline:
 ```
-shroud is OFFLINE
+**shroud** is currently **offline**. Check back later!
 ```
 
 ## First-Time Setup
-When you first try to use the Twitch plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to check a streamer's status, and it will:
-1. Display setup instructions
-2. Guide you to create a Twitch app
-3. Help you configure your credentials
-4. Verify your configuration
+When you first try to use the Twitch plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it to check a streamer's status (e.g., "is ninja streaming?"), and it will:
+1. Open the Twitch Developer Console for you
+2. Guide you through creating a Twitch app (Step 1/2)
+3. Help you configure your credentials in the config file (Step 2/2)
+4. Verify your configuration and **automatically complete your original request**
 
-The setup takes about 3 minutes and guides you through the entire process!
+Just say **"next"** or **"continue"** to move between steps. The setup takes about 5 minutes and once complete, your original query is executed automatically!
 
 ## Troubleshooting Tips
 
