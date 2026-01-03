@@ -23,8 +23,13 @@
         "company_name": {
           "type": "string",
           "description": "The company name to search for (e.g., NVIDIA). Optional if ticker is provided."
+        },
+        "exchange": {
+          "type": "string",
+          "description": "[optional] The stock exchange to use (e.g., NASDAQ, NYSE). Defaults to NASDAQ."
         }
-      }
+      },
+      "required": []
     },
     {
       "name": "get_ticker_from_company",
@@ -38,8 +43,13 @@
         "company_name": {
           "type": "string",
           "description": "The full or partial company name (e.g., GameStop)."
+        },
+        "exchange": {
+          "type": "string",
+          "description": "[optional] The preferred stock exchange to search (e.g., NASDAQ, NYSE). Defaults to NASDAQ."
         }
-      }
+      },
+      "required": ["company_name"]
     }
   ],
   "tethered": true,

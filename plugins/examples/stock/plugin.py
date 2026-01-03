@@ -163,13 +163,14 @@ def start_setup_wizard() -> str:
 
 
 @plugin.command("get_stock_price")
-def get_stock_price(ticker: str = None, company_name: str = None, _from_pending: bool = False):
+def get_stock_price(ticker: str = None, company_name: str = None, exchange: str = "NASDAQ", _from_pending: bool = False):
     """
     Get current stock price for a given ticker or company name.
     
     Args:
         ticker: Stock ticker symbol (e.g., NVDA)
         company_name: Company name to look up
+        exchange: Stock exchange (default: NASDAQ). Options: NASDAQ, NYSE, AMEX, etc.
         _from_pending: Internal flag, True when called from execute_pending_call
     """
     global API_KEY, SETUP_COMPLETE
@@ -177,7 +178,7 @@ def get_stock_price(ticker: str = None, company_name: str = None, _from_pending:
     # Check if setup is needed
     load_config()
     if not SETUP_COMPLETE or not API_KEY:
-        store_pending_call(get_stock_price, ticker=ticker, company_name=company_name)
+        store_pending_call(get_stock_price, ticker=ticker, company_name=company_name, exchange=exchange)
         logger.info("[COMMAND] API key not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return start_setup_wizard()
@@ -193,7 +194,7 @@ def get_stock_price(ticker: str = None, company_name: str = None, _from_pending:
         plugin.stream("_ ")  # Close engine's italic
     plugin.stream(f"_Fetching stock price for **{query}**..._\n\n")
     
-    url = f"https://api.twelvedata.com/quote?symbol={query}&apikey={API_KEY}"
+    url = f"https://api.twelvedata.com/quote?symbol={query}&exchange={exchange}&apikey={API_KEY}"
     try:
         data = requests.get(url, timeout=10).json()
         if "symbol" not in data:
@@ -227,12 +228,8 @@ def get_stock_price(ticker: str = None, company_name: str = None, _from_pending:
         
         logger.info(f"Stock price: {price}, Timestamp: {timestamp}, Market Open: {is_market_open}")
         return (
-            f"**{data['symbol']}** — **${price}** USD\n\n"
-            f"| | |\n"
-            f"|---|---|\n"
-            f"| **Change** | ${change} ({percent_change}%) {trend} |\n"
-            f"| **Status** | {market_status} |\n"
-            f"| **As of** | {timestamp} |"
+            f"**{data['symbol']}** — **${price}** USD ({percent_change}% {trend})\n\n"
+            f"Change: ${change} · {market_status} · {timestamp}"
         )
     except Exception as e:
         logger.error(f"Error in get_stock_price: {str(e)}")
@@ -243,19 +240,20 @@ def get_stock_price(ticker: str = None, company_name: str = None, _from_pending:
 
 
 @plugin.command("get_ticker_from_company")
-def get_ticker_from_company(company_name: str = "", _from_pending: bool = False):
+def get_ticker_from_company(company_name: str = "", exchange: str = "NASDAQ", _from_pending: bool = False):
     """
     Get stock ticker symbol from company name.
     
     Args:
         company_name: Name of the company to look up
+        exchange: Preferred stock exchange (default: NASDAQ). Options: NASDAQ, NYSE, AMEX, etc.
         _from_pending: Internal flag, True when called from execute_pending_call
     """
     global API_KEY, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not API_KEY:
-        store_pending_call(get_ticker_from_company, company_name=company_name)
+        store_pending_call(get_ticker_from_company, company_name=company_name, exchange=exchange)
         logger.info("[COMMAND] API key not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return start_setup_wizard()
@@ -278,14 +276,18 @@ def get_ticker_from_company(company_name: str = "", _from_pending: bool = False)
                 "Please check the spelling and try again.\n\n"
                 "_Tip: Try the full company name or a well-known abbreviation._"
             )
-        best = results[0]
+        
+        # Prefer the specified exchange, fall back to first result
+        best = results[0]  # Default to first result
+        for result in results:
+            if result.get("exchange") == exchange:
+                best = result
+                break
+        
         logger.info(f"Found ticker for '{best['instrument_name']}' on {best['exchange']}: {best['symbol']}")
         return (
-            f"**{best['instrument_name']}**\n\n"
-            f"| | |\n"
-            f"|---|---|\n"
-            f"| **Ticker** | `{best['symbol']}` |\n"
-            f"| **Exchange** | {best['exchange']} |"
+            f"**{best['instrument_name']}** — `{best['symbol']}`\n\n"
+            f"Exchange: {best['exchange']}"
         )
     except Exception as e:
         logger.error(f"Error in get_ticker_from_company: {str(e)}")

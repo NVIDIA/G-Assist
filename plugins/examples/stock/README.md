@@ -9,6 +9,7 @@ Transform your G-Assist experience with real-time stock market data! This plugin
   - Current/closing price
   - Price changes with trend direction
   - Market status (open/closed)
+- **Exchange support** — defaults to NASDAQ, with optional override for NYSE, AMEX, etc.
 - **Interactive setup wizard** — guides you through configuration step-by-step
 - Detailed logging for troubleshooting
 
@@ -79,32 +80,27 @@ Once set up, check stock prices through simple chat commands:
 - "Check the price of AMC"
 - "What's Tesla trading at?"
 - "How much is NVDA?"
+- "Get the price of AAPL on NYSE"
 
 **Ticker Lookup:**
 - "What's the ticker symbol for GameStop?"
 - "Find the ticker for Apple"
+- "Look up Microsoft on NYSE"
 
 ### Example Responses
 
 **Stock Price:**
 ```
-NVDA — $96.91 USD
+NVDA — $96.91 USD (-4.51% down)
 
-| | |
-|---|---|
-| Change | $-4.58 (-4.51%) down |
-| Status | Market Closed |
-| As of | 2024-03-14 16:00:00 |
+Change: $-4.58 · Market Closed · 2024-03-14 16:00:00
 ```
 
 **Ticker Lookup:**
 ```
-NVIDIA Corporation
+NVIDIA Corporation — NVDA
 
-| | |
-|---|---|
-| Ticker | NVDA |
-| Exchange | NASDAQ |
+Exchange: NASDAQ
 ```
 
 ## Configuration
@@ -165,8 +161,8 @@ Commands are registered using the `@plugin.command()` decorator:
 
 | Command | Description | Parameters |
 |---------|-------------|------------|
-| `get_stock_price` | Get current stock price | `ticker`, `company_name` |
-| `get_ticker_from_company` | Look up ticker symbol | `company_name` |
+| `get_stock_price` | Get current stock price | `ticker`, `company_name`, `exchange` (default: NASDAQ) |
+| `get_ticker_from_company` | Look up ticker symbol | `company_name`, `exchange` (default: NASDAQ) |
 | `on_input` | Handle setup wizard input | `content` |
 
 #### Setup Wizard Flow
