@@ -45,7 +45,7 @@ build.bat
 - `config.json` (you'll need to update this with your IFTTT credentials)
 
 ### Step 5: Configure Your IFTTT Webhook
-1. Get your IFTTT Webhook key from [https://ifttt.com/maker_webhooks](https://ifttt.com/maker_webhooks)
+1. Get your IFTTT Webhook key from [https://ifttt.com/maker_webhooks/settings](https://ifttt.com/maker_webhooks/settings)
 2. Open `config.json` in the plugin directory
 3. Add your webhook key and configure the settings:
 ```json
@@ -87,12 +87,12 @@ This plugin uses the IFTTT Webhooks service to trigger applets. For more informa
 
 ## First-Time Setup
 When you first try to use the IFTTT plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply try to trigger an applet, and it will:
-1. Display setup instructions
-2. Guide you to create an IFTTT account
-3. Help you get your webhook key
-4. Verify your configuration
+1. Open the IFTTT website for you to create an account or log in
+2. Open the config file for you to paste your credentials
+3. Guide you through getting your webhook key
+4. **Complete your original request** after setup is done
 
-No manual config editing required unless you prefer it!
+Just say **"next"** or **"continue"** when you've saved your config, and the plugin will automatically execute whatever you originally asked for!
 
 ### Logging
 The plugin logs all activity to:
@@ -167,7 +167,7 @@ Triggers the IFTTT applet with gaming news integration.
 - Returns success/failure response with status message
 
 #### Logging
-- Log file location: `%USERPROFILE%\ifttt_plugin.log`
+- Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\ifttt\ifttt-plugin.log`
 - Logging level: INFO
 - Format: `%(asctime)s - %(levelname)s - %(message)s`
 
