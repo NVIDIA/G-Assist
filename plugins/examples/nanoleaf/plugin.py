@@ -18,7 +18,7 @@ if os.path.exists(_libs_path) and _libs_path not in sys.path:
 # Now we can import third-party libraries
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 try:
     from gassist_sdk import Plugin
@@ -65,6 +65,7 @@ RGB_VALUES = {
 NL: Optional[Nanoleaf] = None
 NANOLEAF_IP: Optional[str] = None
 SETUP_COMPLETE = False
+PENDING_CALL: Optional[Dict[str, Any]] = None  # {"func": callable, "args": {...}}
 
 
 def load_config() -> Dict[str, Any]:
@@ -83,8 +84,31 @@ def load_config() -> Dict[str, Any]:
     return {"ip": ""}
 
 
+def store_pending_call(func: Callable, **kwargs):
+    """Store a function call to execute after setup completes."""
+    global PENDING_CALL
+    PENDING_CALL = {"func": func, "args": kwargs}
+    logger.info(f"[SETUP] Stored pending call: {func.__name__}({kwargs})")
+
+
+def execute_pending_call() -> Optional[str]:
+    """Execute the stored pending call if one exists. Returns result or None."""
+    global PENDING_CALL
+    if not PENDING_CALL:
+        return None
+    
+    func = PENDING_CALL["func"]
+    args = PENDING_CALL["args"]
+    PENDING_CALL = None  # Clear before executing
+    
+    logger.info(f"[SETUP] Executing pending call: {func.__name__}({args})")
+    return func(_from_pending=True, **args)
+
+
 def get_setup_instructions() -> str:
     """Return setup wizard instructions."""
+    # Use forward slashes to prevent \n in path being interpreted as newline
+    config_path = CONFIG_FILE.replace("\\", "/")
     return f"""_
 **Nanoleaf Plugin - First Time Setup**
 
@@ -94,19 +118,15 @@ Welcome! Let's set up your Nanoleaf. This takes about **2 minutes**.
 
 **Step 1: Find Your Nanoleaf IP**
 
-1. Open the Nanoleaf app on your phone
-2. Go to **Settings** → **Device Info**
-3. Find the IP address (e.g., `192.168.1.100`)
+1. Open your **Wi-Fi app** (Google Home, Eero, xFinity, etc.) or router admin page
+2. Look for **Connected Devices**
+3. Find your Nanoleaf and note its IP address (e.g., `192.168.1.100`)
 
 ---
 
 **Step 2: Configure the Plugin**
 
-Open the config file at:
-```
-{CONFIG_FILE}
-```
-
+Open the config file at:\r`{config_path}`\r
 Add your Nanoleaf IP:
 ```
 {{"ip": "YOUR_NANOLEAF_IP_HERE"}}
@@ -119,9 +139,7 @@ Add your Nanoleaf IP:
 1. Hold the power button on your Nanoleaf for **5-7 seconds**
 2. The lights will flash, indicating pairing mode
 
-Save the file and try the command again!
-
-"""
+Save the file and say **"next"** or **"continue"** when done, and I'll complete your original request.\r"""
 
 
 def get_rgb_code(color: str) -> Optional[Tuple[int, int, int]]:
@@ -163,28 +181,43 @@ plugin = Plugin(
 # COMMANDS
 # ============================================================================
 @plugin.command("nanoleaf_change_room_lights")
-def change_room_lights(color: str = ""):
+def change_room_lights(color: str = "", _from_pending: bool = False):
     """
     Change Nanoleaf lights to a specific color.
     
     Args:
         color: Color name (RED, GREEN, BLUE, RAINBOW, OFF, BRIGHT_UP, BRIGHT_DOWN)
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global NL, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not NANOLEAF_IP:
+        store_pending_call(change_room_lights, color=color)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
     if not ensure_connected():
-        return f"Failed to connect to Nanoleaf at {NANOLEAF_IP}. Check the IP address."
+        return (
+            "**Connection failed.**\n\n"
+            f"Unable to connect to Nanoleaf at `{NANOLEAF_IP}`.\n\n"
+            "Please check that:\n"
+            "1. The **IP address** is correct\n"
+            "2. Your Nanoleaf is **powered on** and connected to Wi-Fi\n"
+            "3. You're on the **same network** as the device"
+        )
     
     if not color:
-        return "Missing color."
+        return (
+            "**What color?**\n\n"
+            "Please specify a color to set your Nanoleaf lights."
+        )
     
     color = color.upper()
-    plugin.stream(f"Changing Nanoleaf lights to {color.lower()}...")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream(f"_Changing Nanoleaf lights to {color.lower()}..._\n\n")
     
     # Special commands
     if color == "RAINBOW":
@@ -193,82 +226,147 @@ def change_room_lights(color: str = ""):
             for effect in effects:
                 if "northern" in effect.lower() or "aurora" in effect.lower():
                     NL.set_effect(effect)
-                    return f"Set Nanoleaf to {effect} effect."
+                    return (
+                        f"**Effect applied!**\n\n"
+                        f"Nanoleaf is now displaying **{effect}**."
+                    )
             # Fallback to first available effect
             if effects:
                 NL.set_effect(effects[0])
-                return f"Set Nanoleaf to {effects[0]} effect."
-            return "No effects available."
+                return (
+                    f"**Effect applied!**\n\n"
+                    f"Nanoleaf is now displaying **{effects[0]}**."
+                )
+            return (
+                "**No effects available.**\n\n"
+                "Your Nanoleaf doesn't have any saved effects.\n\n"
+                "Try creating some in the Nanoleaf app first."
+            )
         except Exception as e:
-            return f"Failed to set effect: {str(e)}"
+            logger.error(f"Failed to set rainbow effect: {str(e)}")
+            return (
+                "**Failed to set effect.**\n\n"
+                "Unable to apply the rainbow effect. Please try again."
+            )
     
     if color == "OFF":
         try:
             NL.power_off()
-            return "Nanoleaf powered off."
+            return "**Nanoleaf powered off.**"
         except Exception as e:
-            return f"Failed to power off: {str(e)}"
+            logger.error(f"Failed to power off: {str(e)}")
+            return (
+                "**Failed to power off.**\n\n"
+                "Unable to turn off your Nanoleaf. Please try again."
+            )
     
     if color == "BRIGHT_UP":
         try:
             NL.increment_brightness(10)
-            return "Brightness increased."
+            return "**Brightness increased.**"
         except Exception as e:
-            return f"Failed to adjust brightness: {str(e)}"
+            logger.error(f"Failed to adjust brightness: {str(e)}")
+            return (
+                "**Failed to adjust brightness.**\n\n"
+                "Unable to increase brightness. Please try again."
+            )
     
     if color == "BRIGHT_DOWN":
         try:
             NL.increment_brightness(-10)
-            return "Brightness decreased."
+            return "**Brightness decreased.**"
         except Exception as e:
-            return f"Failed to adjust brightness: {str(e)}"
+            logger.error(f"Failed to adjust brightness: {str(e)}")
+            return (
+                "**Failed to adjust brightness.**\n\n"
+                "Unable to decrease brightness. Please try again."
+            )
     
     # Regular color
     rgb_value = get_rgb_code(color)
     if not rgb_value:
-        return f"Unknown color: {color}"
+        available_colors = ", ".join(list(RGB_VALUES.keys())[:8])
+        return (
+            f"**Unknown color:** `{color}`\n\n"
+            f"Try one of these: {available_colors}, ..."
+        )
     
     try:
         NL.set_color(rgb_value)
-        return "Nanoleaf lighting updated."
+        return (
+            f"**Color updated!**\n\n"
+            f"Nanoleaf is now set to **{color.lower()}**."
+        )
     except Exception as e:
-        return f"Failed to set color: {str(e)}"
+        logger.error(f"Failed to set color: {str(e)}")
+        return (
+            "**Failed to set color.**\n\n"
+            "Unable to change the Nanoleaf color. Please try again."
+        )
 
 
 @plugin.command("nanoleaf_change_profile")
-def change_profile(profile: str = ""):
+def change_profile(profile: str = "", _from_pending: bool = False):
     """
     Change Nanoleaf to a specific effect/profile.
     
     Args:
         profile: Name of the effect to apply
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global NL, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not NANOLEAF_IP:
+        store_pending_call(change_profile, profile=profile)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
     if not ensure_connected():
-        return f"Failed to connect to Nanoleaf at {NANOLEAF_IP}."
+        return (
+            "**Connection failed.**\n\n"
+            f"Unable to connect to Nanoleaf at `{NANOLEAF_IP}`.\n\n"
+            "Please check that:\n"
+            "1. The **IP address** is correct\n"
+            "2. Your Nanoleaf is **powered on** and connected to Wi-Fi\n"
+            "3. You're on the **same network** as the device"
+        )
     
     if not profile:
-        return "Missing profile name."
+        return (
+            "**Which profile?**\n\n"
+            "Please specify the name of the effect or profile to apply."
+        )
     
-    plugin.stream(f"Changing Nanoleaf profile to {profile}...")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream(f"_Changing Nanoleaf profile to {profile}..._\n\n")
     
     try:
         effects = NL.list_effects()
         # Case-insensitive match
         effect_map = {e.upper(): e for e in effects}
         if profile.upper() in effect_map:
-            NL.set_effect(effect_map[profile.upper()])
-            return "Nanoleaf profile updated."
+            matched_effect = effect_map[profile.upper()]
+            NL.set_effect(matched_effect)
+            return (
+                f"**Profile applied!**\n\n"
+                f"Nanoleaf is now displaying **{matched_effect}**."
+            )
         else:
-            return f"Unknown profile: {profile}. Available: {', '.join(effects[:5])}"
+            available = ", ".join(effects[:5])
+            more = f" _(+{len(effects) - 5} more)_" if len(effects) > 5 else ""
+            return (
+                f"**Unknown profile:** `{profile}`\n\n"
+                f"Available effects: {available}{more}"
+            )
     except Exception as e:
-        return f"Failed to set profile: {str(e)}"
+        logger.error(f"Failed to set profile: {str(e)}")
+        return (
+            "**Failed to set profile.**\n\n"
+            "Unable to apply the effect. Please try again."
+        )
 
 
 @plugin.command("on_input")
@@ -278,11 +376,35 @@ def on_input(content: str = ""):
     
     load_config()
     if SETUP_COMPLETE and ensure_connected():
-        plugin.set_keep_session(False)
-        return "Nanoleaf configured! You can now control your lights."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Nanoleaf connected!_\n\n")
+        result = execute_pending_call()
+        if result is not None:
+            plugin.set_keep_session(False)
+            return result
+        else:
+            plugin.set_keep_session(False)
+            return (
+                "**Nanoleaf configured!**\n\n"
+                "You're all set. You can now:\n\n"
+                "- Change **light colors** on your Nanoleaf\n"
+                "- Apply **effects and profiles**\n"
+                "- Adjust **brightness**"
+            )
     else:
         plugin.set_keep_session(True)
-        return get_setup_instructions()
+        # Use forward slashes to prevent \n in path being interpreted as newline
+        config_path = CONFIG_FILE.replace("\\", "/")
+        return (
+            "**Configuration not found.**\n\n"
+            "The config file is still empty or invalid.\n\n"
+            "---\n\n"
+            "Please make sure you:\n"
+            "1. Added your **Nanoleaf IP address**\n"
+            "2. **Saved** the file\n\n"
+            f"_Config:_ `{config_path}`\n\n"
+            "Say **\"next\"** or **\"continue\"** when ready."
+        )
 
 
 # ============================================================================

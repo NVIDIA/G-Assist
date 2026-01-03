@@ -19,7 +19,7 @@ Make sure you have:
 
 💡 **Tip**: Nanoleaf devices only work on 2.4GHz networks, not 5GHz. Make sure your device is connected to the correct network band!
 
-💡 **Tip**: Not sure about your Nanoleaf's IP address? You can find it in your router's admin page under connected devices
+💡 **Tip**: Not sure about your Nanoleaf's IP address? Check your Wi-Fi app (Google Home, Eero, xFinity, etc.) under connected devices, or your router's admin page
 
 ## Installation Guide
 
@@ -79,6 +79,7 @@ When you first try to use the Nanoleaf plugin without configuration, it will aut
 2. Guide you to find your Nanoleaf IP address
 3. Walk you through pairing your device
 4. Verify your configuration
+5. **Automatically complete your original request** once setup is done
 
 No manual config editing required unless you prefer it!
 
@@ -96,139 +97,129 @@ Check this file for detailed error messages and debugging information.
 ## Developer Documentation
 
 ### Plugin Architecture
-The Nanoleaf plugin is built as a Python-based G-Assist plugin that communicates with Nanoleaf devices using the Nanoleaf API. The plugin follows a command-based architecture where it continuously listens for commands from G-Assist and executes corresponding lighting operations.
+The Nanoleaf plugin is built using the G-Assist SDK (`gassist_sdk`). It uses the `@plugin.command` decorator pattern to register commands that G-Assist can invoke. The plugin communicates with Nanoleaf devices using the `nanoleafapi` library.
 
 ### Core Components
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
-  - Logs invalid JSON and exceptions
+#### Plugin Setup
+```python
+from gassist_sdk import Plugin
 
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
+plugin = Plugin(
+    name="nanoleaf",
+    version="2.0.0",
+    description="Control Nanoleaf light panels"
+)
+```
+
+#### Global State
+- `NL`: Nanoleaf connection instance
+- `NANOLEAF_IP`: Device IP address from config
+- `SETUP_COMPLETE`: Whether configuration is valid
+- `PENDING_CALL`: Stores command to execute after setup wizard completes
 
 #### Configuration
 - Configuration is stored in `config.json` in the plugin directory
 - Required fields:
   - `ip`: IP address of the Nanoleaf device
-- IP address validation ensures proper format
-- Configuration is loaded during initialization
+- IP validation: `len(ip) > 5` (shortest valid IP is 7 chars)
+- Configuration is loaded on each command execution
 
-#### Available Commands
-The plugin supports the following commands:
+### Available Commands
 
-1. `initialize`
-   - Loads configuration from config.json
-   - Connects to Nanoleaf device
-   - Sets initial color to black
-   - Returns success/failure response
+All commands trigger the setup wizard automatically if the plugin is not configured.
 
-2. `shutdown`
-   - Gracefully terminates the plugin
-   - Powers off Nanoleaf device
-   - Returns success response
-
-3. `nanoleaf_change_room_lights`
-   - Parameters: `{"color": str}`
+1. `nanoleaf_change_room_lights`
+   - Parameters: `color: str`
    - Supported colors: RED, GREEN, BLUE, CYAN, MAGENTA, YELLOW, BLACK, WHITE, GREY/GRAY, ORANGE, PURPLE/VIOLET, PINK, TEAL, BROWN, ICE_BLUE, CRIMSON, GOLD, NEON_GREEN
    - Special commands: OFF, BRIGHT_UP, BRIGHT_DOWN, RAINBOW
-   - Returns success/failure with optional message
 
-4. `nanoleaf_change_profile`
-   - Parameters: `{"profile": str}`
-   - Sets predefined lighting effects
-   - Profile names are case-insensitive
-   - Returns success/failure with optional message
+2. `nanoleaf_change_profile`
+   - Parameters: `profile: str`
+   - Sets predefined lighting effects (case-insensitive matching)
+
+3. `on_input`
+   - Handles user responses during setup wizard
+   - Executes pending command after successful configuration
+
+### Setup Wizard Flow
+The plugin implements a pending call pattern for seamless first-time setup:
+
+1. User invokes a command (e.g., "set my lights to blue")
+2. If not configured, the command is stored via `store_pending_call()`
+3. Setup wizard is displayed with `plugin.set_keep_session(True)`
+4. User completes configuration and says "next"
+5. `on_input` verifies config and calls `execute_pending_call()`
+6. Original command executes with `_from_pending=True`
 
 ### Utility Functions
-- `adjust_brightness(nl: Nanoleaf, command: str) -> bool`
-  - Adjusts brightness by ±10 levels
-  - Supports OFF, BRIGHT_UP, BRIGHT_DOWN commands
-  - Returns success status
-
-- `change_color(nl: Nanoleaf, color: str) -> bool`
-  - Changes device color using predefined RGB values
-  - Returns success status
-
-- `get_rgb_code(color: str) -> tuple[int, int, int] | None`
-  - Maps color names to RGB values
-  - Returns RGB tuple or None for unknown colors
-
-- `generate_success_response(message: Optional[str] = None) -> Response`
-  - Creates standardized success response
-  - Optional message for additional context
-
-- `generate_failure_response(message: Optional[str] = None) -> Response`
-  - Creates standardized failure response
-  - Optional error message for debugging
-
-### Type Definitions
-```python
-Response = dict[bool, Optional[str]]  # Standard response format
-Color = tuple[int, int, int]         # RGB color format
-```
+- `load_config()`: Loads IP from config.json, sets SETUP_COMPLETE flag
+- `ensure_connected()`: Establishes Nanoleaf connection, caches in global `NL`
+- `get_rgb_code(color: str)`: Maps color names to RGB tuples
+- `store_pending_call(func, **kwargs)`: Saves function call for later execution
+- `execute_pending_call()`: Runs stored call with `_from_pending=True`
+- `get_setup_instructions()`: Returns formatted setup wizard markdown
 
 ### Logging
-- Log file location: `%USERPROFILE%\nanoleaf.log`
+- Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf\nanoleaf-plugin.log`
 - Logs all command execution, API calls, and errors
 - Includes timestamps and log levels
-- Handles logging failures gracefully
+- Format: `%(asctime)s - %(levelname)s - %(message)s`
 
 ### Error Handling
-- All commands implement try-catch blocks
-- API errors are logged with full details
-- Invalid configurations trigger appropriate error responses
-- Connection failures are handled gracefully
-- Unknown colors/profiles return clear error messages
+- All commands implement try-except blocks
+- Errors are logged before returning user-friendly messages
+- Connection failures include troubleshooting steps
+- Unknown colors/profiles show available options
 
 ### Adding New Commands
 To add a new command:
-1. Implement command function with signature: `def new_command(nl: Nanoleaf, params: dict = None, context: dict = None) -> Response`
-2. Add command to `commands` dictionary in `generate_command_handlers()`
-3. Implement proper error handling and logging
-4. Return standardized response using `generate_success_response()` or `generate_failure_response()`
-5. Add the function to the `functions` list in `manifest.json`:
+
+1. Define the function with the `@plugin.command` decorator:
+   ```python
+   @plugin.command("my_new_command")
+   def my_new_command(param: str = "", _from_pending: bool = False):
+       """Command description."""
+       # Check configuration
+       load_config()
+       if not SETUP_COMPLETE or not NANOLEAF_IP:
+           store_pending_call(my_new_command, param=param)
+           plugin.set_keep_session(True)
+           return get_setup_instructions()
+       
+       # Ensure connection
+       if not ensure_connected():
+           return "**Connection failed.**..."
+       
+       # Implement command logic
+       try:
+           # Your code here
+           return "**Success!**"
+       except Exception as e:
+           logger.error(f"Error: {e}")
+           return "**Failed.**..."
+   ```
+
+2. Add the function to `manifest.json`:
    ```json
    {
-      "name": "new_command",
+      "name": "my_new_command",
       "description": "Description of what the command does",
-      "tags": ["relevant", "tags"],
+      "tags": ["nanoleaf", "lights"],
       "properties": {
-      "parameter_name": {
-         "type": "string",
-         "description": "Description of the parameter"
-      }
+         "param": {
+            "type": "string",
+            "description": "Description of the parameter"
+         }
       }
    }
    ```
-6. Manually test the function:
 
-   First, run the script:
-   ``` bash
-   python nanoleaf.py
+3. Build and test:
+   ```bash
+   build.bat
    ```
-
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-7. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+   Copy the dist folder contents to the plugins directory and test with G-Assist
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
