@@ -18,7 +18,7 @@ if os.path.exists(_libs_path) and _libs_path not in sys.path:
 # Now we can import third-party libraries
 import json
 import logging
-from typing import Optional
+from typing import Any, Callable, Dict, Optional
 
 import requests
 
@@ -60,6 +60,7 @@ BOT_TOKEN: Optional[str] = None
 CHANNEL_ID: Optional[str] = None
 GAME_DIRECTORY: Optional[str] = None
 SETUP_COMPLETE = False
+PENDING_CALL: Optional[Dict[str, Any]] = None  # {"func": callable, "args": {...}}
 
 
 def load_config():
@@ -141,7 +142,28 @@ Update it with your values:
 
 _(Set `GAME_DIRECTORY` to your game folder: "Desktop", "RUST", etc.)_
 
-Save the file and try the command again!\r"""
+Save the file and say **"next"** or **"continue"** when done, and I'll complete your original request.\r"""
+
+
+def store_pending_call(func: Callable, **kwargs):
+    """Store a function call to execute after setup completes."""
+    global PENDING_CALL
+    PENDING_CALL = {"func": func, "args": kwargs}
+    logger.info(f"[SETUP] Stored pending call: {func.__name__}({kwargs})")
+
+
+def execute_pending_call() -> Optional[str]:
+    """Execute the stored pending call if one exists. Returns result or None."""
+    global PENDING_CALL
+    if not PENDING_CALL:
+        return None
+    
+    func = PENDING_CALL["func"]
+    args = PENDING_CALL["args"]
+    PENDING_CALL = None  # Clear before executing
+    
+    logger.info(f"[SETUP] Executing pending call: {func.__name__}({args})")
+    return func(_from_pending=True, **args)
 
 
 def find_latest_file(directory: str, extension: str) -> Optional[str]:
@@ -173,25 +195,32 @@ plugin = Plugin(
 # COMMANDS
 # ============================================================================
 @plugin.command("send_message_to_discord_channel")
-def send_message_to_discord_channel(message: str = ""):
+def send_message_to_discord_channel(message: str = "", _from_pending: bool = False):
     """
     Send a text message to Discord channel.
     
     Args:
         message: The text message to send
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global BOT_TOKEN, CHANNEL_ID, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        store_pending_call(send_message_to_discord_channel, message=message)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
     if not message:
-        return "_ **Missing message.** Please include a message to send."
+        return (
+            "**What should I send?**\n\n"
+            "Please include a message to send to Discord."
+        )
     
-    plugin.stream("_ ")  # Close engine's italic
-    plugin.stream("_Sending message to Discord..._")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream(f"_Sending message to Discord..._\n\n")
     
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     headers = {"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"}
@@ -201,38 +230,70 @@ def send_message_to_discord_channel(message: str = ""):
         r = requests.post(url, headers=headers, json=payload, timeout=10)
         if r.status_code in [200, 201]:
             logger.info("Message sent successfully.")
-            return "Message sent successfully!"
+            return (
+                "**Message sent!**\n\n"
+                "Your message was delivered to the Discord channel."
+            )
+        elif r.status_code == 401:
+            logger.error(f"Failed to send message (401): {r.text}")
+            return (
+                "**Authentication failed.**\n\n"
+                "Your **Bot Token** appears to be invalid.\n\n"
+                f"_Config:_ `{CONFIG_FILE}`"
+            )
+        elif r.status_code == 403:
+            logger.error(f"Failed to send message (403): {r.text}")
+            return (
+                "**Permission denied.**\n\n"
+                "The bot doesn't have permission to post in this channel.\n\n"
+                "Check that your **Channel ID** is correct and the bot has been added to the server."
+            )
         else:
-            logger.error(f"Failed to send message: {r.text}")
-            return "**Error:** Failed to send message. Please check your bot token and channel ID in the configuration."
+            logger.error(f"Failed to send message ({r.status_code}): {r.text}")
+            return (
+                "**Failed to send message.**\n\n"
+                f"Discord returned an error _(status {r.status_code})_.\n\n"
+                "Please try again later."
+            )
     except Exception as e:
         logger.error(f"Error in send_message_to_discord_channel: {str(e)}")
-        return "**Error:** Unable to send message. Please check your internet connection and try again."
+        return (
+            "**Connection error.**\n\n"
+            "Unable to reach Discord. Please check your internet connection and try again."
+        )
 
 
 @plugin.command("send_latest_chart_to_discord_channel")
-def send_latest_chart_to_discord_channel(caption: str = ""):
+def send_latest_chart_to_discord_channel(caption: str = "", _from_pending: bool = False):
     """
     Send latest performance chart (CSV) to Discord.
     
     Args:
         caption: Optional caption for the file
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global BOT_TOKEN, CHANNEL_ID, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        store_pending_call(send_latest_chart_to_discord_channel, caption=caption)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
-    plugin.stream("_ ")  # Close engine's italic
-    plugin.stream("_Finding latest chart..._")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream("_Finding latest performance chart..._\n\n")
     
     file_path = find_latest_file(CSV_DIRECTORY, ".csv")
     if not file_path:
-        return "No performance chart found. Charts are created when you record performance data in G-Assist."
+        return (
+            "**No performance chart found.**\n\n"
+            "Charts are created when you record performance data in G-Assist.\n\n"
+            f"_Expected location:_ `{CSV_DIRECTORY}`"
+        )
     
-    plugin.stream("\n_Uploading chart to Discord..._")
+    plugin.stream("_Uploading chart to Discord..._\n\n")
     
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
@@ -244,43 +305,80 @@ def send_latest_chart_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
         
         if r.status_code in [200, 201]:
-            return "Chart sent successfully!"
+            return (
+                "**Chart sent!**\n\n"
+                "Your performance chart was uploaded to Discord."
+            )
+        elif r.status_code == 401:
+            logger.error(f"Failed to send chart (401): {r.text}")
+            return (
+                "**Authentication failed.**\n\n"
+                "Your **Bot Token** appears to be invalid.\n\n"
+                f"_Config:_ `{CONFIG_FILE}`"
+            )
+        elif r.status_code == 403:
+            logger.error(f"Failed to send chart (403): {r.text}")
+            return (
+                "**Permission denied.**\n\n"
+                "The bot doesn't have permission to post in this channel.\n\n"
+                "Check that your **Channel ID** is correct and the bot has been added to the server."
+            )
         else:
-            logger.error(f"Failed to send chart: {r.text}")
-            return "**Error:** Failed to send chart. Please check your bot token and channel ID in the configuration."
+            logger.error(f"Failed to send chart ({r.status_code}): {r.text}")
+            return (
+                "**Failed to send chart.**\n\n"
+                f"Discord returned an error _(status {r.status_code})_.\n\n"
+                "Please try again later."
+            )
     except Exception as e:
         logger.error(f"Error in send_latest_chart_to_discord_channel: {str(e)}")
-        return "**Error:** Unable to send chart. Please check your internet connection and try again."
+        return (
+            "**Connection error.**\n\n"
+            "Unable to reach Discord. Please check your internet connection and try again."
+        )
 
 
 @plugin.command("send_latest_shadowplay_clip_to_discord_channel")
-def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
+def send_latest_shadowplay_clip_to_discord_channel(caption: str = "", _from_pending: bool = False):
     """
     Send latest ShadowPlay clip to Discord.
     
     Args:
         caption: Optional caption for the clip
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        store_pending_call(send_latest_shadowplay_clip_to_discord_channel, caption=caption)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
     if not GAME_DIRECTORY:
-        return "_ **Game folder not configured.** Please set `GAME_DIRECTORY` in your config file (e.g., \"Desktop\" or \"RUST\")."
+        return (
+            "**Game folder not configured.**\n\n"
+            "Please set `GAME_DIRECTORY` in your config file:\n"
+            f"```\n{CONFIG_FILE}\n```\n\n"
+            "Example values: `\"Desktop\"`, `\"RUST\"`, `\"Fortnite\"`"
+        )
     
-    plugin.stream("_ ")  # Close engine's italic
-    plugin.stream("_Finding latest clip..._")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream("_Finding latest ShadowPlay clip..._\n\n")
     
     mp4_directory = os.path.join(BASE_MP4_DIRECTORY, GAME_DIRECTORY)
     file_path = find_latest_file(mp4_directory, ".mp4")
     
     if not file_path:
-        return f"No video clip found for '{GAME_DIRECTORY}'. Make sure you have recorded a clip using NVIDIA ShadowPlay."
+        return (
+            f"**No video clip found for '{GAME_DIRECTORY}'.**\n\n"
+            "Make sure you have recorded a clip using **NVIDIA ShadowPlay**.\n\n"
+            f"_Expected location:_ `{mp4_directory}`"
+        )
     
-    plugin.stream("\n_Uploading clip to Discord..._")
+    plugin.stream("_Uploading clip to Discord..._\n\n")
     
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
@@ -292,43 +390,87 @@ def send_latest_shadowplay_clip_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=60)
         
         if r.status_code in [200, 201]:
-            return "Clip sent successfully!"
+            return (
+                "**Clip sent!**\n\n"
+                "Your ShadowPlay clip was uploaded to Discord."
+            )
+        elif r.status_code == 401:
+            logger.error(f"Failed to send clip (401): {r.text}")
+            return (
+                "**Authentication failed.**\n\n"
+                "Your **Bot Token** appears to be invalid.\n\n"
+                f"_Config:_ `{CONFIG_FILE}`"
+            )
+        elif r.status_code == 403:
+            logger.error(f"Failed to send clip (403): {r.text}")
+            return (
+                "**Permission denied.**\n\n"
+                "The bot doesn't have permission to post in this channel.\n\n"
+                "Check that your **Channel ID** is correct and the bot has been added to the server."
+            )
+        elif r.status_code == 413 or (r.status_code == 400 and "size" in r.text.lower()):
+            logger.error(f"Failed to send clip (file too large): {r.text}")
+            return (
+                "**File too large.**\n\n"
+                "Discord has a **25MB** file size limit.\n\n"
+                "Try recording a shorter clip or compressing the video."
+            )
         else:
-            logger.error(f"Failed to send clip: {r.text}")
-            return "**Error:** Failed to send clip. The file may be too large for Discord (max 25MB) or check your configuration."
+            logger.error(f"Failed to send clip ({r.status_code}): {r.text}")
+            return (
+                "**Failed to send clip.**\n\n"
+                f"Discord returned an error _(status {r.status_code})_.\n\n"
+                "Please try again later."
+            )
     except Exception as e:
         logger.error(f"Error in send_latest_shadowplay_clip_to_discord_channel: {str(e)}")
-        return "**Error:** Unable to send clip. Please check your internet connection and try again."
+        return (
+            "**Connection error.**\n\n"
+            "Unable to reach Discord. Please check your internet connection and try again."
+        )
 
 
 @plugin.command("send_latest_screenshot_to_discord_channel")
-def send_latest_screenshot_to_discord_channel(caption: str = ""):
+def send_latest_screenshot_to_discord_channel(caption: str = "", _from_pending: bool = False):
     """
     Send latest screenshot to Discord.
     
     Args:
         caption: Optional caption for the screenshot
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
     global BOT_TOKEN, CHANNEL_ID, GAME_DIRECTORY, SETUP_COMPLETE
     
     load_config()
     if not SETUP_COMPLETE or not BOT_TOKEN or not CHANNEL_ID:
+        store_pending_call(send_latest_screenshot_to_discord_channel, caption=caption)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
     if not GAME_DIRECTORY:
-        return "_ **Game folder not configured.** Please set `GAME_DIRECTORY` in your config file (e.g., \"Desktop\" or \"RUST\")."
+        return (
+            "**Game folder not configured.**\n\n"
+            "Please set `GAME_DIRECTORY` in your config file:\n"
+            f"```\n{CONFIG_FILE}\n```\n\n"
+            "Example values: `\"Desktop\"`, `\"RUST\"`, `\"Fortnite\"`"
+        )
     
-    plugin.stream("_ ")  # Close engine's italic
-    plugin.stream("_Finding latest screenshot..._")
+    if not _from_pending:
+        plugin.stream("_ ")  # Close engine's italic
+    plugin.stream("_Finding latest screenshot..._\n\n")
     
     screenshot_directory = os.path.join(BASE_SCREENSHOT_DIRECTORY, GAME_DIRECTORY)
     file_path = find_latest_file(screenshot_directory, ".png")
     
     if not file_path:
-        return f"No screenshot found for '{GAME_DIRECTORY}'. Make sure you have taken a screenshot using NVIDIA ShadowPlay."
+        return (
+            f"**No screenshot found for '{GAME_DIRECTORY}'.**\n\n"
+            "Make sure you have taken a screenshot using **NVIDIA ShadowPlay**.\n\n"
+            f"_Expected location:_ `{screenshot_directory}`"
+        )
     
-    plugin.stream("\n_Uploading screenshot to Discord..._")
+    plugin.stream("_Uploading screenshot to Discord..._\n\n")
     
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
@@ -340,13 +482,44 @@ def send_latest_screenshot_to_discord_channel(caption: str = ""):
             r = requests.post(url, headers=headers, data=payload, files=files, timeout=30)
         
         if r.status_code in [200, 201]:
-            return "Screenshot sent successfully!"
+            return (
+                "**Screenshot sent!**\n\n"
+                "Your screenshot was uploaded to Discord."
+            )
+        elif r.status_code == 401:
+            logger.error(f"Failed to send screenshot (401): {r.text}")
+            return (
+                "**Authentication failed.**\n\n"
+                "Your **Bot Token** appears to be invalid.\n\n"
+                f"_Config:_ `{CONFIG_FILE}`"
+            )
+        elif r.status_code == 403:
+            logger.error(f"Failed to send screenshot (403): {r.text}")
+            return (
+                "**Permission denied.**\n\n"
+                "The bot doesn't have permission to post in this channel.\n\n"
+                "Check that your **Channel ID** is correct and the bot has been added to the server."
+            )
+        elif r.status_code == 413 or (r.status_code == 400 and "size" in r.text.lower()):
+            logger.error(f"Failed to send screenshot (file too large): {r.text}")
+            return (
+                "**File too large.**\n\n"
+                "Discord has a **25MB** file size limit.\n\n"
+                "Try taking a screenshot at a lower resolution."
+            )
         else:
-            logger.error(f"Failed to send screenshot: {r.text}")
-            return "**Error:** Failed to send screenshot. Please check your bot token and channel ID in the configuration."
+            logger.error(f"Failed to send screenshot ({r.status_code}): {r.text}")
+            return (
+                "**Failed to send screenshot.**\n\n"
+                f"Discord returned an error _(status {r.status_code})_.\n\n"
+                "Please try again later."
+            )
     except Exception as e:
         logger.error(f"Error in send_latest_screenshot_to_discord_channel: {str(e)}")
-        return "**Error:** Unable to send screenshot. Please check your internet connection and try again."
+        return (
+            "**Connection error.**\n\n"
+            "Unable to reach Discord. Please check your internet connection and try again."
+        )
 
 
 @plugin.command("on_input")
@@ -356,11 +529,32 @@ def on_input(content: str = ""):
     
     load_config()
     if SETUP_COMPLETE:
-        plugin.set_keep_session(False)
-        return "_ _Discord bot configured!_ You can now send messages, clips, and screenshots to your Discord channel."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Discord bot configured!_\n\n")
+        result = execute_pending_call()
+        if result is not None:
+            plugin.set_keep_session(False)
+            return result
+        else:
+            plugin.set_keep_session(False)
+            return (
+                "You're all set! You can now:\n\n"
+                "- Send **messages** to your Discord channel\n"
+                "- Share **ShadowPlay clips** and **screenshots**\n"
+                "- Upload **performance charts**"
+            )
     else:
         plugin.set_keep_session(True)
-        return get_setup_instructions()
+        return (
+            "**Credentials not found.**\n\n"
+            "The config file is still empty or invalid.\n\n"
+            "---\n\n"
+            "Please make sure you:\n"
+            "1. Pasted your **Bot Token** and **Channel ID**\n"
+            "2. **Saved** the file\n\n"
+            f"_Config:_ `{CONFIG_FILE}`\n\n"
+            "Say **\"next\"** or **\"continue\"** when ready."
+        )
 
 
 # ============================================================================
