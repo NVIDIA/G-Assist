@@ -7,15 +7,18 @@ Transform your G-Assist experience with real-time stock market data! This plugin
 - Look up stock ticker symbols from company names
 - Real-time market data including:
   - Current/closing price
-  - Price changes
-  - Market status
+  - Price changes with trend direction
+  - Market status (open/closed)
+- **Interactive setup wizard** — guides you through configuration step-by-step
 - Detailed logging for troubleshooting
 
 ## Before You Start
 Make sure you have:
 - Python 3.6 or higher installed
-- Twelve Data API key - Visit [Twelve Data](https://twelvedata.com/pricing) to get a free API key
 - NVIDIA G-Assist installed
+- Internet connection
+
+> **Note:** You'll need a Twelve Data API key, but the plugin will guide you through getting one for free during first-time setup!
 
 ## Quickstart
 
@@ -24,7 +27,6 @@ Make sure you have:
 git clone <repo link>
 cd stock
 ```
-This downloads all the necessary files to your computer.
 
 ### Step 2: Setup and Build
 1. Run the setup script:
@@ -42,60 +44,98 @@ This creates the executable and prepares all necessary files.
 ### Step 3: Install the Plugin
 1. Navigate to the `dist` folder created by the build script
 2. Copy the `stock` folder to:
-```bash
+```
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
 ```
 
 💡 **Tip**: Make sure all files are copied, including:
 - The executable (`g-assist-stock-plugin.exe`)
 - `manifest.json`
-- `config.json` (you'll need to update this with your Twelve Data API key)
 
-### Step 4: Configure Your API Key
-1. Open `config.json` in the plugin directory
-2. Add your Twelve Data API key:
-```json
-{
-    "TWELVE_DATA_API_KEY": "your_api_key_here"
-}
-```
+### Step 4: Start Using It!
+Just ask G-Assist about any stock — the plugin will automatically guide you through setup if needed!
+
+## First-Time Setup
+
+When you first use the Stock plugin, it automatically launches an **interactive setup wizard**:
+
+1. **Ask about any stock** — for example: *"What's the NVIDIA stock price?"*
+2. **The wizard opens automatically** — it will:
+   - Open the Twelve Data signup page in your browser
+   - Open the config file for you to edit
+   - Display step-by-step instructions
+3. **Get your free API key** (takes ~1 minute, no credit card required)
+4. **Paste it in the config file** and save
+5. **Say "next" or "continue"** — the plugin verifies your key and completes your original request!
+
+The free tier includes **800 API calls per day** — plenty for personal use.
 
 ## How to Use
-Once everything is set up, you can check stock prices through simple chat commands!
 
-Try these commands:
-- "Hey stock, what's the stock price for NVIDIA?"
+Once set up, check stock prices through simple chat commands:
+
+**Stock Prices:**
+- "What's the stock price for NVIDIA?"
 - "Check the price of AMC"
-- "What's the ticker symbol for GameStop?"
 - "What's Tesla trading at?"
+- "How much is NVDA?"
+
+**Ticker Lookup:**
+- "What's the ticker symbol for GameStop?"
+- "Find the ticker for Apple"
 
 ### Example Responses
 
-When checking a stock price:
-```text
-The current stock price for NVDA is $96.91 USD (as of 2024-03-14). Change: $-4.58 (-4.51%)
+**Stock Price:**
+```
+NVDA — $96.91 USD
+
+| | |
+|---|---|
+| Change | $-4.58 (-4.51%) down |
+| Status | Market Closed |
+| As of | 2024-03-14 16:00:00 |
 ```
 
-When looking up a ticker:
-```text
-Found ticker for 'NVIDIA Corporation' on NASDAQ: NVDA
+**Ticker Lookup:**
+```
+NVIDIA Corporation
+
+| | |
+|---|---|
+| Ticker | NVDA |
+| Exchange | NASDAQ |
 ```
 
-## Troubleshooting Tips
+## Configuration
+
+The plugin stores its configuration at:
+```
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\stock\config.json
+```
+
+**Config format:**
+```json
+{
+  "TWELVE_DATA_API_KEY": "your_api_key_here"
+}
+```
+
+## Troubleshooting
 
 ### API Issues
-- **Getting "Failed to fetch stock price" errors?**
-  - Verify your API key in config.json
-  - Check if you've exceeded your API limit
+- **"No quote found" errors?**
+  - Use the exact ticker symbol (e.g., `NVDA` not `NVIDIA`)
+  - Try looking up the ticker first: *"What's the ticker for NVIDIA?"*
 
-## First-Time Setup
-When you first try to use the Stock plugin without configuration, it will automatically guide you through the setup process with step-by-step instructions displayed directly in G-Assist. Simply ask it about a stock price, and it will:
-1. Display setup instructions
-2. Guide you to get a free Twelve Data API key (no credit card required)
-3. Help you configure the API key
-4. Verify your configuration
+- **"Connection error" messages?**
+  - Check your internet connection
+  - Verify your API key is correct
+  - Check if you've exceeded your daily API limit (800 calls/day on free tier)
 
-The setup takes about 1 minute and is completely free!
+- **Setup wizard keeps appearing?**
+  - Make sure you saved the config file after adding your API key
+  - Check that the API key is at least 10 characters long
 
 ### Logging
 The plugin logs all activity to:
@@ -107,129 +147,82 @@ Check this file for detailed error messages and debugging information.
 ## Developer Documentation
 
 ### Architecture Overview
-The Stock plugin is implemented as a Python-based service that communicates the Twelve Data API to provide real-time stock market data and company information.
+The Stock plugin is built on the **G-Assist SDK (V2)** and communicates with the Twelve Data API to provide real-time stock market data.
 
 ### Core Components
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
-
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
-
-#### Command Structure
-Commands are sent as JSON with the following structure:
-```json
-{
-  "tool_calls": [{
-    "func": "command_name",
-    "params": {
-      "param1": "value1"
-    },
-    "messages": [],
-    "system_info": ""
-  }]
-}
+#### Plugin Setup
+```python
+plugin = Plugin(
+    name="stock",
+    version="2.0.0",
+    description="Stock price lookup via Twelve Data API"
+)
 ```
 
-### Available Commands
+#### Commands
+Commands are registered using the `@plugin.command()` decorator:
 
-#### Stock Price Lookup
-- `execute_get_stock_price_command()`: Get current stock price
-  - Parameters:
-    - `ticker`: Stock symbol (e.g., "NVDA")
-    - `company_name`: Company name (e.g., "NVIDIA")
-  - Returns:
-    - Current/closing price
-    - Price change
-    - Market status
-    - Timestamp
+| Command | Description | Parameters |
+|---------|-------------|------------|
+| `get_stock_price` | Get current stock price | `ticker`, `company_name` |
+| `get_ticker_from_company` | Look up ticker symbol | `company_name` |
+| `on_input` | Handle setup wizard input | `content` |
 
-#### Company Information
-- `execute_get_ticker_from_company_command()`: Look up stock symbol
-  - Parameters:
-    - `company_name`: Name of the company
-  - Returns:
-    - Ticker symbol
-    - Exchange
-    - Company name
+#### Setup Wizard Flow
+The plugin implements a pending call pattern for seamless setup:
+1. User requests stock data
+2. Plugin detects missing API key
+3. Original request is stored via `store_pending_call()`
+4. Setup wizard launches (opens browser + config file)
+5. User completes setup and says "next"
+6. `execute_pending_call()` runs the original request
 
 ### Configuration
-
-#### API Integration
-- Uses Twelve Data API for market data
-- API key stored in `config.json`:
-  ```json
-  {
-    "TWELVE_DATA_API_KEY": "your_api_key_here"
-  }
-  ```
-- Base URL: `https://api.twelvedata.com`
-
-### Error Handling
-- Comprehensive error handling for API calls
-- User-friendly error messages
-- Detailed logging of errors and responses
-- Type checking for parameters
-- Validation of API responses
-
-### Logging
-- Log file: `%USERPROFILE%\stock_plugin.log`
-- Log level: DEBUG
-- Format: `%(asctime)s - %(levelname)s - %(message)s`
-- Logs include:
-  - Command processing
-  - API requests and responses
-  - Error details
-  - Plugin lifecycle events
+- **API:** Twelve Data (`https://api.twelvedata.com`)
+- **Config file:** `config.json` in plugin directory
+- **Log level:** INFO
+- **Log format:** `%(asctime)s - %(levelname)s - %(message)s`
 
 ### Adding New Features
-To add new features:
-1. Add new command to the `commands` dictionary in `main()`
-2. Implement corresponding execute function with proper type hints
-3. Add proper error handling and logging
-4. Add the function to the `functions` list in `manifest.json` file: 
+
+1. Add a new command using the `@plugin.command()` decorator:
+   ```python
+   @plugin.command("my_new_command")
+   def my_new_command(param1: str = "", _from_pending: bool = False):
+       """Command description."""
+       # Check setup
+       load_config()
+       if not SETUP_COMPLETE or not API_KEY:
+           store_pending_call(my_new_command, param1=param1)
+           plugin.set_keep_session(True)
+           return start_setup_wizard()
+       
+       # Your logic here
+       return "Result"
+   ```
+
+2. Add the function to `manifest.json`:
    ```json
    {
-      "name": "new_command",
-      "description": "Description of what the command does",
-      "tags": ["relevant", "tags"],
-      "properties": {
-         "parameter_name": {
-            "type": "string",
-            "description": "Description of the parameter"
-         }
-      }
+     "name": "my_new_command",
+     "description": "Description of what the command does",
+     "tags": ["relevant", "tags"],
+     "properties": {
+       "param1": {
+         "type": "string",
+         "description": "Description of the parameter"
+       }
+     }
    }
    ```
-5. Manually test the function:
 
-   First, run the script:
-   ``` bash
+3. Test locally:
+   ```bash
    python plugin.py
    ```
 
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-6. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Build and deploy using `setup.bat` and `build.bat`
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
@@ -239,4 +232,5 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 - Built using the [Twelve Data API](https://twelvedata.com/docs)
+- Powered by the G-Assist SDK V2
 - We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
