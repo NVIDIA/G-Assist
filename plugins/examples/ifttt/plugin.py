@@ -189,7 +189,8 @@ def trigger_gaming_setup():
         plugin.set_keep_session(True)
         return get_setup_instructions()
     
-    plugin.stream("Fetching gaming news...")
+    plugin.stream("_ ")  # Close engine's italic
+    plugin.stream("_Fetching gaming news..._")
     
     webhook_url = f"https://maker.ifttt.com/trigger/{EVENT_NAME}/with/key/{IFTTT_WEBHOOK_KEY}"
     webhook_data = {}
@@ -201,7 +202,7 @@ def trigger_gaming_setup():
             webhook_data[f"value{i}"] = headline
         logger.info(f"Including {len(headlines)} news headlines in webhook")
     
-    plugin.stream(f"Triggering IFTTT applet {EVENT_NAME}...")
+    plugin.stream(f"\n_Triggering IFTTT applet {EVENT_NAME}..._")
     
     try:
         if webhook_data:
@@ -210,13 +211,13 @@ def trigger_gaming_setup():
             response = requests.post(webhook_url, timeout=10)
         
         if 200 <= response.status_code < 300:
-            return f"IFTTT applet {EVENT_NAME} triggered successfully."
+            return f"IFTTT applet **{EVENT_NAME}** triggered successfully."
         else:
             logger.error(f"IFTTT webhook {EVENT_NAME} failed: {response.text}")
-            return f"IFTTT applet {EVENT_NAME} failed: {response.text}"
+            return f"**Error:** IFTTT applet {EVENT_NAME} failed: {response.text}"
     except Exception as e:
         logger.error(f"Error triggering IFTTT webhook {EVENT_NAME}: {str(e)}")
-        return f"Error triggering IFTTT applet {EVENT_NAME}: {str(e)}"
+        return f"**Error:** Failed to trigger IFTTT applet {EVENT_NAME}: {str(e)}"
 
 
 @plugin.command("on_input")
@@ -227,7 +228,7 @@ def on_input(content: str = ""):
     load_config()
     if SETUP_COMPLETE:
         plugin.set_keep_session(False)
-        return "IFTTT webhook configured! You can now trigger your gaming setup applet."
+        return "_ _IFTTT webhook configured!_ You can now trigger your gaming setup applet."
     else:
         plugin.set_keep_session(True)
         return get_setup_instructions()

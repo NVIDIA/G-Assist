@@ -583,20 +583,22 @@ def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""
         return get_setup_step1()
     
     if not is_authenticated():
-        plugin.stream("Starting Spotify authorization...")
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
         success, msg = do_oauth_flow()
         if not success:
-            return msg
+            return msg  # Already escaped by prior stream
     
     device = get_device_id()
     if not device:
         return (
-            "No active Spotify device found.\n\n"
+            "**No active Spotify device found.**\n\n"
             "Please open Spotify on any device and start playing something, then try again."
         )
     
     if name:
-        plugin.stream(f"Searching for {type}: {name}...")
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream(f"_Searching for {type}: {name}..._")
         
         # Search for content
         query = f'{type}:"{name}"'
@@ -624,20 +626,20 @@ def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""
             
             r = spotify_api(f"/me/player/play?device_id={device}", "PUT", body)
             if r and r.status_code in [200, 204]:
-                return f"Now playing: {name}"
+                return f"**Now playing:** {name}"
             else:
-                return "Failed to start playback."
+                return "**Error:** Failed to start playback."
         else:
-            return f"Search failed for: {name}"
+            return f"**Error:** Search failed for: {name}"
     else:
         # Resume playback
         r = spotify_api(f"/me/player/play?device_id={device}", "PUT")
         if r and r.status_code in [200, 204]:
             return "Playback resumed."
         elif r and r.status_code == 403:
-            return "Spotify Premium required for playback control. Please open Spotify and start playing."
+            return "**Spotify Premium required** for playback control. Please open Spotify and start playing."
         else:
-            return "Failed to resume playback."
+            return "**Error:** Failed to resume playback."
 
 
 @plugin.command("spotify_pause_playback")
@@ -646,16 +648,16 @@ def spotify_pause_playback():
     load_tokens()
     
     if not is_authenticated():
-        return "Not authenticated. Please use a playback command first."
+        return "_ Not authenticated. Please use a playback command first."
     
     device = get_device_id()
     if not device:
-        return "No active Spotify device found."
+        return "_ No active Spotify device found."
     
     r = spotify_api(f"/me/player/pause?device_id={device}", "PUT")
     if r and r.status_code in [200, 204]:
-        return "Playback paused."
-    return "Failed to pause playback."
+        return "_ Playback paused."
+    return "_ **Error:** Failed to pause playback."
 
 
 @plugin.command("spotify_next_track")
@@ -664,13 +666,13 @@ def spotify_next_track():
     load_tokens()
     
     if not is_authenticated():
-        return "Not authenticated. Please use a playback command first."
+        return "_ Not authenticated. Please use a playback command first."
     
     device = get_device_id()
     r = spotify_api(f"/me/player/next?device_id={device}", "POST")
     if r and r.status_code in [200, 204]:
-        return "Skipped to next track."
-    return "Failed to skip track."
+        return "_ Skipped to next track."
+    return "_ **Error:** Failed to skip track."
 
 
 @plugin.command("spotify_previous_track")
@@ -679,13 +681,13 @@ def spotify_previous_track():
     load_tokens()
     
     if not is_authenticated():
-        return "Not authenticated."
+        return "_ Not authenticated."
     
     device = get_device_id()
     r = spotify_api(f"/me/player/previous?device_id={device}", "POST")
     if r and r.status_code in [200, 204]:
-        return "Playing previous track."
-    return "Failed to go back."
+        return "_ Playing previous track."
+    return "_ **Error:** Failed to go back."
 
 
 @plugin.command("spotify_get_currently_playing")
@@ -694,7 +696,7 @@ def spotify_get_currently_playing():
     load_tokens()
     
     if not is_authenticated():
-        return "Not authenticated. Please use a playback command first."
+        return "_ Not authenticated. Please use a playback command first."
     
     r = spotify_api("/me/player/currently-playing")
     if r and r.status_code == 200:
@@ -702,11 +704,11 @@ def spotify_get_currently_playing():
         if data.get("is_playing"):
             track = data.get("item", {}).get("name", "Unknown")
             artist = data.get("item", {}).get("artists", [{}])[0].get("name", "Unknown")
-            return f"Now playing: {track} by {artist}"
+            return f"_ **Now playing:** {track} by {artist}"
         else:
             track = data.get("item", {}).get("name", "Nothing")
-            return f"Paused: {track}"
-    return "Nothing is playing."
+            return f"_ **Paused:** {track}"
+    return "_ Nothing is playing."
 
 
 @plugin.command("spotify_set_volume")
@@ -720,13 +722,13 @@ def spotify_set_volume(volume_level: int = 50):
     load_tokens()
     
     if not is_authenticated():
-        return "Not authenticated."
+        return "_ Not authenticated."
     
     device = get_device_id()
     r = spotify_api(f"/me/player/volume?volume_percent={volume_level}&device_id={device}", "PUT")
     if r and r.status_code in [200, 204]:
-        return f"Volume set to {volume_level}%."
-    return "Failed to set volume."
+        return f"_ Volume set to {volume_level}%."
+    return "_ **Error:** Failed to set volume."
 
 
 @plugin.command("on_input")
@@ -753,15 +755,16 @@ def on_input(content: str = ""):
             # Check if config is now valid
             load_config()
             if is_configured():
-                plugin.stream("Credentials verified! Starting authorization...")
+                plugin.stream("_ ")  # Close engine's italic
+                plugin.stream("_Credentials verified! Starting authorization..._\n\n")
                 success, msg = do_oauth_flow()
                 WIZARD_STEP = 0
                 plugin.set_keep_session(False)
-                return msg
+                return msg  # Already escaped by prior stream
             else:
                 plugin.set_keep_session(True)
                 return (
-                    "Credentials not found or invalid.\n\n"
+                    "_ **Credentials not found or invalid.**\n\n"
                     "Please make sure you:\n"
                     "  1. Pasted your Client ID and Client Secret\n"
                     "  2. SAVED the file\n\n"
@@ -771,13 +774,14 @@ def on_input(content: str = ""):
         # Configured but maybe not authenticated
         load_tokens()
         if not is_authenticated():
-            plugin.stream("Starting Spotify authorization...")
+            plugin.stream("_ ")  # Close engine's italic
+            plugin.stream("_Starting Spotify authorization..._\n\n")
             success, msg = do_oauth_flow()
             plugin.set_keep_session(False)
-            return msg
+            return msg  # Already escaped by prior stream
         else:
             plugin.set_keep_session(False)
-            return "Spotify is configured and ready!"
+            return "_ _Spotify is configured and ready!_"
 
 
 # ============================================================================
