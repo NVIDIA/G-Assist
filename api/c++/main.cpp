@@ -95,6 +95,10 @@ std::atomic<bool> spinnerActive(false);
 std::chrono::steady_clock::time_point requestStartTime;
 std::chrono::steady_clock::time_point firstTokenTime;
 
+// ASR-specific state
+std::atomic<bool> waitingForAsrFinal(false);  // When true, only release semaphore on ASR_FINAL
+std::string lastAsrFinalResponse;             // Store the ASR_FINAL response
+
 // ============================================================================
 // Microphone Capture State (Thread-Safe Audio Buffer)
 // ============================================================================
@@ -105,6 +109,12 @@ std::atomic<bool> micCaptureActive(false); // Flag to control capture loop
 const int MIC_SAMPLE_RATE = 16000;         // 16kHz for ASR
 const int MIC_CHANNELS = 1;                // Mono
 
+// Debug logging flag - set to true to enable detailed mic debug output
+static bool g_micDebugLogging = false;
+static std::atomic<int> g_callbackCount(0);
+static std::chrono::steady_clock::time_point g_micStartTime;
+static std::atomic<float> g_lastRms(0.0f);  // Track audio level for warm-up detection
+
 /**
  * Miniaudio callback - called from audio thread when samples are available
  * We copy samples into our buffer for the main thread to consume
@@ -112,14 +122,50 @@ const int MIC_CHANNELS = 1;                // Mono
 void MicrophoneDataCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     (void)pOutput; // Capture-only, no playback
 
-    if (pInput == nullptr || !micCaptureActive.load(std::memory_order_acquire)) {
+    int callbackNum = g_callbackCount.fetch_add(1);
+    
+    if (pInput == nullptr) {
+        if (g_micDebugLogging && callbackNum < 10) {
+            std::cerr << "[MIC_DEBUG] Callback #" << callbackNum << ": pInput is NULL" << std::endl;
+        }
+        return;
+    }
+    
+    if (!micCaptureActive.load(std::memory_order_acquire)) {
+        if (g_micDebugLogging && callbackNum < 10) {
+            std::cerr << "[MIC_DEBUG] Callback #" << callbackNum << ": micCaptureActive is false" << std::endl;
+        }
         return;
     }
 
     const float* inputSamples = static_cast<const float*>(pInput);
+    
+    // Calculate RMS to check if we have actual audio
+    float rms = 0.0f;
+    for (ma_uint32 i = 0; i < frameCount; i++) {
+        rms += inputSamples[i] * inputSamples[i];
+    }
+    rms = std::sqrt(rms / frameCount);
 
+    // Store RMS for warm-up detection (atomic for thread safety)
+    g_lastRms.store(rms, std::memory_order_release);
+    
     std::lock_guard<std::mutex> lock(micBufferMutex);
+    size_t bufferSizeBefore = micBuffer.size();
     micBuffer.insert(micBuffer.end(), inputSamples, inputSamples + frameCount);
+    
+    // Log first few callbacks and periodically after
+    if (g_micDebugLogging && (callbackNum < 10 || callbackNum % 100 == 0)) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_micStartTime).count();
+        std::cerr << "[MIC_DEBUG] Callback #" << callbackNum 
+                  << " @ " << elapsed << "ms"
+                  << ": frames=" << frameCount 
+                  << ", bufferBefore=" << bufferSizeBefore
+                  << ", bufferAfter=" << micBuffer.size()
+                  << ", RMS=" << std::fixed << std::setprecision(6) << rms
+                  << "\n" << std::flush;
+    }
 }
 
 // ============================================================================
@@ -178,12 +224,16 @@ void RiseCallbackHandler(NV_RISE_CALLBACK_DATA_V1* pData) {
 
     std::lock_guard<std::mutex> lock(responseMutex);
 
-    // Uncomment for debugging:
-    // std::string contentStr(pData->content);
-    // std::cout << "[DEBUG] Callback received: Type=" << GetContentTypeName(pData->contentType)
-    //           << " Completed=" << pData->completed
-    //           << " Content='" << contentStr.substr(0, 50) << "'"
-    //           << " firstTokenReceived=" << firstTokenReceived << std::endl;
+    // Debug logging for callbacks
+    if (g_micDebugLogging) {
+        std::string contentStr(pData->content);
+        std::string contentPreview = contentStr.length() > 80 ? contentStr.substr(0, 80) + "..." : contentStr;
+        // Use \n at end and flush to prevent interleaving with other threads
+        std::cerr << "[CALLBACK_DEBUG] Type=" << GetContentTypeName(pData->contentType)
+                  << ", Completed=" << (int)pData->completed
+                  << ", Content='" << contentPreview << "'"
+                  << "\n" << std::flush;
+    }
 
     switch (pData->contentType) {
         case NV_RISE_CONTENT_TYPE_READY:
@@ -196,6 +246,7 @@ void RiseCallbackHandler(NV_RISE_CALLBACK_DATA_V1* pData) {
         case NV_RISE_CONTENT_TYPE_TEXT: {
             // Handle text responses (both LLM and ASR)
             std::string chunk(pData->content);
+            bool isAsrFinal = false;
 
             if (!chunk.empty()) {
                 // Track first token arrival time
@@ -228,9 +279,15 @@ void RiseCallbackHandler(NV_RISE_CALLBACK_DATA_V1* pData) {
                             std::cout.flush();
                         }
                     } else if (chunk.find("ASR_FINAL:") == 0) {
+                        isAsrFinal = true;
+                        lastAsrFinalResponse = chunk;
                         // Final transcription will be handled separately
                         std::cout << "\r\033[K";  // Clear spinner line
                         std::cout.flush();
+                        
+                        if (g_micDebugLogging) {
+                            std::cerr << "[CALLBACK_DEBUG] *** ASR_FINAL received! ***\n" << std::flush;
+                        }
                     }
                 } else {
                     // LLM responses - print immediately as they arrive
@@ -242,9 +299,24 @@ void RiseCallbackHandler(NV_RISE_CALLBACK_DATA_V1* pData) {
 
             if (pData->completed == 1) {
                 responseCompleted = true;
-                // Signal that callback has completely finished
                 callbackFinished = true;
-                responseCompleteSemaphore.release();
+                
+                // If we're waiting for ASR_FINAL, only release semaphore when we get it
+                if (waitingForAsrFinal.load(std::memory_order_acquire)) {
+                    if (isAsrFinal) {
+                        if (g_micDebugLogging) {
+                            std::cerr << "[CALLBACK_DEBUG] Releasing semaphore (ASR_FINAL received)\n" << std::flush;
+                        }
+                        responseCompleteSemaphore.release();
+                    } else {
+                        if (g_micDebugLogging) {
+                            std::cerr << "[CALLBACK_DEBUG] Waiting for ASR_FINAL, NOT releasing semaphore\n" << std::flush;
+                        }
+                    }
+                } else {
+                    // Normal mode - release on any completed response
+                    responseCompleteSemaphore.release();
+                }
             }
             break;
         }
@@ -903,8 +975,7 @@ void DemoASRMicrophone() {
     // -------------------------------------------------------------------------
     // Step 3: Initialize the selected microphone
     // -------------------------------------------------------------------------
-    std::cout << "\nSpeak into your microphone for real-time transcription." << std::endl;
-    std::cout << "Press ENTER at any time to stop recording.\n" << std::endl;
+    std::cout << "\nStarting real-time transcription..." << std::endl;
 
     ma_device_config deviceConfig;
     ma_device device;
@@ -926,18 +997,44 @@ void DemoASRMicrophone() {
     }
 
     std::cout << "[INFO] Microphone: " << device.capture.name << std::endl;
-    std::cout << "[INFO] Sample Rate: " << MIC_SAMPLE_RATE << " Hz, Channels: " << MIC_CHANNELS << std::endl;
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Recording... (Press ENTER to stop)" << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "[INFO] Requested Sample Rate: " << MIC_SAMPLE_RATE << " Hz, Channels: " << MIC_CHANNELS << std::endl;
+    std::cout << "[INFO] Actual Device Sample Rate: " << device.sampleRate << " Hz" << std::endl;
+    std::cout << "[INFO] Actual Device Format: " << device.capture.format << " (1=u8, 2=s16, 3=s24, 4=s32, 5=f32)" << std::endl;
+    
+    if (device.sampleRate != MIC_SAMPLE_RATE) {
+        std::cout << "[WARN] Sample rate mismatch! Device uses " << device.sampleRate 
+                  << " Hz but we requested " << MIC_SAMPLE_RATE << " Hz" << std::endl;
+        std::cout << "[WARN] Miniaudio will resample, but quality may be affected" << std::endl;
+    }
 
     // Clear buffer and start capture
     {
         std::lock_guard<std::mutex> lock(micBufferMutex);
         micBuffer.clear();
     }
+    
+    // Reset counters and RMS tracking
+    g_callbackCount.store(0, std::memory_order_release);
+    g_lastRms.store(0.0f, std::memory_order_release);
+    g_micStartTime = std::chrono::steady_clock::now();
+    
     micCaptureActive.store(true, std::memory_order_release);
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] micCaptureActive set to TRUE\n" << std::flush;
+    }
 
+    // -------------------------------------------------------------------------
+    // Quick mic check: ACTUAL AUDIO must start flowing within 500ms
+    // This includes the time for ma_device_start() which can block on Bluetooth
+    // -------------------------------------------------------------------------
+    const int MIC_READY_TIMEOUT_MS = 500;
+    const int CHECK_INTERVAL_MS = 10;
+    const float RMS_THRESHOLD = 0.0005f;  // Very low threshold - just needs to be non-silent
+    
+    // Start timer BEFORE device start (Bluetooth init can take seconds)
+    auto checkStart = std::chrono::steady_clock::now();
+    
     if (ma_device_start(&device) != MA_SUCCESS) {
         std::cerr << "[ERROR] Failed to start microphone." << std::endl;
         ma_device_uninit(&device);
@@ -945,9 +1042,92 @@ void DemoASRMicrophone() {
         std::cin.get();
         return;
     }
+    
+    auto deviceStartTime = std::chrono::steady_clock::now();
+    auto deviceStartMs = std::chrono::duration_cast<std::chrono::milliseconds>(deviceStartTime - checkStart).count();
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] ma_device_start() took " << deviceStartMs << "ms\n" << std::flush;
+    }
+    
+    // If device start already took longer than timeout, reject immediately
+    if (deviceStartMs >= MIC_READY_TIMEOUT_MS) {
+        std::cout << "\n[ERROR] Microphone did not respond within " << MIC_READY_TIMEOUT_MS << "ms" << std::endl;
+        std::cout << "[INFO] Please select a different microphone." << std::endl;
+        
+        micCaptureActive.store(false, std::memory_order_release);
+        ma_device_stop(&device);
+        ma_device_uninit(&device);
+        ma_context_uninit(&context);
+        
+        std::cout << "\nPress Enter to continue...";
+        std::cin.get();
+        return;
+    }
+    
+    // Wait for actual audio (non-silence) to arrive
+    int checkIterations = 0;
+    while (true) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - checkStart).count();
+        
+        float currentRms = g_lastRms.load(std::memory_order_acquire);
+        int callbacks = g_callbackCount.load(std::memory_order_acquire);
+        
+        // Debug: log every 100ms
+        if (g_micDebugLogging && checkIterations % 10 == 0) {
+            std::cerr << "[MIC_DEBUG] Check @ " << elapsed << "ms: callbacks=" << callbacks 
+                      << ", RMS=" << std::fixed << std::setprecision(6) << currentRms 
+                      << ", threshold=" << RMS_THRESHOLD << "\n" << std::flush;
+        }
+        checkIterations++;
+        
+        // Check if we have actual audio
+        if (currentRms > RMS_THRESHOLD) {
+            if (g_micDebugLogging) {
+                std::cerr << "[MIC_DEBUG] Audio detected at " << elapsed << "ms with RMS=" << currentRms << "\n" << std::flush;
+            }
+            break;  // Got real audio!
+        }
+        
+        if (elapsed >= MIC_READY_TIMEOUT_MS) {
+            std::cout << "\n[ERROR] Microphone did not respond within " << MIC_READY_TIMEOUT_MS << "ms" << std::endl;
+            std::cout << "[INFO] Please select a different microphone." << std::endl;
+            
+            if (g_micDebugLogging) {
+                std::cerr << "[MIC_DEBUG] Final state: callbacks=" << callbacks << ", RMS=" << currentRms << "\n" << std::flush;
+            }
+            
+            micCaptureActive.store(false, std::memory_order_release);
+            ma_device_stop(&device);
+            ma_device_uninit(&device);
+            ma_context_uninit(&context);
+            
+            std::cout << "\nPress Enter to continue...";
+            std::cin.get();
+            return;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(CHECK_INTERVAL_MS));
+    }
+    
+    auto readyTime = std::chrono::steady_clock::now();
+    auto readyMs = std::chrono::duration_cast<std::chrono::milliseconds>(readyTime - checkStart).count();
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] Microphone ready in " << readyMs << "ms (RMS=" << g_lastRms.load() << ")\n" << std::flush;
+    }
 
     // Drain semaphore before starting
     while (responseCompleteSemaphore.try_acquire()) {}
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] Semaphore drained, entering main loop\n" << std::flush;
+    }
+    
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "Recording... (Press ENTER to stop)" << std::endl;
+    std::cout << "========================================\n" << std::endl;
 
     const int SAMPLES_PER_CHUNK = 700;  // Match WAV demo chunk size (~44ms at 16kHz)
     int chunkId = 0;
@@ -960,12 +1140,18 @@ void DemoASRMicrophone() {
     });
 
     // Main loop: pull samples from buffer, send to API
+    int loopIteration = 0;
+    int waitCount = 0;
+    auto loopStartTime = std::chrono::steady_clock::now();
+    
     while (!stopRequested.load(std::memory_order_acquire)) {
         std::vector<float> chunkSamples;
+        size_t currentBufferSize = 0;
 
         // Try to get a chunk of samples
         {
             std::lock_guard<std::mutex> lock(micBufferMutex);
+            currentBufferSize = micBuffer.size();
             if (micBuffer.size() >= SAMPLES_PER_CHUNK) {
                 chunkSamples.assign(micBuffer.begin(), micBuffer.begin() + SAMPLES_PER_CHUNK);
                 micBuffer.erase(micBuffer.begin(), micBuffer.begin() + SAMPLES_PER_CHUNK);
@@ -974,8 +1160,40 @@ void DemoASRMicrophone() {
 
         if (chunkSamples.empty()) {
             // Not enough samples yet, wait a bit
+            waitCount++;
+            if (g_micDebugLogging && (waitCount <= 10 || waitCount % 50 == 0)) {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - loopStartTime).count();
+                std::cerr << "[MIC_DEBUG] Loop wait #" << waitCount 
+                          << " @ " << elapsed << "ms"
+                          << ": bufferSize=" << currentBufferSize 
+                          << ", need=" << SAMPLES_PER_CHUNK 
+                          << ", callbacks=" << g_callbackCount.load()
+                          << std::endl;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             continue;
+        }
+
+        loopIteration++;
+        
+        // Calculate RMS of chunk being sent
+        float chunkRms = 0.0f;
+        for (const auto& sample : chunkSamples) {
+            chunkRms += sample * sample;
+        }
+        chunkRms = std::sqrt(chunkRms / chunkSamples.size());
+        
+        if (g_micDebugLogging && (loopIteration <= 5 || loopIteration % 20 == 0)) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - loopStartTime).count();
+            std::cerr << "[MIC_DEBUG] Sending chunk #" << chunkId 
+                      << " (loop #" << loopIteration << ")"
+                      << " @ " << elapsed << "ms"
+                      << ": samples=" << chunkSamples.size()
+                      << ", RMS=" << std::fixed << std::setprecision(6) << chunkRms
+                      << ", remainingBuffer=" << currentBufferSize - SAMPLES_PER_CHUNK
+                      << std::endl;
         }
 
         // Reset for this chunk
@@ -1017,9 +1235,25 @@ void DemoASRMicrophone() {
         }
 
         // Wait for response
+        auto waitStart = std::chrono::steady_clock::now();
         responseCompleteSemaphore.acquire();
+        auto waitEnd = std::chrono::steady_clock::now();
+        
+        if (g_micDebugLogging && (loopIteration <= 5 || loopIteration % 20 == 0)) {
+            auto waitMs = std::chrono::duration_cast<std::chrono::milliseconds>(waitEnd - waitStart).count();
+            std::lock_guard<std::mutex> lock(responseMutex);
+            std::cerr << "[MIC_DEBUG] Chunk #" << chunkId << " response received in " << waitMs << "ms"
+                      << ", response='" << (currentResponse.length() > 60 ? currentResponse.substr(0, 60) + "..." : currentResponse) << "'"
+                      << std::endl;
+        }
 
         chunkId++;
+    }
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] Main loop exited: totalChunks=" << chunkId 
+                  << ", totalCallbacks=" << g_callbackCount.load() 
+                  << std::endl;
     }
 
     // Stop microphone and clean up
@@ -1036,12 +1270,34 @@ void DemoASRMicrophone() {
     // Send STOP to get final transcription
     std::cout << "\n[INFO] Finalizing transcription..." << std::endl;
 
-    // Drain semaphore
-    while (responseCompleteSemaphore.try_acquire()) {}
+    // IMPORTANT: Set waiting mode FIRST to prevent race conditions with in-flight callbacks
+    // Any callbacks that arrive after this will NOT release the semaphore unless they're ASR_FINAL
+    waitingForAsrFinal.store(true, std::memory_order_release);
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] STOP phase: waitingForAsrFinal set to TRUE\n" << std::flush;
+    }
+    
+    // Give in-flight callbacks time to complete before draining
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Drain semaphore - now safe because new callbacks won't release unless ASR_FINAL
+    int drainCount = 0;
+    while (responseCompleteSemaphore.try_acquire()) { drainCount++; }
+    
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] STOP phase: drained " << drainCount << " semaphore tokens\n" << std::flush;
+    }
 
     {
         std::lock_guard<std::mutex> lock(responseMutex);
+        if (g_micDebugLogging) {
+            std::cerr << "[MIC_DEBUG] STOP phase: currentResponse before clear = '" 
+                      << (currentResponse.length() > 60 ? currentResponse.substr(0, 60) + "..." : currentResponse)
+                      << "'\n" << std::flush;
+        }
         currentResponse.clear();
+        lastAsrFinalResponse.clear();
         responseCompleted = false;
         firstTokenReceived = false;
         callbackFinished = false;
@@ -1053,25 +1309,84 @@ void DemoASRMicrophone() {
     strncpy_s(stopSettings.content, sizeof(stopSettings.content), "STOP:", 5);
     stopSettings.completed = 0;
 
+    if (g_micDebugLogging) {
+        std::cerr << "[MIC_DEBUG] Sending STOP command (waitingForAsrFinal=true)...\n" << std::flush;
+    }
+    
     NvAPI_Status status = NvAPI_RequestRise(&stopSettings);
     if (status == NVAPI_OK) {
-        // Wait for final transcription
-        responseCompleteSemaphore.acquire();
+        if (g_micDebugLogging) {
+            std::cerr << "[MIC_DEBUG] STOP sent successfully, waiting for ASR_FINAL (timeout: 10s)...\n" << std::flush;
+        }
+        
+        // Wait for ASR_FINAL with timeout
+        auto waitStart = std::chrono::steady_clock::now();
+        const int TIMEOUT_MS = 10000;  // 10 second timeout
+        bool gotResponse = false;
+        
+        // Poll with timeout since our semaphore doesn't support timed wait
+        while (!gotResponse) {
+            // Try to acquire with small sleep intervals
+            if (responseCompleteSemaphore.try_acquire()) {
+                gotResponse = true;
+                break;
+            }
+            
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - waitStart).count();
+            
+            if (elapsed >= TIMEOUT_MS) {
+                if (g_micDebugLogging) {
+                    std::cerr << "[MIC_DEBUG] Timeout waiting for ASR_FINAL after " << elapsed << "ms\n" << std::flush;
+                }
+                break;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        
+        auto waitEnd = std::chrono::steady_clock::now();
+        auto waitMs = std::chrono::duration_cast<std::chrono::milliseconds>(waitEnd - waitStart).count();
+        
+        // Disable ASR_FINAL waiting mode
+        waitingForAsrFinal.store(false, std::memory_order_release);
+        
+        if (g_micDebugLogging) {
+            std::cerr << "[MIC_DEBUG] Wait completed in " << waitMs << "ms, gotResponse=" << gotResponse << "\n" << std::flush;
+        }
 
         std::lock_guard<std::mutex> lock(responseMutex);
-        if (currentResponse.find("ASR_FINAL:") == 0) {
-            std::string finalTranscript = currentResponse.substr(10);
+        
+        // Use lastAsrFinalResponse if available, otherwise check currentResponse
+        std::string finalResponse = !lastAsrFinalResponse.empty() ? lastAsrFinalResponse : currentResponse;
+        
+        if (g_micDebugLogging) {
+            std::cerr << "[MIC_DEBUG] lastAsrFinalResponse = '" << lastAsrFinalResponse << "'\n" << std::flush;
+            std::cerr << "[MIC_DEBUG] currentResponse = '" << currentResponse << "'\n" << std::flush;
+            std::cerr << "[MIC_DEBUG] Using finalResponse = '" << finalResponse << "'\n" << std::flush;
+        }
+        
+        if (finalResponse.find("ASR_FINAL:") == 0) {
+            std::string finalTranscript = finalResponse.substr(10);
             std::cout << "\n========================================" << std::endl;
             std::cout << "FINAL TRANSCRIPTION:" << std::endl;
             std::cout << "========================================" << std::endl;
             std::cout << finalTranscript << std::endl;
             std::cout << "========================================\n" << std::endl;
-        } else if (!currentResponse.empty()) {
-            std::cout << "\nFinal: " << currentResponse << std::endl;
+        } else if (!finalResponse.empty()) {
+            std::cout << "\nFinal: " << finalResponse << std::endl;
+        } else {
+            std::cout << "\n[WARN] No transcription received (timeout or no speech detected)" << std::endl;
+            if (g_micDebugLogging) {
+                std::cerr << "[MIC_DEBUG] WARNING: Final response was empty!\n" << std::flush;
+            }
         }
     } else {
-        std::cerr << "\n[ERROR] Failed to send STOP signal" << std::endl;
+        std::cerr << "\n[ERROR] Failed to send STOP signal (status=" << status << ")" << std::endl;
     }
+    
+    // Ensure flag is reset
+    waitingForAsrFinal.store(false, std::memory_order_release);
 
     std::cout << "\nPress Enter to continue...";
     std::cin.get();
