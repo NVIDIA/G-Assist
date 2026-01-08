@@ -123,6 +123,28 @@ client = None
 model: str = 'gemini-pro'
 SETUP_COMPLETE = False
 conversation_history = []  # Stores {"role": "user/assistant", "content": "..."}
+PENDING_CALL: Optional[dict] = None  # {"func": callable, "args": {...}}
+
+
+def store_pending_call(func, **kwargs):
+    """Store a function call to execute after setup completes."""
+    global PENDING_CALL
+    PENDING_CALL = {"func": func, "args": kwargs}
+    logger.info(f"[SETUP] Stored pending call: {func.__name__}({kwargs})")
+
+
+def execute_pending_call() -> Optional[str]:
+    """Execute the stored pending call if one exists. Returns result or None."""
+    global PENDING_CALL
+    if not PENDING_CALL:
+        return None
+    
+    func = PENDING_CALL["func"]
+    args = PENDING_CALL["args"]
+    PENDING_CALL = None  # Clear before executing
+    
+    logger.info(f"[SETUP] Executing pending call: {func.__name__}({args})")
+    return func(_from_pending=True, **args)
 
 # ============================================================================
 # PLUGIN DEFINITION
@@ -371,7 +393,7 @@ I'll stay in conversation mode - just keep typing your questions!
 Type "exit" to leave Gemini mode."""
     
     # Show setup instructions
-    message = """_
+    message = f"""_
 **Gemini Plugin - First Time Setup**
 
 Welcome! Let's get your Google Gemini API key. This takes about **1 minute**.
@@ -392,12 +414,15 @@ I'm opening Google AI Studio in your browser...
 
 **Step 2: Save Your Key**
 
-I'm opening the key file in Notepad...
+I'm opening the key file for you:
+```
+{API_KEY_FILE}
+```
 
 1. Paste your API key
 2. Save the file
 
-Save the file and try your query again!\r"""
+Say **"next"** or **"continue"** when you've saved the file, and I'll complete your original request.\r"""
     
     try:
         # Open browser
@@ -449,7 +474,7 @@ Save the file and try your query again!\r"""
 # ============================================================================
 
 @plugin.command("query_gemini")
-def query_gemini(query: str = None, context: Context = None, _from_on_input: bool = False):
+def query_gemini(query: str = None, context: Context = None, _from_on_input: bool = False, _from_pending: bool = False):
     """
     Handle Gemini query with optional web search.
     
@@ -457,6 +482,7 @@ def query_gemini(query: str = None, context: Context = None, _from_on_input: boo
         query: The user's question
         context: Conversation history
         _from_on_input: Internal flag - True when called from on_input (italics already escaped)
+        _from_pending: Internal flag - True when called from execute_pending_call
     """
     global API_KEY, client, SETUP_COMPLETE, conversation_history
     
@@ -464,8 +490,9 @@ def query_gemini(query: str = None, context: Context = None, _from_on_input: boo
     if not SETUP_COMPLETE or not client:
         logger.info("[QUERY] API not initialized, attempting to load API key...")
         if not load_api_key():
-            # Key doesn't exist or is invalid - run setup wizard
-            logger.info("[QUERY] API key not configured, running setup wizard")
+            # Key doesn't exist or is invalid - store pending call and run setup wizard
+            logger.info("[QUERY] API key not configured, storing pending call and running setup wizard")
+            store_pending_call(query_gemini, query=query, context=context)
             return run_setup_wizard()
     
     load_model_config()
@@ -473,7 +500,7 @@ def query_gemini(query: str = None, context: Context = None, _from_on_input: boo
     logger.info(f"GEMINI: Processing query: {query[:50] if query else 'None'}...")
     
     # Send immediate acknowledgment
-    if not _from_on_input:
+    if not _from_on_input and not _from_pending:
         plugin.stream("_ ")  # Close engine's italic
     plugin.stream("_Searching..._")
     
@@ -533,18 +560,32 @@ def on_input(content: str):
     
     logger.info(f"[INPUT] Received: {content[:50]}...")
     
-    # If setup isn't complete, try to load API key and process the query directly
+    # If setup isn't complete, try to load API key and execute pending call
     if not SETUP_COMPLETE:
         logger.info("[INPUT] Setup not complete, verifying API key...")
         if load_api_key():
-            # Key is valid - stream confirmation and process the query immediately
-            logger.info("[INPUT] API key verified, processing user query...")
+            # Key is valid - stream confirmation and execute the pending call
+            logger.info("[INPUT] API key verified, executing pending call...")
             plugin.stream("_ ")  # Close engine's italic
             plugin.stream("_Gemini plugin configured!_\n\n")
-            conversation_history.append({"role": "user", "content": content})
-            return query_gemini(query=content, _from_on_input=True)
+            result = execute_pending_call()
+            if result is not None:
+                return result
+            # No pending call - show ready message
+            plugin.set_keep_session(True)
+            return "You're all set! Ask me anything."
         else:
-            return run_setup_wizard()
+            plugin.set_keep_session(True)
+            return (
+                "**API key not found.**\n\n"
+                "The key file is still empty or invalid.\n\n"
+                "---\n\n"
+                "Please make sure you:\n"
+                "1. Pasted your **API key** from Google AI Studio\n"
+                "2. **Saved** the file\n\n"
+                f"_Key file:_ `{API_KEY_FILE}`\n\n"
+                "Say **\"next\"** or **\"continue\"** when ready."
+            )
     
     # Check for exit commands (only after setup is complete)
     exit_commands = ['exit', 'quit', 'stop', 'bye', 'done', 'exit gemini', 
