@@ -3,6 +3,7 @@
   "executable": "g-assist-plugin-logiled.exe",
   "persistent": true,
   "name": "logiled",
+  "protocol_version": "2.0",
   "description": "Control Logitech RGB lighting devices including keyboards, mice, and headsets.",
   "functions": [
     {
