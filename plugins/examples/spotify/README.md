@@ -32,11 +32,21 @@ Make sure you have:
 2. Click "Create App" and enter:
    - App Name: G-Assist Spotify Plugin
    - App Description: Spotify integration for G-Assist
-   - Redirect URI: "http://127.0.0.1:8888/callback"
+   - Redirect URI: `http://127.0.0.1:8888/callback`
    - Select "Web API" in Permissions
 3. Accept the Developer Terms of Service and create the app
 
-💡 **Important**: The Redirect URI MUST be exactly `http://127.0.0.1:8888/callback` (use IP address, not "localhost")!
+⚠️ **IMPORTANT - Redirect URI Must Match Exactly!**
+
+The Redirect URI **MUST** be exactly: `http://127.0.0.1:8888/callback`
+
+| ❌ Won't Work | ✅ Use This |
+|--------------|-------------|
+| `http://localhost:8888/callback` | `http://127.0.0.1:8888/callback` |
+| `https://127.0.0.1:8888/callback` | `http://127.0.0.1:8888/callback` |
+| `http://127.0.0.1:8888/callback/` | `http://127.0.0.1:8888/callback` |
+
+Spotify requires an **exact string match**. Using `localhost` instead of `127.0.0.1` will cause an "INVALID_CLIENT: Invalid redirect URI" error.
 
 ### Step 3: Configure the Plugin
 Create a `config.json` file with your app credentials:
@@ -75,7 +85,7 @@ Once installed, you can control Spotify through G-Assist. Try these commands:
 - Start Playback: `Hey Spotify, play my music!`
 - Play a song: `Hey Spotify, play Life Itself by Glass Animals`
 - Play an album: `Hey Spotify, play reputation by Taylor Swift`
-- Play a playlist: `Hey Spotify play my Gametime Music playlist`
+- Play an artist: `Hey Spotify, play Taylor Swift`
 
 ### Playback
 - Pause playback: `Hey Spotify, pause it`
@@ -97,7 +107,7 @@ The plugin uses **fully automated OAuth 2.0** authentication. No manual steps re
    - A browser window will open automatically
    - Log in to Spotify and authorize the app
    - **That's it!** The plugin automatically:
-     - Catches the OAuth callback on localhost:8888
+     - Catches the OAuth callback on 127.0.0.1:8888
      - Exchanges the code for access/refresh tokens
      - Saves tokens to `auth.json`
      - Retries your original command
@@ -112,7 +122,7 @@ The plugin uses **fully automated OAuth 2.0** authentication. No manual steps re
 3. **Troubleshooting Authentication**
    - If you see authentication errors, delete `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
    - The plugin will re-authenticate automatically on next use
-   - Check the log file at `%USERPROFILE%\spotify-plugin.log` for detailed error messages
+   - Check the log file at `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\spotify-plugin.log` for detailed error messages
    - Make sure port 8888 is not blocked by firewall
 
 💡 **Tip**: The entire OAuth flow is automated - just authorize once in the browser and you're done!
@@ -132,33 +142,34 @@ The plugin includes these main functions:
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\spotify-plugin.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\spotify-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
 
 ## Troubleshooting Tips
 - **Plugin not working?** Verify all files are copied to the plugins folder and restart G-Assist
 - **Can't authenticate?** Double-check your client ID and secret in config.json, delete auth.json
+- **"INVALID_CLIENT: Invalid redirect URI" error?** Your Spotify app's redirect URI doesn't match exactly. Make sure it's `http://127.0.0.1:8888/callback` (not `localhost`, not `https`, no trailing slash)
 
 ## Developer Documentation
 
 ### Architecture Overview
-The Spotify plugin is implemented as a Python-based service that communicates with Spotify's Web API to handle interactions for music playback control, playlist management, and user information retrieval.
+The Spotify plugin is built using the G-Assist SDK (`gassist_sdk`) and communicates with Spotify's Web API for music playback control and user information retrieval.
 
 ### Core Components
 
-### Core Components
+#### Plugin Setup
+The plugin uses the SDK's decorator-based command registration:
+```python
+from gassist_sdk import Plugin
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
+plugin = Plugin(name="spotify", version="2.0.0", description="Control Spotify playback")
 
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
+@plugin.command("spotify_start_playback")
+def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""):
+    # Implementation
+    pass
+```
 
 ### Configuration
 
@@ -169,78 +180,62 @@ The Spotify plugin is implemented as a Python-based service that communicates wi
   ```json
   {
     "client_id": "your_client_id",
-    "client_secret": "your_client_secret",
-    "username": "your_spotify_username"
+    "client_secret": "your_client_secret"
   }
   ```
 
 #### Available Commands
 
 ##### Playback Control
-- `execute_play_command()`: Start/resume playback
-  - Supports tracks, albums, playlists
-  - Handles device selection
+- `spotify_start_playback()`: Start/resume playback
+  - Supports tracks, albums, and artists
+  - Handles device selection and search
   - Parameters: type, name, artist
-- `execute_pause_command()`: Pause playback
-- `execute_next_track_command()`: Skip to next track
-- `execute_previous_track_command()`: Go to previous track
-- `execute_shuffle_command()`: Toggle shuffle mode
-- `execute_volume_command()`: Adjust volume (0-100)
+- `spotify_pause_playback()`: Pause playback
+- `spotify_next_track()`: Skip to next track
+- `spotify_previous_track()`: Go to previous track
+- `spotify_shuffle_playback()`: Toggle shuffle mode
+- `spotify_set_volume()`: Adjust volume (0-100)
+- `spotify_queue_track()`: Add track to queue
 
 ##### Information Retrieval
-- `execute_currently_playing_command()`: Get current track info
-- `execute_get_user_playlists_command()`: List user playlists
-- `get_device()`: Get active playback device (helper function)
+- `spotify_get_currently_playing()`: Get current track info
+- `spotify_get_user_playlists()`: List user playlists
 
-##### Search Functions
-- `get_track_uri()`: Search for tracks (helper function)
-- `get_album_uri()`: Search for albums (helper function)
-- `get_playlist_uri()`: Search for playlists (helper function)
-- `get_generic_uri()`: Generic search with artist support (helper function)
+##### Helper Functions
+- `spotify_api()`: Core function for making authenticated API calls
+- `get_device_id()`: Get active playback device
+- `do_oauth_flow()`: Perform OAuth 2.0 authorization
+- `refresh_token()`: Refresh expired access tokens
 
-#### Key Functions
-
-##### Main Entry Point (`main()`)
-- Initializes the plugin and enters command processing loop
-- Handles command routing and response generation
-- Manages authentication state
-- Supports commands: `initialize`, `shutdown`, `authorize`, and various Spotify control commands
-
-##### Authentication Flow
-1. `execute_initialize_command()`: Initiates OAuth flow
-2. `authorize_user()`: Opens browser for user login
-3. `complete_auth_user()`: Handles OAuth callback and token management
-4. Token storage in `auth.json`
-
-##### Spotify API Integration
-- `call_spotify_api()`: Core function for making authenticated API calls
-- Handles GET, POST, and PUT requests
-- Manages authentication headers and error handling
-- Base URL: `https://api.spotify.com/v1`
+#### Authentication Flow
+1. First command triggers setup wizard if not configured
+2. `do_oauth_flow()`: Opens browser, starts local callback server
+3. User authorizes in browser, callback receives auth code
+4. Code exchanged for access/refresh tokens
+5. Tokens saved to `auth.json` for future use
+6. Automatic token refresh on 401 errors
 
 #### Authentication State
 - Stored in `auth.json`
 - Location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\auth.json`
-- Contains OAuth state and tokens
+- Contains access_token and refresh_token
 
 ### Logging
-- Log file: `%USERPROFILE%\spotify-plugin.log`
+- Log file: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\spotify\spotify-plugin.log`
 - Log level: INFO
 - Format: `%(asctime)s - %(levelname)s - %(message)s`
-- Comprehensive logging for debugging and error tracking
 
 ### Error Handling
-- API error responses are captured and logged
-- User-friendly error messages
-- Fallback mechanisms for common issues
-- Detailed error logging with stack traces
+- API errors are logged with status codes and response bodies
+- User-friendly error messages returned to G-Assist
+- Automatic re-authentication on 401 errors
+- Premium-required (403) errors handled gracefully
 
 ### Adding New Features
-To add new features:
-1. Add new command to `generate_command_handlers()`
-2. Implement corresponding execute function
-3. Add proper error handling and logging
-4. Update the manifest.json with new function definition:
+1. Create a new function with the `@plugin.command()` decorator
+2. Add proper error handling and logging
+3. Update `manifest.json` with the new function definition:
    ```json
    {
       "name": "new_command",
@@ -254,25 +249,8 @@ To add new features:
       }
    }
    ```
-5. Test the feature:
-   - First, run the script:
-      ``` bash
-      python plugin.py
-      ```
-   - Test initialization and authentication
-
-   - Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```   
-   - Verify error handling
-   - Check logging output
-6. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Test locally by running `python plugin.py`
+5. Build and install the updated plugin
 
 
 ## Want to Contribute?

@@ -20,7 +20,7 @@ import json
 import logging
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlencode, urlparse, parse_qs
 import threading
 import time
@@ -74,209 +74,51 @@ CLIENT_ID: Optional[str] = None
 CLIENT_SECRET: Optional[str] = None
 ACCESS_TOKEN: Optional[str] = None
 REFRESH_TOKEN: Optional[str] = None
+SETUP_COMPLETE = False
 WIZARD_STEP = 0
-
-# Spotify app credentials (loaded from config.json in main())
-CLIENT_ID = None
-CLIENT_SECRET = None
-USERNAME = None
+PENDING_CALL: Optional[Dict[str, Any]] = None  # {"func": callable, "args": {...}}
 
 # OAuth callback server state
 oauth_callback_code = None
 oauth_callback_error = None
 oauth_server_running = False
 
-# Setup state machine
-class SetupState:
-    """Persistent setup state machine for plugin configuration"""
-    UNCONFIGURED = "unconfigured"                    # No app credentials
-    WAITING_APP_CREATION = "waiting_app_creation"    # User creating Spotify app
-    WAITING_CREDENTIALS = "waiting_credentials"       # User entering credentials
-    NEED_USER_AUTH = "need_user_auth"                # Need OAuth tokens
-    WAITING_OAUTH = "waiting_oauth"                  # User authorizing in browser
-    CONFIGURED = "configured"                         # Fully set up
+
+def store_pending_call(func: Callable, **kwargs):
+    """Store a function call to execute after setup completes."""
+    global PENDING_CALL
+    PENDING_CALL = {"func": func, "args": kwargs}
+    logger.info(f"[SETUP] Stored pending call: {func.__name__}({kwargs})")
+
+
+def execute_pending_call() -> Optional[str]:
+    """Execute the stored pending call if one exists. Returns result or None."""
+    global PENDING_CALL
+    if not PENDING_CALL:
+        return None
     
-    def __init__(self, state_file):
-        self.state_file = state_file
-        self.current_state = self.UNCONFIGURED
-        self.completed_steps = []
-        self.last_error = None
-        self.retry_count = 0
-        self.timestamp = None
-        self.load()
+    func = PENDING_CALL["func"]
+    args = PENDING_CALL["args"]
+    PENDING_CALL = None  # Clear before executing
     
-    def load(self):
-        """Load state from disk"""
-        try:
-            if os.path.exists(self.state_file):
-                with open(self.state_file, 'r') as f:
-                    data = json.load(f)
-                    self.current_state = data.get('current_state', self.UNCONFIGURED)
-                    self.completed_steps = data.get('completed_steps', [])
-                    self.last_error = data.get('last_error')
-                    self.retry_count = data.get('retry_count', 0)
-                    self.timestamp = data.get('timestamp')
-                    logging.info(f"[STATE] Loaded state: {self.current_state}")
-        except Exception as e:
-            logging.error(f"[STATE] Error loading state: {e}")
-    
-    def save(self):
-        """Save state to disk"""
-        try:
-            import time
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            data = {
-                'current_state': self.current_state,
-                'completed_steps': self.completed_steps,
-                'last_error': self.last_error,
-                'retry_count': self.retry_count,
-                'timestamp': time.time()
-            }
-            with open(self.state_file, 'w') as f:
-                json.dump(data, f, indent=2)
-            logging.info(f"[STATE] Saved state: {self.current_state}")
-        except Exception as e:
-            logging.error(f"[STATE] Error saving state: {e}")
-    
-    def advance(self, new_state, completed_step=None):
-        """Advance to new state"""
-        self.current_state = new_state
-        if completed_step and completed_step not in self.completed_steps:
-            self.completed_steps.append(completed_step)
-        self.retry_count = 0
-        self.last_error = None
-        self.save()
-    
-    def record_error(self, error):
-        """Record error and increment retry count"""
-        self.last_error = error
-        self.retry_count += 1
-        self.save()
-    
-    def reset(self):
-        """Reset to unconfigured state"""
-        self.current_state = self.UNCONFIGURED
-        self.completed_steps = []
-        self.last_error = None
-        self.retry_count = 0
-        self.save()
-
-# Global setup state
-SETUP_STATE = None
-
-# Helper response generators (defined early for use throughout the code)
-def generate_message_response(message: str, awaiting_input: bool = False) -> dict:
-    """
-    Generate a message response.
-    
-    PHASE 3: Tethered Mode Protocol
-    - awaiting_input=True: Plugin needs more user interaction, stay in passthrough
-    - awaiting_input=False: Plugin is done, exit passthrough mode
-    """
-    return {
-        'success': True,  # Always include success for protocol compliance
-        'message': message,
-        'awaiting_input': awaiting_input
-    }
-
-def generate_success_response(body: dict = None, awaiting_input: bool = False) -> dict:
-    """Generate a success response with optional data"""
-    response = body.copy() if body is not None else dict()
-    response['success'] = True
-    response['awaiting_input'] = awaiting_input  # PHASE 3
-    return response
-
-def generate_failure_response(body: dict = None) -> dict:
-    """Generate a failure response with optional data"""
-    response = body.copy() if body is not None else dict()
-    response['success'] = False
-    response['awaiting_input'] = False  # PHASE 3: Always exit on failure
-    return response
-
-# PHASE 1: Tethered Mode - Heartbeat and Status Messages
-def send_heartbeat(state="ready"):
-    """Send silent heartbeat to engine (not visible to user)"""
-    try:
-        heartbeat_msg = {
-            "type": "heartbeat",
-            "state": state,
-            "timestamp": time.time()
-        }
-        write_response(heartbeat_msg)
-        logging.info(f"[HEARTBEAT] Sent heartbeat: state={state}")
-    except Exception as e:
-        logging.error(f"[HEARTBEAT] Error: {e}")
-
-def send_status_message(message):
-    """Send status update visible to user"""
-    try:
-        status_msg = {
-            "type": "status",
-            "message": message
-        }
-        write_response(status_msg)
-        logging.info(f"[STATUS] Sent: {message[:50]}...")
-    except Exception as e:
-        logging.error(f"[STATUS] Error: {e}")
-
-def send_state_change(new_state):
-    """Notify engine of state transition"""
-    try:
-        state_msg = {
-            "type": "state_change",
-            "new_state": new_state
-        }
-        write_response(state_msg)
-        logging.info(f"[STATE] Changed to: {new_state}")
-    except Exception as e:
-        logging.error(f"[STATE] Error: {e}")
-
-def start_continuous_heartbeat(state="ready", interval=5, show_dots=True):
-    """
-    Start background thread that sends periodic heartbeats.
-    
-    Args:
-        state: Heartbeat state ("onboarding" or "ready")
-        interval: Seconds between heartbeats
-        show_dots: If True, send visible status dots. If False, send silent heartbeats only.
-    """
-    stop_continuous_heartbeat()
-
-    STATE["heartbeat_message"] = state
-    STATE["heartbeat_active"] = True
-
-    def heartbeat_loop():
-        while STATE["heartbeat_active"]:
-            time.sleep(interval)
-            if STATE["heartbeat_active"]:
-                send_heartbeat(STATE["heartbeat_message"])
-                if show_dots:
-                    send_status_message(".")
-
-    thread = threading.Thread(target=heartbeat_loop, daemon=True)
-    STATE["heartbeat_thread"] = thread
-    thread.start()
-    logging.info(f"[HEARTBEAT] Started continuous heartbeat: state={state}, interval={interval}s, show_dots={show_dots}")
-
-def stop_continuous_heartbeat():
-    """Stop background heartbeat thread"""
-    STATE["heartbeat_active"] = False
-    thread = STATE.get("heartbeat_thread")
-    if thread and thread.is_alive():
-        thread.join(timeout=1)
-    STATE["heartbeat_thread"] = None
-    logging.info("[HEARTBEAT] Stopped continuous heartbeat")
+    logger.info(f"[SETUP] Executing pending call: {func.__name__}({args})")
+    return func(_from_pending=True, **args)
 
 
 def load_config() -> Dict[str, Any]:
     """Load Spotify configuration."""
-    global CLIENT_ID, CLIENT_SECRET
+    global CLIENT_ID, CLIENT_SECRET, SETUP_COMPLETE
     try:
         if os.path.isfile(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
                 config = json.load(f)
             CLIENT_ID = config.get("client_id", "")
             CLIENT_SECRET = config.get("client_secret", "")
+            
+            if CLIENT_ID and len(CLIENT_ID) > 20 and \
+               CLIENT_SECRET and len(CLIENT_SECRET) > 20:
+                SETUP_COMPLETE = True
+                logger.info("Config loaded successfully")
             return config
     except Exception as e:
         logger.error(f"Error loading config: {e}")
@@ -325,49 +167,52 @@ def get_redirect_uri() -> str:
     return f"http://127.0.0.1:{port}/callback"
 
 
-def get_setup_step1() -> str:
-    """First setup step - create Spotify app."""
+def get_setup_instructions_step1() -> str:
+    """Return first step of setup wizard."""
     return f"""_
-**Spotify Plugin - Setup (1/2)**
+**Spotify Plugin - First Time Setup (1/2)**
 
-Let's set up your Spotify plugin. This takes about **2 minutes**.
+Welcome! Let's set up your Spotify app. This takes about **2 minutes**.
 
 ---
 
-**Step 1: Create a Spotify App**
+**Create Your Spotify App**
 
-I'm opening the Spotify Developer Dashboard now...
+I'm opening the Spotify Developer Dashboard for you now...
 
-1. Click **Create App**
-2. Fill in:
+1. Log in with your Spotify account
+2. Click **Create App**
+3. Fill in the form:
    - App Name: `G-Assist Spotify`
    - Redirect URI: `{get_redirect_uri()}`
    - Select **Web API** checkbox
-3. Click **Create**
+4. Click **Create**
 
-When done, send me any message to continue!\r"""
+Say **"next"** or **"continue"** when you're ready for the next step.\r"""
 
 
-def get_setup_step2() -> str:
-    """Second setup step - enter credentials."""
+def get_setup_instructions_step2() -> str:
+    """Return second step of setup wizard."""
     return f"""_
-**Spotify Plugin - Setup (2/2)**
+**Spotify Plugin - First Time Setup (2/2)**
 
 Great! Now let's add your credentials.
 
 ---
 
-**Step 2: Get Your Credentials**
+**Get Your Credentials**
 
 1. Click **Settings** in your app
 2. Copy your **Client ID**
 3. Click **View client secret** and copy it
 
+_(Keep your client secret private!)_
+
 ---
 
-**Step 3: Configure the Plugin**
+**Add Them to the Config File**
 
-Open the config file at:
+I'm opening the config file for you:
 ```
 {CONFIG_FILE}
 ```
@@ -376,12 +221,11 @@ Paste your credentials:
 ```
 {{
   "client_id": "YOUR_CLIENT_ID_HERE",
-  "client_secret": "YOUR_CLIENT_SECRET_HERE",
-  "username": "your_spotify_username"
+  "client_secret": "YOUR_CLIENT_SECRET_HERE"
 }}
 ```
 
-Save the file and try the command again!\r"""
+Say **"next"** or **"continue"** when you've saved the file, and I'll complete your original request.\r"""
 
 
 # OAuth Callback Handler
@@ -420,6 +264,8 @@ def do_oauth_flow() -> tuple[bool, str]:
     global oauth_callback_code, oauth_callback_error, oauth_server_running
     global ACCESS_TOKEN, REFRESH_TOKEN
     
+    logger.info("Starting OAuth flow...")
+    
     oauth_callback_code = None
     oauth_callback_error = None
     oauth_server_running = True
@@ -428,19 +274,32 @@ def do_oauth_flow() -> tuple[bool, str]:
     port = config.get("redirect_port", 8888)
     
     # Start callback server
-    server = HTTPServer(('127.0.0.1', port), OAuthCallbackHandler)
+    try:
+        server = HTTPServer(('127.0.0.1', port), OAuthCallbackHandler)
+        logger.info(f"Started callback server on port {port}")
+    except Exception as e:
+        logger.error(f"Failed to start callback server: {e}")
+        return False, f"Could not start auth server on port {port}. Is it in use?"
+    
     server_thread = threading.Thread(target=lambda: server.handle_request(), daemon=True)
     server_thread.start()
     
     # Open auth URL
+    redirect_uri = get_redirect_uri()
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
-        "redirect_uri": get_redirect_uri(),
+        "redirect_uri": redirect_uri,
         "scope": SCOPE,
     }
     auth_url = f"{AUTHORIZATION_URL}?{urlencode(params)}"
-    webbrowser.open(auth_url)
+    logger.info(f"Opening auth URL with redirect_uri: {redirect_uri}")
+    
+    try:
+        webbrowser.open(auth_url)
+    except Exception as e:
+        logger.error(f"Failed to open browser: {e}")
+        return False, f"Could not open browser: {e}"
     
     # Wait for callback
     timeout = 120
@@ -448,30 +307,40 @@ def do_oauth_flow() -> tuple[bool, str]:
     while oauth_server_running and (time.time() - start) < timeout:
         time.sleep(0.5)
     
+    elapsed = time.time() - start
+    logger.info(f"OAuth wait completed after {elapsed:.1f}s. code={bool(oauth_callback_code)}, error={oauth_callback_error}")
+    
     if oauth_callback_code:
         # Exchange code for tokens
         try:
+            logger.info("Exchanging code for tokens...")
             response = requests.post(AUTH_URL, data={
                 "grant_type": "authorization_code",
                 "code": oauth_callback_code,
-                "redirect_uri": get_redirect_uri(),
+                "redirect_uri": redirect_uri,
                 "client_id": CLIENT_ID,
                 "client_secret": CLIENT_SECRET,
             })
             data = response.json()
+            logger.info(f"Token response keys: {data.keys()}")
             if "access_token" in data:
                 ACCESS_TOKEN = data["access_token"]
                 REFRESH_TOKEN = data.get("refresh_token")
                 save_tokens()
+                logger.info("OAuth successful!")
                 return True, "Successfully authenticated with Spotify!"
             else:
-                return False, f"Token exchange failed: {data}"
+                logger.error(f"Token exchange failed: {data}")
+                return False, f"Token exchange failed: {data.get('error_description', data)}"
         except Exception as e:
+            logger.error(f"OAuth error: {e}")
             return False, f"OAuth error: {e}"
     elif oauth_callback_error:
+        logger.error(f"OAuth callback error: {oauth_callback_error}")
         return False, f"Authorization failed: {oauth_callback_error}"
     else:
-        return False, "Authorization timeout"
+        logger.error("OAuth timeout - no callback received")
+        return False, "Authorization timeout - did the browser open? Check your redirect URI in Spotify Dashboard."
 
 
 def refresh_token() -> bool:
@@ -562,32 +431,40 @@ plugin = Plugin(
 # COMMANDS
 # ============================================================================
 @plugin.command("spotify_start_playback")
-def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""):
+def spotify_start_playback(name: str = "", type: str = "track", artist: str = "", _from_pending: bool = False):
     """
     Start or resume Spotify playback.
     
     Args:
-        name: Track/album/playlist name to play
-        type: Content type (track, album, playlist)
+        name: Track/album/artist name to play
+        type: Content type (track, album, artist)
         artist: Artist name for better matching
+        _from_pending: Internal flag, True when called from execute_pending_call
     """
+    global SETUP_COMPLETE
+    
     load_config()
     load_tokens()
     
-    if not is_configured():
+    if not SETUP_COMPLETE or not CLIENT_ID or not CLIENT_SECRET:
+        global WIZARD_STEP
+        WIZARD_STEP = 0  # Reset in case of re-setup
+        store_pending_call(spotify_start_playback, name=name, type=type, artist=artist)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
         plugin.set_keep_session(True)
         try:
             webbrowser.open("https://developer.spotify.com/dashboard")
         except:
             pass
-        return get_setup_step1()
+        return get_setup_instructions_step1()
     
     if not is_authenticated():
-        plugin.stream("_ ")  # Close engine's italic
+        if not _from_pending:
+            plugin.stream("_ ")  # Close engine's italic
         plugin.stream("_Starting Spotify authorization..._\n\n")
         success, msg = do_oauth_flow()
         if not success:
-            return msg  # Already escaped by prior stream
+            return msg
     
     device = get_device_id()
     if not device:
@@ -597,118 +474,309 @@ def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""
         )
     
     if name:
-        plugin.stream("_ ")  # Close engine's italic
-        plugin.stream(f"_Searching for {type}: {name}..._")
+        if not _from_pending:
+            plugin.stream("_ ")  # Close engine's italic
+        plugin.stream(f"_Searching for {type}: {name}..._\n\n")
         
-        # Search for content
-        query = f'{type}:"{name}"'
-        if artist:
-            query += f' artist:"{artist}"'
+        # Search for content - artists don't use type prefix in query
+        if type == "artist":
+            query = name
+        else:
+            query = f'{type}:"{name}"'
+            if artist:
+                query += f' artist:"{artist}"'
         
         search_url = f"/search?{urlencode({'q': query, 'type': type})}"
+        logger.info(f"Search URL: {search_url}")
         r = spotify_api(search_url)
         
         if r and r.status_code == 200:
-            data = r.json()
-            
-            uri = None
-            if type == "track" and data.get("tracks", {}).get("items"):
-                uri = data["tracks"]["items"][0]["uri"]
-                body = {"uris": [uri]}
-            elif type == "album" and data.get("albums", {}).get("items"):
-                uri = data["albums"]["items"][0]["uri"]
-                body = {"context_uri": uri}
-            elif type == "playlist" and data.get("playlists", {}).get("items"):
-                uri = data["playlists"]["items"][0]["uri"]
-                body = {"context_uri": uri}
-            else:
-                return f"Could not find {type}: {name}"
-            
-            r = spotify_api(f"/me/player/play?device_id={device}", "PUT", body)
-            if r and r.status_code in [200, 204]:
-                return f"**Now playing:** {name}"
-            else:
-                return "**Error:** Failed to start playback."
+            try:
+                data = r.json()
+                if not data:
+                    return f"Could not find {type}: {name}"
+                    
+                logger.info(f"Search response keys: {data.keys()}")
+                
+                uri = None
+                body = None
+                display_info = ""
+                
+                if type == "track":
+                    tracks_data = data.get("tracks") or {}
+                    items = tracks_data.get("items") or []
+                    # Filter out None items
+                    items = [i for i in items if i]
+                    if items:
+                        track = items[0]
+                        uri = track.get("uri")
+                        body = {"uris": [uri]}
+                        
+                        track_name = track.get("name", "Unknown Track")
+                        artists = ", ".join(a.get("name", "") for a in (track.get("artists") or []))
+                        album_data = track.get("album") or {}
+                        album_name = album_data.get("name", "")
+                        
+                        display_info = f"Now playing **{track_name}**"
+                        if artists:
+                            display_info += f" by {artists}"
+                        if album_name:
+                            display_info += f" from *{album_name}*"
+                        
+                elif type == "album":
+                    albums_data = data.get("albums") or {}
+                    items = albums_data.get("items") or []
+                    items = [i for i in items if i]
+                    if items:
+                        album = items[0]
+                        uri = album.get("uri")
+                        body = {"context_uri": uri}
+                        
+                        album_name = album.get("name", "Unknown Album")
+                        artists = ", ".join(a.get("name", "") for a in (album.get("artists") or []))
+                        total_tracks = album.get("total_tracks", 0)
+                        release_date = album.get("release_date") or ""
+                        release_year = release_date[:4] if release_date else ""
+                        
+                        display_info = f"Now playing album **{album_name}**"
+                        if artists:
+                            display_info += f" by {artists}"
+                        if release_year:
+                            display_info += f" ({release_year})"
+                        if total_tracks:
+                            display_info += f" — {total_tracks} tracks"
+                        
+                elif type == "artist":
+                    artists_data = data.get("artists") or {}
+                    items = artists_data.get("items") or []
+                    items = [i for i in items if i]
+                    if items:
+                        artist_item = items[0]
+                        uri = artist_item.get("uri")
+                        body = {"context_uri": uri}
+                        
+                        artist_name = artist_item.get("name", "Unknown Artist")
+                        genres = artist_item.get("genres") or []
+                        followers_data = artist_item.get("followers") or {}
+                        followers = followers_data.get("total", 0)
+                        
+                        display_info = f"Now playing **{artist_name}**"
+                        if genres:
+                            display_info += f" ({', '.join(genres[:2])})"
+                        if followers:
+                            display_info += f" — {followers:,} followers"
+                
+                if not uri or not body:
+                    return f"Could not find {type}: {name}"
+                
+                r = spotify_api(f"/me/player/play?device_id={device}", "PUT", body)
+                if r and r.status_code in [200, 204]:
+                    return display_info
+                elif r and r.status_code == 403:
+                    # Parse Spotify error for more info
+                    try:
+                        error_data = r.json()
+                        reason = error_data.get("error", {}).get("reason", "")
+                        if reason == "PREMIUM_REQUIRED":
+                            return "**Spotify Premium required** for playback control. Please open Spotify and start playing manually."
+                        logger.error(f"Playback 403 error: {error_data}")
+                    except:
+                        pass
+                    return "**Spotify Premium required** for playback control. Please open Spotify and start playing."
+                else:
+                    status = r.status_code if r else "No response"
+                    logger.error(f"Failed to start playback, status: {status}")
+                    return "**Error:** Failed to start playback."
+                    
+            except Exception as e:
+                import traceback
+                logger.error(f"Error processing search results: {e}\n{traceback.format_exc()}")
+                return f"Error: {e}"
         else:
+            status = r.status_code if r else "No response"
+            logger.error(f"Search failed with status: {status}")
             return f"**Error:** Search failed for: {name}"
     else:
         # Resume playback
         r = spotify_api(f"/me/player/play?device_id={device}", "PUT")
+        logger.info(f"Resume playback response: r={r is not None}, status={r.status_code if r else 'None'}")
         if r and r.status_code in [200, 204]:
-            return "Playback resumed."
+            # Get current track info
+            time.sleep(0.3)
+            
+            current = spotify_api("/me/player/currently-playing")
+            if current and current.status_code == 200:
+                data = current.json()
+                item = data.get("item", {})
+                if item:
+                    track_name = item.get("name", "Unknown")
+                    artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+                    return f"Resumed **{track_name}** by {artists}"
+            
+            return "Playback resumed"
         elif r and r.status_code == 403:
+            # Parse Spotify error for more info
+            try:
+                error_data = r.json()
+                reason = error_data.get("error", {}).get("reason", "")
+                message = error_data.get("error", {}).get("message", "")
+                logger.error(f"Resume playback 403: reason={reason}, message={message}")
+                if reason == "PREMIUM_REQUIRED":
+                    return "**Spotify Premium required** for playback control. Please open Spotify and start playing manually."
+            except Exception as e:
+                logger.error(f"Could not parse 403 response: {e}")
             return "**Spotify Premium required** for playback control. Please open Spotify and start playing."
         else:
+            status = r.status_code if r else "No response"
+            try:
+                error_body = r.json() if r else None
+                logger.error(f"Resume playback failed: status={status}, body={error_body}")
+            except:
+                logger.error(f"Resume playback failed: status={status}")
             return "**Error:** Failed to resume playback."
 
 
 @plugin.command("spotify_pause_playback")
 def spotify_pause_playback():
     """Pause Spotify playback."""
+    load_config()
     load_tokens()
     
     if not is_authenticated():
-        return "_ Not authenticated. Please use a playback command first."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
     
     device = get_device_id()
     if not device:
-        return "_ No active Spotify device found."
+        return "No active Spotify device found."
     
     r = spotify_api(f"/me/player/pause?device_id={device}", "PUT")
     if r and r.status_code in [200, 204]:
-        return "_ Playback paused."
-    return "_ **Error:** Failed to pause playback."
+        return "Paused"
+    return "Failed to pause playback."
 
 
 @plugin.command("spotify_next_track")
 def spotify_next_track():
     """Skip to next track."""
+    load_config()
     load_tokens()
     
     if not is_authenticated():
-        return "_ Not authenticated. Please use a playback command first."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
     
     device = get_device_id()
     r = spotify_api(f"/me/player/next?device_id={device}", "POST")
     if r and r.status_code in [200, 204]:
-        return "_ Skipped to next track."
-    return "_ **Error:** Failed to skip track."
+        # Brief delay to let Spotify update, then get current track
+        time.sleep(0.5)
+        
+        current = spotify_api("/me/player/currently-playing")
+        if current and current.status_code == 200:
+            data = current.json()
+            item = data.get("item", {})
+            if item:
+                track_name = item.get("name", "Unknown")
+                artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+                return f"Skipped to **{track_name}** by {artists}"
+        
+        return "Skipped to next track"
+    return "Failed to skip track."
 
 
 @plugin.command("spotify_previous_track")
 def spotify_previous_track():
     """Go to previous track."""
+    load_config()
     load_tokens()
     
     if not is_authenticated():
-        return "_ Not authenticated."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
     
     device = get_device_id()
     r = spotify_api(f"/me/player/previous?device_id={device}", "POST")
     if r and r.status_code in [200, 204]:
-        return "_ Playing previous track."
-    return "_ **Error:** Failed to go back."
+        # Brief delay to let Spotify update, then get current track
+        time.sleep(0.5)
+        
+        current = spotify_api("/me/player/currently-playing")
+        if current and current.status_code == 200:
+            data = current.json()
+            item = data.get("item", {})
+            if item:
+                track_name = item.get("name", "Unknown")
+                artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+                return f"Back to **{track_name}** by {artists}"
+        
+        return "Playing previous track"
+    return "Failed to go back."
 
 
 @plugin.command("spotify_get_currently_playing")
 def spotify_get_currently_playing():
     """Get currently playing track."""
+    load_config()
     load_tokens()
     
     if not is_authenticated():
-        return "_ Not authenticated. Please use a playback command first."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
     
     r = spotify_api("/me/player/currently-playing")
     if r and r.status_code == 200:
         data = r.json()
+        item = data.get("item", {})
+        
+        if not item:
+            return "Nothing is playing."
+        
+        track_name = item.get("name", "Unknown Track")
+        artists = ", ".join(a.get("name", "") for a in item.get("artists", []))
+        album_name = item.get("album", {}).get("name", "")
+        duration_ms = item.get("duration_ms", 0)
+        progress_ms = data.get("progress_ms", 0)
+        
+        # Format duration as mm:ss
+        def format_time(ms):
+            seconds = ms // 1000
+            return f"{seconds // 60}:{seconds % 60:02d}"
+        
+        progress_str = f"{format_time(progress_ms)} / {format_time(duration_ms)}"
+        
         if data.get("is_playing"):
-            track = data.get("item", {}).get("name", "Unknown")
-            artist = data.get("item", {}).get("artists", [{}])[0].get("name", "Unknown")
-            return f"_ **Now playing:** {track} by {artist}"
+            status = "Now playing"
         else:
-            track = data.get("item", {}).get("name", "Nothing")
-            return f"_ **Paused:** {track}"
-    return "_ Nothing is playing."
+            status = "Paused"
+        
+        response = f"{status}: **{track_name}** by {artists}"
+        if album_name:
+            response += f" from *{album_name}*"
+        response += f" ({progress_str})"
+        
+        return response
+    return "Nothing is playing."
 
 
 @plugin.command("spotify_set_volume")
@@ -719,69 +787,260 @@ def spotify_set_volume(volume_level: int = 50):
     Args:
         volume_level: Volume 0-100
     """
+    load_config()
     load_tokens()
     
     if not is_authenticated():
-        return "_ Not authenticated."
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
+    
+    # Clamp volume to valid range
+    volume_level = max(0, min(100, volume_level))
     
     device = get_device_id()
     r = spotify_api(f"/me/player/volume?volume_percent={volume_level}&device_id={device}", "PUT")
     if r and r.status_code in [200, 204]:
-        return f"_ Volume set to {volume_level}%."
-    return "_ **Error:** Failed to set volume."
+        return f"Volume set to {volume_level}%"
+    return "**Error:** Failed to set volume."
+
+
+@plugin.command("spotify_shuffle_playback")
+def spotify_shuffle_playback(state: bool = True):
+    """
+    Toggle shuffle mode.
+    
+    Args:
+        state: True to enable shuffle, False to disable
+    """
+    load_config()
+    load_tokens()
+    
+    if not is_authenticated():
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
+    
+    device = get_device_id()
+    state_str = "true" if state else "false"
+    r = spotify_api(f"/me/player/shuffle?state={state_str}&device_id={device}", "PUT")
+    if r and r.status_code in [200, 204]:
+        return f"Shuffle {'enabled' if state else 'disabled'}"
+    return "**Error:** Failed to set shuffle mode."
+
+
+@plugin.command("spotify_queue_track")
+def spotify_queue_track(name: str = "", type: str = "track", artist: str = ""):
+    """
+    Add a track to the playback queue.
+    
+    Args:
+        name: Track/album name to queue
+        type: Content type (track, album)
+        artist: Artist name for better matching
+    """
+    load_config()
+    load_tokens()
+    
+    if not is_authenticated():
+        plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        plugin.stream("_ ")  # Close engine's italic
+    
+    if not name:
+        return "Please specify a track name to queue."
+    
+    # Search for the track
+    query = f'{type}:"{name}"'
+    if artist:
+        query += f' artist:"{artist}"'
+    
+    search_url = f"/search?{urlencode({'q': query, 'type': 'track'})}"
+    r = spotify_api(search_url)
+    
+    if r and r.status_code == 200:
+        data = r.json()
+        if data.get("tracks", {}).get("items"):
+            track = data["tracks"]["items"][0]
+            uri = track["uri"]
+            track_name = track.get("name", "Unknown")
+            artists = ", ".join(a.get("name", "") for a in track.get("artists", []))
+            
+            # Add to queue
+            r = spotify_api(f"/me/player/queue?uri={uri}", "POST")
+            if r and r.status_code in [200, 204]:
+                return f"Added **{track_name}** by {artists} to queue"
+            else:
+                return "**Error:** Failed to add to queue."
+        else:
+            return f"Could not find: {name}"
+    return "**Error:** Search failed."
+
+
+@plugin.command("spotify_get_user_playlists")
+def spotify_get_user_playlists(limit: int = 10, _from_pending: bool = False):
+    """
+    Get user's playlists.
+    
+    Args:
+        limit: Number of playlists to return (default 10)
+        _from_pending: Internal flag, True when called from execute_pending_call
+    """
+    global SETUP_COMPLETE
+    
+    load_config()
+    load_tokens()
+    
+    # Check if configured
+    if not SETUP_COMPLETE or not CLIENT_ID or not CLIENT_SECRET:
+        global WIZARD_STEP
+        WIZARD_STEP = 0
+        store_pending_call(spotify_get_user_playlists, limit=limit)
+        logger.info("[COMMAND] Not configured - starting setup wizard")
+        plugin.set_keep_session(True)
+        try:
+            webbrowser.open("https://developer.spotify.com/dashboard")
+        except:
+            pass
+        return get_setup_instructions_step1()
+    
+    # Check if authenticated, trigger OAuth if not
+    if not is_authenticated():
+        if not _from_pending:
+            plugin.stream("_ ")  # Close engine's italic
+        plugin.stream("_Starting Spotify authorization..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+    else:
+        if not _from_pending:
+            plugin.stream("_ ")  # Close engine's italic
+    
+    limit = max(1, min(50, limit))  # Clamp to valid range
+    
+    logger.info(f"Fetching playlists with limit={limit}")
+    r = spotify_api(f"/me/playlists?limit={limit}")
+    
+    if r is None:
+        logger.error("spotify_get_user_playlists: API returned None")
+        return "Could not connect to Spotify API."
+    
+    logger.info(f"Playlists response status: {r.status_code}")
+    
+    # Handle 401 by re-authenticating
+    if r.status_code == 401:
+        plugin.stream("_Token expired, re-authenticating..._\n\n")
+        success, msg = do_oauth_flow()
+        if not success:
+            return msg
+        # Retry the request
+        r = spotify_api(f"/me/playlists?limit={limit}")
+        if r is None:
+            return "Could not connect to Spotify API."
+    
+    if r.status_code == 200:
+        try:
+            data = r.json()
+            playlists = data.get("items", [])
+            
+            if not playlists:
+                return "You don't have any playlists."
+            
+            lines = [f"Your top {len(playlists)} playlists:"]
+            for i, p in enumerate(playlists, 1):
+                name = p.get("name", "Unknown")
+                tracks = p.get("tracks", {}).get("total", 0)
+                lines.append(f"{i}. **{name}** ({tracks} tracks)")
+            
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"Error parsing playlists: {e}")
+            return "Failed to parse playlist data."
+    else:
+        try:
+            error_data = r.json()
+            logger.error(f"Playlists API error: {error_data}")
+        except:
+            logger.error(f"Playlists API error: {r.text}")
+        return f"Failed to get playlists (status {r.status_code})."
 
 
 @plugin.command("on_input")
 def on_input(content: str = ""):
     """Handle user input during setup wizard."""
-    global WIZARD_STEP
+    global SETUP_COMPLETE, WIZARD_STEP
     
     load_config()
+    load_tokens()
     
-    if not is_configured():
-        # Not configured - setup wizard
-        if WIZARD_STEP == 0:
-            WIZARD_STEP = 1
-            plugin.set_keep_session(True)
-            try:
-                if not os.path.exists(CONFIG_FILE):
-                    with open(CONFIG_FILE, "w") as f:
-                        json.dump(DEFAULT_CONFIG, f, indent=2)
-                os.startfile(CONFIG_FILE)
-            except:
-                pass
-            return get_setup_step2()
-        else:
-            # Check if config is now valid
-            load_config()
-            if is_configured():
-                plugin.stream("_ ")  # Close engine's italic
-                plugin.stream("_Credentials verified! Starting authorization..._\n\n")
-                success, msg = do_oauth_flow()
-                WIZARD_STEP = 0
-                plugin.set_keep_session(False)
-                return msg  # Already escaped by prior stream
+    if SETUP_COMPLETE:
+        # Config is valid - verify with OAuth and execute pending call
+        if not is_authenticated():
+            plugin.stream("_ ")  # Close engine's italic
+            plugin.stream("_Spotify credentials verified! Starting authorization..._\n\n")
+            success, msg = do_oauth_flow()
+            if success:
+                result = execute_pending_call()
+                if result is not None:
+                    plugin.set_keep_session(False)
+                    return result
+                else:
+                    plugin.set_keep_session(False)
+                    return msg
             else:
                 plugin.set_keep_session(True)
                 return (
-                    "_ **Credentials not found or invalid.**\n\n"
-                    "Please make sure you:\n"
-                    "  1. Pasted your Client ID and Client Secret\n"
-                    "  2. SAVED the file\n\n"
-                    "Then send me another message."
+                    "**Authorization failed.** Could not complete Spotify OAuth.\n\n"
+                    "Please try again or check your credentials."
                 )
-    else:
-        # Configured but maybe not authenticated
-        load_tokens()
-        if not is_authenticated():
-            plugin.stream("_ ")  # Close engine's italic
-            plugin.stream("_Starting Spotify authorization..._\n\n")
-            success, msg = do_oauth_flow()
-            plugin.set_keep_session(False)
-            return msg  # Already escaped by prior stream
         else:
-            plugin.set_keep_session(False)
-            return "_ _Spotify is configured and ready!_"
+            # Already authenticated
+            plugin.stream("_ ")  # Close engine's italic
+            plugin.stream("_Spotify plugin configured!_\n\n")
+            result = execute_pending_call()
+            if result is not None:
+                plugin.set_keep_session(False)
+                return result
+            else:
+                plugin.set_keep_session(False)
+                return ""
+    
+    # Advance wizard
+    if WIZARD_STEP == 0:
+        WIZARD_STEP = 1
+        plugin.set_keep_session(True)
+        # Open config file
+        try:
+            if not os.path.exists(CONFIG_FILE):
+                os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+                with open(CONFIG_FILE, "w") as f:
+                    json.dump({"client_id": "", "client_secret": ""}, f, indent=2)
+            os.startfile(CONFIG_FILE)
+        except:
+            pass
+        return get_setup_instructions_step2()
+    else:
+        # User says done but config not valid
+        plugin.set_keep_session(True)
+        return (
+            "**Credentials not found.** The config file is still empty or invalid.\n\n"
+            "Please make sure you:\n"
+            "1. Pasted your **Client ID** and **Client Secret**\n"
+            "2. **Saved** the file\n\n"
+            "Then say **\"next\"** or **\"continue\"** to verify."
+        )
 
 
 # ============================================================================

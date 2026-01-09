@@ -12,8 +12,10 @@
     "functions": [
         {
             "name": "spotify_start_playback",
-            "description": "Plays music on Spotify - resumes current track if paused, or searches and plays specific songs, albums, or artists by name. Use when user wants to play/resume music, start a song, or play something by an artist.",
-            "tags": [ "music", "play", "resume", "start" ],
+            "description": "Starts the playback of Spotify device. If no parameters are provided, playback will start on the device with the current track. If parameters are provided, Spotify will search for the item using the type, name and artist parameters, and begin playing the first item that is returned from the search.",
+            "tags": [
+                "music"
+            ],
             "properties": {
                 "type": {
                     "type": "string",
@@ -21,7 +23,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "description": "[optional] name - the string of the name of album, track (song) or playlist. Everything enclosed in quotation marks denotes the name of the track, album or playlist. For example, in the query that asks 'Play 'Shake it Off' by Taylor Swift', the name is 'Shake it Off'."
+                    "description": "[optional] name - the string of the name of track (song), album, or artist. Everything enclosed in quotation marks denotes the name. For example, in the query 'Play Shake it Off by Taylor Swift', the name is 'Shake it Off'."
                 },
                 "artist": {
                     "type": "string",
@@ -32,22 +34,39 @@
         {
             "name": "spotify_pause_playback",
             "description": "Pauses currently playing music on Spotify. Use when user wants to pause, stop, or halt music playback.",
-            "tags": [ "music", "pause", "stop" ]
+            "tags": [
+                "music",
+                "pause",
+                "stop"
+            ]
         },
         {
             "name": "spotify_next_track",
             "description": "Skips to the next song in the queue. Use when user wants to skip this song, go to next track, or play the next song.",
-            "tags": [ "music", "skip", "next" ]
+            "tags": [
+                "music",
+                "skip",
+                "next"
+            ]
         },
         {
             "name": "spotify_previous_track",
             "description": "Goes back to the previous song. Use when user wants to replay the last song, go back, or hear the previous track again.",
-            "tags": [ "music", "previous", "back", "replay" ]
+            "tags": [
+                "music",
+                "previous",
+                "back",
+                "replay"
+            ]
         },
         {
             "name": "spotify_shuffle_playback",
             "description": "Turns shuffle mode on or off for playback. Use when user wants to enable/disable random song order, shuffle their playlist, or turn shuffle on/off.",
-            "tags": [ "music", "shuffle", "random" ],
+            "tags": [
+                "music",
+                "shuffle",
+                "random"
+            ],
             "properties": {
                 "state": {
                     "type": "boolean",
@@ -58,9 +77,14 @@
         {
             "name": "spotify_set_volume",
             "description": "Adjusts Spotify playback volume to a specific level (0-100%). Use when user wants to change music volume, make it louder/quieter, or set volume to a percentage.",
-            "tags": [ "music", "volume", "louder", "quieter" ],
+            "tags": [
+                "music",
+                "volume",
+                "louder",
+                "quieter"
+            ],
             "properties": {
-                "volume_percent ": {
+                "volume_level": {
                     "type": "number",
                     "description": "The volume to set. Must be a value from 0 to 100 inclusive."
                 }
@@ -69,12 +93,19 @@
         {
             "name": "spotify_get_currently_playing",
             "description": "Shows what song is currently playing on Spotify, including track name, artist, and album. Use when user asks what's playing, what song is this, or who's the artist.",
-            "tags": [ "music", "current", "playing", "now" ]
+            "tags": [
+                "music",
+                "current",
+                "playing",
+                "now"
+            ]
         },
         {
             "name": "spotify_queue_track",
-            "description": "Adds a song, album, or artist to the playback queue to play next or later. Use when user wants to queue a song, add to queue, play something after current track, or line up music.",
-            "tags": [ "music", "queue", "add", "next" ],
+            "description": "Add an item to the end of the user's current playback queue.",
+            "tags": [
+                "music"
+            ],
             "properties": {
                 "type": {
                     "type": "string",
@@ -89,11 +120,16 @@
                     "description": "[optional] artist - the string of the name of the artist"
                 }
             }
-        }, 
+        },
         {
             "name": "spotify_get_user_playlists",
             "description": "Lists user's Spotify playlists (top 10 or custom limit). Use when user asks to show/list their playlists, see their music collections, or browse their saved playlists.",
-            "tags": [ "music", "playlist", "list", "show" ],
+            "tags": [
+                "music",
+                "playlist",
+                "list",
+                "show"
+            ],
             "properties": {
                 "limit": {
                     "type": "number",
