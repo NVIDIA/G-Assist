@@ -37,6 +37,8 @@ chart = ''
 response_done = False
 ready = False
 progress_bar = None
+ttft_timestamp = None  # Time to first token timestamp
+api_start_timestamp = None  # API call start time
 
 
 class NV_RISE_CONTENT_TYPE(IntEnum):
@@ -51,6 +53,7 @@ class NV_RISE_CONTENT_TYPE(IntEnum):
     - PROGRESS_UPDATE: Progress information
     - READY: System ready status
     - DOWNLOAD_REQUEST: Download initiation
+    - RESERVED: Reserved for experimental features (e.g., streaming ASR PoC)
     """
     NV_RISE_CONTENT_TYPE_INVALID = 0
     NV_RISE_CONTENT_TYPE_TEXT = 1
@@ -61,6 +64,8 @@ class NV_RISE_CONTENT_TYPE(IntEnum):
     NV_RISE_CONTENT_TYPE_PROGRESS_UPDATE = 6
     NV_RISE_CONTENT_TYPE_READY = 7
     NV_RISE_CONTENT_TYPE_DOWNLOAD_REQUEST = 8
+    NV_RISE_CONTENT_TYPE_UPDATE_INFO = 9
+    NV_RISE_CONTENT_TYPE_RESERVED = 10  # Reserved for experimental features (streaming ASR PoC)
 
 
 class NV_CLIENT_CALLBACK_SETTINGS_SUPER_V1(ctypes.Structure):
@@ -115,8 +120,9 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
         response_done: Flags when a response is complete
         ready: Indicates RISE system readiness
         progress_bar: Manages download/installation progress visualization
+        ttft_timestamp: Tracks time to first token
     """
-    global response, response_done, ready, progress_bar, chart
+    global response, response_done, ready, progress_bar, chart, ttft_timestamp
 
     data = data_ptr.contents
     if data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_READY:
@@ -128,9 +134,38 @@ def base_function_callback(data_ptr: ctypes.POINTER(NV_RISE_CALLBACK_DATA_V1)) -
            return
 
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT:
-        response += data.content.decode('utf-8')
+        chunk = data.content.decode('utf-8', errors='replace')
+        # Track time to first token
+        if ttft_timestamp is None and chunk and not chunk.startswith('ASR_'):
+            ttft_timestamp = time.time()
+        # For ASR responses: REPLACE (don't accumulate) since each callback is a complete message
+        # For LLM responses: APPEND (accumulate chunks)
+        if chunk:
+            if chunk.startswith('ASR_'):
+                # ASR responses are complete messages - replace, don't append
+                response = chunk
+                print(f"[Callback] ASR response received at {time.time():.3f}: '{chunk[:100]}...' (completed={data.completed})", flush=True)
+            else:
+                # LLM responses are chunked - append
+                response += chunk
+                # print(f"[Callback] Received TEXT chunk: '{chunk}' (completed={data.completed})", flush=True)
         if data.completed == 1:
             response_done = True
+    
+    elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR:
+        chunk = data.content.decode('utf-8', errors='replace')
+        response += chunk
+        # print(f"[Callback] Received CUSTOM_BEHAVIOR chunk: '{chunk}' (completed={data.completed})", flush=True)
+        if data.completed == 1:
+            response_done = True
+    
+    elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR_RESULT:
+        chunk = data.content.decode('utf-8', errors='replace')
+        response += chunk
+        # print(f"[Callback] Received CUSTOM_BEHAVIOR_RESULT chunk: '{chunk}' (completed={data.completed})", flush=True)
+        if data.completed == 1:
+            response_done = True
+    
     elif data.contentType == NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_GRAPH:
         chart += data.content.decode('utf-8')
 
@@ -204,15 +239,21 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') -> Optional[dict]:
+def send_rise_command(command: str, assistant_identifier: str = '', custom_system_prompt: str = '', thinking_enabled: Optional[bool] = None) -> Optional[dict]:
     """
     Send a command to RISE and wait for the response.
 
-    Formats the command as a JSON object with a prompt and context,
+    Formats the command as a JSON object with a prompt, context, and client_config,
     sends it to RISE, and waits for the complete response.
 
     Args:
         command: The text command to send to RISE
+        assistant_identifier: Optional assistant identifier for client_config
+        custom_system_prompt: Optional custom system prompt for client_config
+        thinking_enabled: Optional flag to enable/disable thinking mode (adds <think> tags).
+                         If None (default), thinking_enabled is not sent, allowing SURA to use silent thinking.
+                         If True, enables thinking with <think> tags.
+                         If False, disables thinking entirely.
 
     Returns:
         Optional[dict]: The response from RISE, or None if an error occurs
@@ -220,25 +261,35 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
     Raises:
         AttributeError: If there's an error accessing the RISE API
     """
-    global nvapi, response_done, response, chart
+    global nvapi, response_done, response, chart, ttft_timestamp, api_start_timestamp
 
     try:
         command_obj = {
             'prompt': command,
-            'context_assist': {}
+            'context_assist': {},
+            'client_config': {}
         }
 
-        if (adapter != ''): 
-            command_obj['adapter'] = adapter
+        if (assistant_identifier != ''): 
+            command_obj['client_config']['assistant_identifier'] = assistant_identifier
 
-        if(system_prompt != ''):
-            command_obj['context_assist']['officialAdapterSystemPrompt'] = system_prompt
+        if(custom_system_prompt != ''):
+            command_obj['client_config']['custom_system_prompt'] = custom_system_prompt
+        
+        # Only add thinking_enabled to client_config if explicitly provided by caller
+        # (omitting it allows SURA to use silent thinking by default)
+        if thinking_enabled is not None:
+            command_obj['client_config']['thinking_enabled'] = thinking_enabled
 
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = json.dumps(command_obj).encode('utf-8')
         content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
         content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
         content.completed = 1
+
+        # Reset timing trackers
+        ttft_timestamp = None
+        api_start_timestamp = time.time()
 
         ret = nvapi.request_rise(content)
         if ret != 0:
@@ -248,15 +299,161 @@ def send_rise_command(command: str, adapter: str = '', system_prompt: str = '') 
         while not response_done:
             time.sleep(1)
 
+        api_end_timestamp = time.time()
         response_done = False
         completed_response = response
         completed_chart = chart
         response = ''
         chart = ''
-        return {'completed_response': completed_response,'completed_chart': completed_chart}
+        
+        # Calculate timing metrics
+        ttft_ms = (ttft_timestamp - api_start_timestamp) * 1000 if ttft_timestamp else 0
+        api_time_ms = (api_end_timestamp - api_start_timestamp) * 1000
+        
+        return {
+            'completed_response': completed_response,
+            'completed_chart': completed_chart,
+            'ttft_ms': ttft_ms,
+            'api_time_ms': api_time_ms
+        }
 
     except AttributeError as e:
         print(f"An error occurred: {e}")
+        return None
+
+
+def send_audio_chunk(audio_base64: str, chunk_id: int, sample_rate: int = 16000) -> Optional[dict]:
+    """
+    Send an audio chunk to the engine for streaming ASR (PoC).
+    
+    Uses NV_RISE_CONTENT_TYPE_RESERVED with base64-encoded audio data.
+    Content format: "<chunk_id>:<sample_rate>:<base64_pcm_data>"
+    
+    Args:
+        audio_base64: Base64-encoded PCM audio data
+        chunk_id: Sequential chunk number
+        sample_rate: Sample rate of the audio (Hz)
+        
+    Returns:
+        Optional[dict]: The response from RISE (may contain partial ASR result)
+    """
+    global nvapi, response_done, response
+    
+    try:
+        # Format: "CHUNK:<id>:<sample_rate>:<base64_data>"
+        payload = f"CHUNK:{chunk_id}:{sample_rate}:{audio_base64}"
+        
+        content = NV_REQUEST_RISE_SETTINGS_V1()
+        content.content = payload.encode('utf-8')
+        content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
+        content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
+        content.completed = 0  # Not completed - more chunks coming
+        
+        print(f'[ASR_POC] Sending chunk {chunk_id} via nvapi.request_rise()...', flush=True)
+        ret = nvapi.request_rise(content)
+        if ret != 0:
+            print(f'[ASR_POC] Send audio chunk {chunk_id} failed with error {ret}', flush=True)
+            return None
+        
+        print(f'[ASR_POC] Chunk {chunk_id} sent successfully, waiting for response...', flush=True)
+        
+        # Wait for response from engine/SURA (no timeout - wait as long as needed)
+        # Engine blocks on SURA's response, so we must wait for full round-trip
+        wait_start = time.time()
+        while not response_done:
+            time.sleep(0.01)
+            elapsed = time.time() - wait_start
+            if elapsed > 5.0 and int(elapsed) % 5 == 0:  # Log every 5 seconds if waiting too long
+                print(f'[ASR_POC] Still waiting for chunk {chunk_id} response... ({elapsed:.1f}s)', flush=True)
+        
+        wait_time = time.time() - wait_start
+        
+        response_done = False
+        chunk_response = response
+        response = ''
+        
+        response_preview = chunk_response[:100] if chunk_response else '(empty)'
+        print(f'[ASR_POC] Chunk {chunk_id} response received after {wait_time:.3f}s: "{response_preview}"', flush=True)
+        
+        return {'chunk_response': chunk_response}
+        
+    except Exception as e:
+        print(f"[ASR_POC] Error sending audio chunk: {e}")
+        return None
+
+
+def send_audio_stop() -> Optional[dict]:
+    """
+    Send stop signal to finalize audio recording session.
+    
+    Uses NV_RISE_CONTENT_TYPE_RESERVED with "STOP:" content.
+    
+    Returns:
+        Optional[dict]: The final response from RISE
+    """
+    global nvapi, response_done, response
+    
+    try:
+        # CRITICAL: Clear response buffer before sending STOP
+        # This prevents accumulation of previous interim responses
+        response = ''
+        response_done = False
+        
+        content = NV_REQUEST_RISE_SETTINGS_V1()
+        content.content = b"STOP:"
+        content.contentType = NV_RISE_CONTENT_TYPE.NV_RISE_CONTENT_TYPE_TEXT
+        content.version = ctypes.sizeof(NV_REQUEST_RISE_SETTINGS_V1) | (1 << 16)
+        content.completed = 0
+        
+        ret = nvapi.request_rise(content)
+        if ret != 0:
+            print(f'[ASR_POC] Send audio stop failed with {ret}')
+            return None
+        
+        print(f"[ASR_POC] STOP command sent at {time.time():.3f}", flush=True)
+        
+        # Wait for final response (increased timeout for final transcription)
+        # Note: Engine sends multiple callback batches for STOP:
+        # 1. Empty ACKs (first response_done)
+        # 2. ASR_INTERIM with full transcription
+        # 3. ASR_FINAL with full transcription
+        # We MUST wait for ASR_FINAL specifically!
+        timeout = 10.0  # Longer timeout for final transcription
+        start_time = time.time()
+        
+        final_response = ''
+        interim_response = ''
+        
+        while (time.time() - start_time) < timeout:
+            if response_done:
+                # Got a completed message - check if it has text
+                if response:
+                    if 'ASR_FINAL:' in response:
+                        # Got the FINAL transcription - this is what we want!
+                        final_response = response
+                        elapsed = time.time() - start_time
+                        print(f"[ASR_POC] Got ASR_FINAL text after {elapsed:.3f}s: {response[:100]}...", flush=True)
+                        # Exit immediately - no need to wait for more updates
+                        break
+                    elif 'ASR_INTERIM:' in response:
+                        # Got interim - keep it as backup but keep waiting for FINAL
+                        interim_response = response
+                        print(f"[ASR_POC] Got ASR_INTERIM text (waiting for FINAL): {response[:100]}...", flush=True)
+                
+                # Reset for next batch
+                response_done = False
+            
+            time.sleep(0.01)
+        
+        # Use final response if available, otherwise fall back to interim
+        result = final_response if final_response else interim_response
+        
+        response = ''  # Clear for next request
+        
+        return {'final_response': result}
+        
+    except Exception as e:
+        print(f"[ASR_POC] Error sending audio stop: {e}")
         return None
 
 
