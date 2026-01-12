@@ -7,3 +7,4 @@ build/
 .venv/
 build_installer.bat
 installer.py
+libs/

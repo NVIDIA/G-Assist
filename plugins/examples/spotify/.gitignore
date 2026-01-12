@@ -8,3 +8,4 @@ Scripts/
 .vscode/
 build_installer.bat
 installer.py
+libs/

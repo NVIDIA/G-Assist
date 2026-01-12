@@ -181,3 +181,4 @@ cython_debug/
 Release/
 build_installer.bat
 installer.py
+libs/
