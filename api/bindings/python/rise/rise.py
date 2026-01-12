@@ -239,21 +239,18 @@ def register_rise_client() -> None:
         print(f"An error occurred: {e}")
 
 
-def send_rise_command(command: str, assistant_identifier: str = '', custom_system_prompt: str = '', thinking_enabled: Optional[bool] = None) -> Optional[dict]:
+def send_rise_command(command: str, payload: Optional[Dict[str, Any]] = None) -> Optional[dict]:
     """
     Send a command to RISE and wait for the response.
 
-    Formats the command as a JSON object with a prompt, context, and client_config,
-    sends it to RISE, and waits for the complete response.
-
     Args:
         command: The text command to send to RISE
-        assistant_identifier: Optional assistant identifier for client_config
-        custom_system_prompt: Optional custom system prompt for client_config
-        thinking_enabled: Optional flag to enable/disable thinking mode (adds <think> tags).
-                         If None (default), thinking_enabled is not sent, allowing SURA to use silent thinking.
-                         If True, enables thinking with <think> tags.
-                         If False, disables thinking entirely.
+        payload: Optional dict to merge into the request payload.
+                 Can include any of: context_assist, client_config, adapters, etc.
+                 Example: {
+                     "context_assist": {"game_list": ["Warframe"], "game_running": {}},
+                     "client_config": {"thinking_enabled": True, "assistant_identifier": "my_assistant"}
+                 }
 
     Returns:
         Optional[dict]: The response from RISE, or None if an error occurs
@@ -264,22 +261,22 @@ def send_rise_command(command: str, assistant_identifier: str = '', custom_syste
     global nvapi, response_done, response, chart, ttft_timestamp, api_start_timestamp
 
     try:
+        # Build base command object
         command_obj = {
             'prompt': command,
             'context_assist': {},
             'client_config': {}
         }
-
-        if (assistant_identifier != ''): 
-            command_obj['client_config']['assistant_identifier'] = assistant_identifier
-
-        if(custom_system_prompt != ''):
-            command_obj['client_config']['custom_system_prompt'] = custom_system_prompt
         
-        # Only add thinking_enabled to client_config if explicitly provided by caller
-        # (omitting it allows SURA to use silent thinking by default)
-        if thinking_enabled is not None:
-            command_obj['client_config']['thinking_enabled'] = thinking_enabled
+        # Merge any provided payload fields
+        if payload:
+            for key, value in payload.items():
+                if key in command_obj and isinstance(command_obj[key], dict) and isinstance(value, dict):
+                    # Merge dicts (e.g., context_assist, client_config)
+                    command_obj[key].update(value)
+                else:
+                    # Replace or add new keys
+                    command_obj[key] = value
 
         content = NV_REQUEST_RISE_SETTINGS_V1()
         content.content = json.dumps(command_obj).encode('utf-8')
