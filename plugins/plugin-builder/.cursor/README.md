@@ -40,7 +40,7 @@ Copy the rule file to your project's `.cursor/rules/` directory:
 mkdir .cursor\rules
 
 # Copy the plugin builder rule
-copy plugins\plugin-builder\cursor\custom-gassist-plugin-builder-assistant.mdc .cursor\rules\
+copy plugins\plugin-builder\cursor\rules\RULE.md .cursor\rules\
 ```
 
 Once copied, the rule **automatically applies to all Agent chats** in your project.

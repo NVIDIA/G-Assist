@@ -1,4 +1,6 @@
 ---
+description: "Guide developers through creating a new G-Assist plugin using the SDK-based Protocol V2."
+globs:
 alwaysApply: true
 ---
 # G-Assist Plugin Builder - Protocol V2 (JSON-RPC)
@@ -94,13 +96,7 @@ When a developer opens this folder, guide them through:
 
     **config.json**: Plugin-specific configuration
 
-4. **Generate Plugin-Specific .cursorrules**
-    Create `.cursorrules` in the new plugin folder documenting:
-    - Plugin purpose and functions
-    - Special behaviors or API patterns
-    - Configuration requirements
-
-5. **Setup & Deploy Instructions**
+4. **Setup & Deploy Instructions**
     ```batch
     cd plugins\examples
     setup.bat <plugin-name>           # Install dependencies to libs/
