@@ -1,3 +1,0 @@
-# Stream Deck MCP Plugin Dependencies
-requests>=2.28.0
-
