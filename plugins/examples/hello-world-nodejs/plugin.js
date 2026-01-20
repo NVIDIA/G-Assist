@@ -5,7 +5,7 @@
 //
 // A simple example plugin demonstrating the Node.js SDK and JSON-RPC V2 protocol.
 
-const { Plugin } = require('./gassist-sdk');
+const { Plugin } = require('./libs/gassist-sdk');
 
 // Conversation history for passthrough mode
 let conversationHistory = [];

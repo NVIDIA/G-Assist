@@ -1,0 +1,55 @@
+{
+    "test_suite_name": "Example Plugin Tests",
+    "description": "Autonomous tests for the example plugin",
+    "tests": [
+        {
+            "function": "example_greet",
+            "prompt": "Say hello to John",
+            "expectation": "Should greet John by name and welcome them",
+            "arguments": {
+                "name": "John"
+            }
+        },
+        {
+            "function": "example_calculate",
+            "prompt": "Add 5 and 3",
+            "expectation": "Should return the result 8",
+            "arguments": {
+                "operation": "add",
+                "a": 5,
+                "b": 3
+            }
+        },
+        {
+            "function": "example_calculate",
+            "prompt": "Multiply 7 by 6",
+            "expectation": "Should return the result 42",
+            "arguments": {
+                "operation": "multiply",
+                "a": 7,
+                "b": 6
+            }
+        },
+        {
+            "function": "example_calculate",
+            "prompt": "Divide 10 by 2",
+            "expectation": "Should return the result 5",
+            "arguments": {
+                "operation": "divide",
+                "a": 10,
+                "b": 2
+            }
+        },
+        {
+            "function": "example_calculate",
+            "prompt": "Divide by zero",
+            "expectation": "Should return an error about division by zero",
+            "arguments": {
+                "operation": "divide",
+                "a": 10,
+                "b": 0
+            }
+        }
+    ]
+}
+

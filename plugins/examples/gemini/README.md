@@ -30,51 +30,34 @@ cd gemini-plugin
 python -m pip install -r requirements.txt
 ```
 
-### Step 3: Configure Your API Key
-1. Create a file named `gemini.key` in the root directory
-2. Add your API key to the file:
-```gemini.key
-your_api_key_here
-```
-
-### Step 4: Configure the Model (Optional)
+### Step 3: Configure the Model (Optional)
 Adjust `config.json` to your needs:
 ```json
 {
-  "model": "gemini-2.0-flash"
+  "model": "gemini-2.5-flash"
 }
 ```
 
-### Step 5: Build the Plugin
+### Step 4: Build and Deploy the Plugin
+From the `plugins/examples` directory, run:
 ```bash
-build.bat
+setup.bat gemini --deploy
 ```
-This will create a `dist\google` folder containing all the required files for the plugin.
+This will build the plugin and deploy it to the G-Assist plugins directory.
 
-
-### Step 6: Install the Plugin
-1. Create a new folder here (if it doesn't exist):
-   ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini
-   ```
-   💡 **Tip**: Copy and paste this path into File Explorer's address bar!
-
-2. Copy these files to the folder you just created:
-   - `gemini-plugin.exe` (from the `dist` folder)
-   - `manifest.json`
-   - `config.json`
-   - `gemini.key`
 
 ## How to Use
-Once installed, you can use Gemini through G-Assist! Try these examples:
+Once installed, you can use Gemini through G-Assist! On first use, the plugin will guide you through a setup wizard to configure your API key - just paste it directly in the chat when prompted.
+
+Try these examples:
 
 ### Basic Text Generation
-- Hey Google, tell me about artificial intelligence.
-- /google Explain ray tracing using a real-world analogy in one sentence. ELI5
+- Tell me about artificial intelligence.
+- Explain ray tracing using a real-world analogy in one sentence. ELI5
 
 ### Search
-- Hey Google, what's the weather in Santa Clara, CA?
-- /google What are the top five features in the latest major patch of RUST?
+- What's the weather in Santa Clara, CA?
+- What are the top five features in the latest major patch of RUST?
 
 ## Limitations
 - Requires active internet connection
@@ -85,86 +68,73 @@ Once installed, you can use Gemini through G-Assist! Try these examples:
 ### Logging
 The plugin logs all activity to:
 ```
-%USERPROFILE%\gemini.log
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gassist_sdk.log
 ```
 Check this file for detailed error messages and debugging information.
 
 ## Troubleshooting Tips
-- **API Key Not Working?** Verify your API key is correctly copied to `gemini.key`
+- **API Key Not Working?** The plugin will prompt you to paste a new key in chat
 - **Commands Not Working?** Ensure all files are in the correct plugin directory
 - **Unexpected Responses?** Check the configuration in `config.json`
-- **Logs**: Check `%USERPROFILE%\gemini.log` for detailed logs
+- **Logs**: Check `gassist_sdk.log` in the plugin directory for detailed logs
 
 ## Developer Documentation
 
 ### Architecture Overview
-The Gemini plugin is implemented as a Python-based service that communicates with G-Assist through a pipe-based protocol. The plugin handles two main types of queries:
-1. Search-based queries using Google Search integration
-2. LLM-based queries using Gemini's language model capabilities
+The Gemini plugin is built using the G-Assist Python SDK (`gassist_sdk`), which handles communication with G-Assist via JSON-RPC 2.0 over pipes. The plugin provides:
+1. Web search queries using Google Search grounding
+2. Conversational AI responses with context awareness
 
 ### Core Components
 
-#### Communication Protocol
-- Uses Windows named pipes for IPC (Inter-Process Communication)
-- Commands are sent as JSON messages with the following structure:
-  ```json
-  {
-    "tool_calls": [{
-      "func": "command_name",
-      "properties": {},
-      "messages": [],
-      "system_info": ""
-    }]
-  }
-  ```
-- Responses are returned as JSON with success/failure status and optional messages
+#### SDK Integration
+- Uses `gassist_sdk.Plugin` for protocol handling and command registration
+- Commands are registered via decorators: `@plugin.command("command_name")`
+- Streaming responses sent via `plugin.stream()` for real-time output
+- Session management via `plugin.set_keep_session()` for conversational mode
 
 #### Key Functions
 
-##### Main Entry Point (`main()`)
-- Initializes the plugin and enters command processing loop
-- Handles command routing and response generation
-- Supports commands: `initialize`, `shutdown`, `query_gemini`
-
-##### Query Processing (`execute_query_gemini_command()`)
-- Processes incoming queries through a classification step
-- Routes queries to either search or LLM path based on content
-- Handles streaming responses back to the client
+##### Command: `query_gemini`
+- Main entry point for Gemini queries
+- Handles API key validation with background keepalives (prevents timeout during slow network operations)
+- Builds conversation context and streams responses
 - Parameters:
-  - `params`: Additional query parameters
-  - `context`: Conversation history
-  - `system_info`: System information including game data
+  - `query`: The user's question
+  - `context`: Conversation history from G-Assist
 
-##### LLM Query Handler (`execute_llm_query()`)
-- Processes knowledge-based queries using Gemini
-- Augments prompts with system context
-- Streams responses back to client
-- Parameters:
-  - `gemini_history`: Conversation history in Gemini format
-  - `incoming_context`: Original conversation context
-  - `system_info`: System information including game data
+##### Command: `on_input`
+- Handles follow-up user input in passthrough/conversational mode
+- Detects and saves API keys pasted by users
+- Routes messages to `query_gemini` for processing
+
+##### Helper: `stream_gemini_response()`
+- Streams Gemini API responses with timeout handling
+- Sends keepalives every 2 seconds to prevent engine timeout
+- Categorizes and displays user-friendly error messages
 
 ### Configuration
 
 #### API Key
-- Stored in `google.key` file
-- Location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\google\google.key`
+- Stored in `gemini-api.key` file
+- Location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gemini-api.key`
+- On first use, the plugin will prompt you to paste your API key in chat
 
 #### Model Configuration
 - Configured via `config.json`
-- Default model: `gemini-pro`
-- Location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\google\config.json`
+- Default model: `gemini-2.5-flash`
+- Location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\config.json`
 
 ### Logging
-- Log file location: `%USERPROFILE%\gemini.log`
-- Log level: INFO
-- Format: `%(asctime)s - %(levelname)s - %(message)s`
+- Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini\gassist_sdk.log`
+- Log level: DEBUG
+- Format: `%(asctime)s [%(levelname)s] %(name)s: %(message)s`
 
 ### Error Handling
-- Comprehensive error handling for API calls
-- Fallback mechanisms (e.g., search to LLM fallback)
-- Detailed error logging with stack traces
-- User-friendly error messages
+- Comprehensive error handling for Gemini API calls
+- Categorized error messages (rate limits, timeouts, permissions, safety filters)
+- Background keepalives prevent engine timeout during slow operations
+- Detailed error logging for debugging
 
 ### Message Format Conversion
 The plugin handles conversion between different message formats:
@@ -174,46 +144,33 @@ The plugin handles conversion between different message formats:
 
 ### Adding New Features
 To add new features:
-1. Add new command to the `commands` dictionary in `main()`
-2. Implement corresponding execute function
-3. Implement proper error handling and logging
-4. Add the function to the `functions` list in `manifest.json` file: 
+1. Register a new command using the decorator:
+   ```python
+   @plugin.command("new_command")
+   def new_command(param: str, context: Context = None):
+       plugin.stream("Processing...")
+       # Your implementation
+       return "Result message"
+   ```
+2. Add the function to the `functions` list in `manifest.json`:
    ```json
    {
       "name": "new_command",
       "description": "Description of what the command does",
       "tags": ["relevant", "tags"],
       "properties": {
-      "parameter_name": {
-         "type": "string",
-         "description": "Description of the parameter"
-      }
+         "param": {
+            "type": "string",
+            "description": "Description of the parameter"
+         }
       }
    }
    ```
-5. Manually test the function:
-
-   First, run the script:
-   ``` bash
-   python plugin.py
+3. Test using the plugin emulator from `plugins/plugin-builder`:
+   ```bash
+   python -m plugin_emulator --plugin gemini --interactive
    ```
-
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-6. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Run `setup.bat gemini --deploy` from the `plugins/examples` directory to build and deploy
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
