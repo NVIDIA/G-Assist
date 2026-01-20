@@ -22,27 +22,24 @@ Control your IFTTT applets through G-Assist using natural language commands! Thi
 git clone <repo-name>
 ```
 
-### Step 2: Set Up Python Environment
+### Step 2: Setup
+From the `examples/` folder, run:
 ```bash
-setup.bat
+setup.bat ifttt
 ```
+This installs all required Python packages and copies the SDK to `libs/`.
 
-### Step 3: Build the Plugin
-```bash
-build.bat
-```
-
-### Step 4: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `ifttt` folder to:
+### Step 3: Install the Plugin
+Copy the entire `ifttt` folder to:
 ```bash
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
 ```
 
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-plugin-ifttt.exe`)
+💡 **Tip**: Python plugins run directly—no build step required! Make sure all files are copied, including:
+- `plugin.py` (main plugin script)
 - `manifest.json`
 - `config.json` (you'll need to update this with your IFTTT credentials)
+- `libs/` folder (contains the G-Assist SDK)
 
 ### Step 5: Configure Your IFTTT Webhook
 1. Get your IFTTT Webhook key from [https://ifttt.com/maker_webhooks/settings](https://ifttt.com/maker_webhooks/settings)
@@ -103,10 +100,52 @@ Check this file for detailed error messages and debugging information.
 
 ## Developer Documentation
 
-### Plugin Architecture
-The IFTTT plugin is built as a Python-based G-Assist plugin that communicates with IFTTT's API. The plugin follows a command-based architecture where it continuously listens for commands from G-Assist and executes corresponding IFTTT operations.
+### Architecture Overview
+
+The IFTTT plugin is built using the **G-Assist SDK (Protocol V2)**, which handles all communication with G-Assist via JSON-RPC 2.0. The SDK abstracts away the protocol details so you can focus on business logic.
+
+### Project Structure
+
+```
+ifttt/
+├── plugin.py           # Main plugin code using gassist_sdk
+├── manifest.json       # Plugin configuration (protocol_version: "2.0")
+├── config.json         # IFTTT credentials (add to .gitignore!)
+├── requirements.txt    # Python dependencies
+├── libs/               # SDK folder (auto-added to PYTHONPATH)
+│   └── gassist_sdk/    # G-Assist Plugin SDK
+└── README.md
+```
+
+### Manifest File (`manifest.json`)
+
+```json
+{
+    "manifestVersion": 1,
+    "name": "ifttt",
+    "version": "2.0.0",
+    "description": "Trigger IFTTT events",
+    "executable": "plugin.py",
+    "persistent": true,
+    "protocol_version": "2.0",
+    "functions": [
+        {
+            "name": "trigger_gaming_setup",
+            "description": "Triggers your custom IFTTT gaming setup",
+            "tags": ["gaming", "ifttt", "automation"],
+            "properties": {
+                "event_name": {
+                    "type": "string",
+                    "description": "The IFTTT event name to trigger"
+                }
+            }
+        }
+    ]
+}
+```
 
 ### IFTTT Integration
+
 The plugin integrates with IFTTT through the Webhooks service:
 
 1. Webhook URL Format:
@@ -123,137 +162,190 @@ https://maker.ifttt.com/trigger/{EVENT_NAME}/with/key/{WEBHOOK_KEY}
 }
 ```
 
-### Core Components
+### Plugin Code (`plugin.py`)
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
+The SDK handles all protocol communication automatically:
 
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
+```python
+import os
+import sys
+import json
+import logging
+import requests
+import feedparser
 
-#### Configuration
-- Configuration is loaded from `config.json` located at:
-  ```
-  %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\ifttt\config.json
-  ```
-- Required configuration parameters:
-  - `webhook_key`: Your IFTTT Webhook API key
-  - `event_name`: The IFTTT event name to trigger
-  - `main_rss_url`: Primary RSS feed URL (defaults to IGN PC Gaming feed)
-  - `alternate_rss_url`: Fallback RSS feed URL (defaults to IGN All feed)
+# SDK import (from libs/ folder)
+_plugin_dir = os.path.dirname(os.path.abspath(__file__))
+_libs_path = os.path.join(_plugin_dir, "libs")
+if os.path.exists(_libs_path) and _libs_path not in sys.path:
+    sys.path.insert(0, _libs_path)
 
-### Available Commands
+from gassist_sdk import Plugin, Context
 
-#### `initialize`
-Initializes the plugin and sets up the environment.
-- No parameters required
-- Returns success response with initialization status
+# Configuration
+PLUGIN_NAME = "ifttt"
+PLUGIN_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", "."),
+    "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+CONFIG_FILE = os.path.join(PLUGIN_DIR, "config.json")
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
 
-#### `shutdown`
-Gracefully shuts down the plugin.
-- No parameters required
-- Returns success response with shutdown status
+os.makedirs(PLUGIN_DIR, exist_ok=True)
 
-#### `trigger_gaming_setup`
-Triggers the IFTTT applet with gaming news integration.
-- Automatically fetches latest gaming news from IGN
-- Includes up to 3 news headlines in the webhook data
-- Parameters: None (uses configuration from config.json)
-- Returns success/failure response with status message
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-#### Logging
+# Create plugin instance
+plugin = Plugin(
+    name=PLUGIN_NAME,
+    version="2.0.0",
+    description="Trigger IFTTT events"
+)
+
+def load_config() -> dict:
+    """Load IFTTT configuration from config file."""
+    try:
+        if os.path.isfile(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config: {e}")
+    return {}
+
+def get_news_headlines(config: dict) -> list:
+    """Fetch latest gaming news from RSS feed."""
+    try:
+        feed = feedparser.parse(config.get("main_rss_url", ""))
+        headlines = [entry.title for entry in feed.entries[:3]]
+        if not headlines:
+            feed = feedparser.parse(config.get("alternate_rss_url", ""))
+            headlines = [entry.title for entry in feed.entries[:3]]
+        return headlines
+    except Exception as e:
+        logger.error(f"Error fetching news: {e}")
+        return []
+
+@plugin.command("trigger_gaming_setup")
+def trigger_gaming_setup(event_name: str = "", context: Context = None):
+    """
+    Trigger IFTTT gaming setup with news headlines.
+    
+    Args:
+        event_name: Optional override for event name
+        context: Conversation context (provided by engine)
+    
+    Returns:
+        Status message
+    """
+    config = load_config()
+    
+    if not config.get("webhook_key"):
+        plugin.set_keep_session(True)
+        return "**Setup Required:** Please configure your IFTTT webhook key in config.json"
+    
+    webhook_key = config.get("webhook_key")
+    event = event_name or config.get("event_name", "game_routine")
+    
+    logger.info(f"Triggering IFTTT event: {event}")
+    
+    try:
+        # Fetch news headlines for webhook data
+        headlines = get_news_headlines(config)
+        data = {
+            "value1": headlines[0] if len(headlines) > 0 else "",
+            "value2": headlines[1] if len(headlines) > 1 else "",
+            "value3": headlines[2] if len(headlines) > 2 else ""
+        }
+        
+        # Trigger IFTTT webhook
+        url = f"https://maker.ifttt.com/trigger/{event}/with/key/{webhook_key}"
+        response = requests.post(url, json=data, timeout=10)
+        response.raise_for_status()
+        
+        return f"🎮 **Gaming setup activated!**\n\nTriggered event: `{event}`"
+        
+    except Exception as e:
+        logger.error(f"Error triggering IFTTT: {e}")
+        return f"**Error:** Failed to trigger IFTTT event: {e}"
+
+if __name__ == "__main__":
+    logger.info(f"Starting {PLUGIN_NAME} plugin...")
+    plugin.run()
+```
+
+### Key SDK Features Used
+
+| Feature | Description |
+|---------|-------------|
+| `@plugin.command()` | Decorator to register command handlers |
+| `plugin.run()` | Starts the plugin main loop (handles all protocol communication) |
+| `plugin.stream()` | Send streaming output during long operations |
+| `plugin.set_keep_session()` | Enable passthrough mode for setup wizards |
+
+### Protocol V2 Benefits
+
+The SDK handles all protocol details automatically:
+- ✅ JSON-RPC 2.0 with length-prefixed framing
+- ✅ Automatic ping/pong responses (no heartbeat code needed!)
+- ✅ Error handling and graceful shutdown
+- ✅ No need to implement pipe communication manually
+
+### Configuration (`config.json`)
+
+```json
+{
+    "webhook_key": "YOUR_WEBHOOK_KEY",
+    "event_name": "game_routine",
+    "main_rss_url": "https://feeds.feedburner.com/ign/pc-articles",
+    "alternate_rss_url": "https://feeds.feedburner.com/ign/all"
+}
+```
+
+### Logging
+
 - Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\ifttt\ifttt-plugin.log`
 - Logging level: INFO
 - Format: `%(asctime)s - %(levelname)s - %(message)s`
 
-### Error Handling
-- All operations are wrapped in try-except blocks
-- Errors are logged to the log file
-- Failed operations return a failure response with an error message
-- Network errors during IFTTT webhook calls are caught and reported
-- RSS feed failures trigger fallback to alternate feed
-
-### Dependencies
-- Python 3.12+
-- Required Python packages:
-  - requests: For HTTP requests to IFTTT
-  - feedparser: For RSS feed parsing
-  - Standard library modules: json, logging, os, ctypes
-
-### Command Processing
-The plugin processes commands through a JSON-based protocol:
-
-1. Input Format:
-```json
-{
-    "tool_calls": [
-        {
-            "func": "command_name",
-            "params": {
-                "param1": "value1",
-                "param2": "value2"
-            }
-        }
-    ]
-}
-```
-
-2. Output Format:
-```json
-{
-    "success": true|false,
-    "message": "Optional message"
-}
-```
-
 ### Adding New Commands
-To add a new command:
-1. Implement command function with signature: `def new_command(params: dict = None, context: dict = None, system_info: dict = None) -> dict`
-2. Add command to `commands` dictionary in `main()`
-3. Implement proper error handling and logging
-4. Return standardized response using `generate_success_response()` or `generate_failure_response()`
-5. Add the function to the `functions` list in `manifest.json` file: 
+
+1. Add a new function with the `@plugin.command()` decorator:
+   ```python
+   @plugin.command("trigger_custom_event")
+   def trigger_custom_event(event_name: str, value1: str = "", context: Context = None):
+       """Trigger a custom IFTTT event."""
+       # Your implementation
+       return "Event triggered!"
+   ```
+
+2. Add the function to `manifest.json`:
    ```json
    {
-      "name": "new_command",
-      "description": "Description of what the command does",
-      "tags": ["relevant", "tags"],
-      "properties": {
-      "parameter_name": {
-         "type": "string",
-         "description": "Description of the parameter"
-      }
-      }
+       "name": "trigger_custom_event",
+       "description": "Trigger a custom IFTTT event",
+       "tags": ["ifttt", "automation", "custom"],
+       "properties": {
+           "event_name": {
+               "type": "string",
+               "description": "The IFTTT event name to trigger"
+           },
+           "value1": {
+               "type": "string",
+               "description": "Optional data value"
+           }
+       },
+       "required": ["event_name"]
    }
    ```
-6. Manually test the function:
 
-   First, run the script:
-   ``` bash
-   python plugin.py
-   ```
+3. Test locally by running `python plugin.py` and using the plugin emulator
 
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-7. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Deploy by copying the folder to the plugins directory
 
 
 ## Want to Contribute?
