@@ -25,29 +25,23 @@ git clone <repo link>
 ```
 This downloads all the necessary files to your computer.
 
-###  Step 2: Setup and Build
-1. Run the setup script:
+### Step 2: Setup
+From the `examples/` folder, run:
 ```bash
-setup.bat
+setup.bat weather
 ```
-This installs all required Python packages.
+This installs all required Python packages and copies the SDK to `libs/`.
 
-2. Run the build script:
-```bash
-build.bat
-```
-This creates the executable and prepares all necessary files.
-
-###  Step 3: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `weather` folder to:
+### Step 3: Install the Plugin
+Copy the entire `weather` folder to:
 ```bash
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
 ```
 
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-plugin-weather.exe`)
+💡 **Tip**: Python plugins run directly—no build step required! Make sure all files are copied, including:
+- `plugin.py` (main plugin script)
 - `manifest.json`
+- `libs/` folder (contains the G-Assist SDK)
 
 ## How to Use
 Once everything is set up, you can check weather information through simple chat commands.
@@ -76,161 +70,198 @@ Check this file for detailed error messages and debugging information.
 
 ## Developer Documentation
 
-### Plugin Architecture
-The weather plugin is built as a Python-based G-Assist plugin that communicates with the wttr.in weather service. The plugin follows a command-based architecture where it continuously listens for commands from G-Assist and processes weather requests through standard input/output pipes.
+### Architecture Overview
 
-### Core Components
+The Weather plugin is built using the **G-Assist SDK (Protocol V2)**, which handles all communication with G-Assist via JSON-RPC 2.0. The SDK abstracts away the protocol details so you can focus on business logic.
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
-  - Buffer size: 4096 bytes
+### Project Structure
 
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
+```
+weather/
+├── plugin.py           # Main plugin code using gassist_sdk
+├── manifest.json       # Plugin configuration (protocol_version: "2.0")
+├── requirements.txt    # Python dependencies
+├── libs/               # SDK folder (auto-added to PYTHONPATH)
+│   └── gassist_sdk/    # G-Assist Plugin SDK
+└── README.md
+```
 
-#### Weather Service Integration
-The plugin integrates with wttr.in service:
-- Base URL: `https://wttr.in/{city}?format=j1`
-- Response format: JSON with current conditions
-- Data extraction:
-  - Temperature (°C)
-  - Weather condition
-  - Humidity (%)
-- Timeout: 10 seconds for requests
+### Manifest File (`manifest.json`)
 
-### Available Commands
-
-#### `initialize`
-Initializes the plugin and sets up the environment.
-- No parameters required
-- Returns: `{"success": true, "message": "Plugin initialized"}`
-
-#### `shutdown`
-Gracefully terminates the plugin.
-- No parameters required
-- Returns: `{"success": true, "message": "Plugin shutdown"}`
-
-#### `get_weather_info`
-Retrieves weather information for a specified city.
-- Parameters:
-  ```json
-  {
-    "city": "string"  // Required: Name of the city
-  }
-  ```
-- Returns:
-  ```json
-  {
-    "success": true,
-    "message": "Partly cloudy, 15 degrees Celsius, Humidity: 65%"
-  }
-  ```
-
-### Command Processing
-The plugin processes commands through a JSON-based protocol:
-
-1. Input Format:
 ```json
 {
-    "tool_calls": [
+    "manifestVersion": 1,
+    "name": "weather",
+    "version": "2.0.0",
+    "description": "Get weather information for any city",
+    "executable": "plugin.py",
+    "persistent": false,
+    "protocol_version": "2.0",
+    "functions": [
         {
-            "func": "command_name",
-            "params": {
-                "city": "London"
-            }
+            "name": "get_weather_info",
+            "description": "Fetches weather information for a given city.",
+            "tags": ["weather", "forecast", "temperature"],
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "The name of the city to get the weather for."
+                }
+            },
+            "required": ["city"]
         }
     ]
 }
 ```
 
-2. Output Format:
-```json
-{
-    "success": true|false,
-    "message": "Response message or error description"
-}
+### Plugin Code (`plugin.py`)
+
+The SDK handles all protocol communication automatically:
+
+```python
+import os
+import sys
+import logging
+import requests
+
+# SDK import (from libs/ folder)
+_plugin_dir = os.path.dirname(os.path.abspath(__file__))
+_libs_path = os.path.join(_plugin_dir, "libs")
+if os.path.exists(_libs_path) and _libs_path not in sys.path:
+    sys.path.insert(0, _libs_path)
+
+from gassist_sdk import Plugin, Context
+
+# Configuration
+PLUGIN_NAME = "weather"
+PLUGIN_DIR = os.path.join(
+    os.environ.get("PROGRAMDATA", "."),
+    "NVIDIA Corporation", "nvtopps", "rise", "plugins", PLUGIN_NAME
+)
+LOG_FILE = os.path.join(PLUGIN_DIR, f"{PLUGIN_NAME}-plugin.log")
+
+os.makedirs(PLUGIN_DIR, exist_ok=True)
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Create plugin instance
+plugin = Plugin(
+    name=PLUGIN_NAME,
+    version="2.0.0",
+    description="Get weather information for any city"
+)
+
+@plugin.command("get_weather_info")
+def get_weather_info(city: str, context: Context = None):
+    """
+    Get current weather information for a city.
+    
+    Args:
+        city: The name of the city to get weather for
+        context: Conversation context (provided by engine)
+    
+    Returns:
+        Weather information string
+    """
+    logger.info(f"Getting weather for: {city}")
+    
+    try:
+        response = requests.get(
+            f"https://wttr.in/{city}?format=j1",
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        current = data.get("current_condition", [{}])[0]
+        
+        condition = current.get("weatherDesc", [{}])[0].get("value", "Unknown")
+        temp_c = current.get("temp_C", "N/A")
+        humidity = current.get("humidity", "N/A")
+        
+        return f"{condition}, {temp_c} degrees Celsius, Humidity: {humidity}%"
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout getting weather for {city}")
+        return f"**Error:** Weather service timed out for {city}"
+    except Exception as e:
+        logger.error(f"Error getting weather: {e}")
+        return f"**Error:** Could not get weather for {city}"
+
+if __name__ == "__main__":
+    logger.info(f"Starting {PLUGIN_NAME} plugin...")
+    plugin.run()
 ```
 
-### Error Handling
-- All operations are wrapped in try-except blocks
-- Specific error handling for:
-  - Missing city parameter
-  - Request timeouts
-  - HTTP request errors
-  - JSON parsing errors
-  - Unexpected exceptions
-- All errors are logged with detailed information
-- Failed operations return a failure response with descriptive message
+### Key SDK Features Used
+
+| Feature | Description |
+|---------|-------------|
+| `@plugin.command()` | Decorator to register command handlers |
+| `plugin.run()` | Starts the plugin main loop (handles all protocol communication) |
+| `plugin.stream()` | Send streaming output during long operations |
+
+### Protocol V2 Benefits
+
+The SDK handles all protocol details automatically:
+- ✅ JSON-RPC 2.0 with length-prefixed framing
+- ✅ Automatic ping/pong responses (no heartbeat code needed!)
+- ✅ Error handling and graceful shutdown
+- ✅ No need to implement pipe communication manually
+
+### Weather Service Integration
+
+The plugin integrates with wttr.in service:
+- Base URL: `https://wttr.in/{city}?format=j1`
+- Response format: JSON with current conditions
+- Data extraction: Temperature (°C), Weather condition, Humidity (%)
+- Timeout: 10 seconds for requests
 
 ### Logging
-- Log file location: `%USERPROFILE%\weather-plugin.log`
-- Logging level: INFO
-- Format: `%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s`
-- Logged events:
-  - Command reception
-  - Function calls
-  - Parameter validation
-  - API requests
-  - Error conditions
-  - Response generation
 
-### Dependencies
-- Python 3.6+
-- Required Python packages:
-  - requests: For HTTP requests to wttr.in
-  - Standard library modules:
-    - json: For message serialization/deserialization
-    - logging: For operation logging
-    - os: For file path operations
-    - ctypes: For Windows API interaction
+- Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\weather\weather-plugin.log`
+- Logging level: INFO
+- Format: `%(asctime)s - %(levelname)s - %(message)s`
 
 ### Adding New Commands
-To add a new command:
-1. Implement command function with signature: `def new_command(params: dict = None) -> dict`
-2. Add command to `commands` dictionary in `main()`
-3. Implement proper error handling and logging
-4. Return standardized response format
-5. Add the function to the `functions` list in `manifest.json`:
+
+1. Add a new function with the `@plugin.command()` decorator:
+   ```python
+   @plugin.command("get_forecast")
+   def get_forecast(city: str, days: int = 3, context: Context = None):
+       """Get weather forecast for a city."""
+       # Your implementation
+       return "Forecast here"
+   ```
+
+2. Add the function to `manifest.json`:
    ```json
    {
-       "name": "new_command",
-       "description": "Description of what the command does",
-       "parameters": {
-           "parameter_name": {
+       "name": "get_forecast",
+       "description": "Get weather forecast for a city",
+       "tags": ["weather", "forecast"],
+       "properties": {
+           "city": {
                "type": "string",
-               "description": "Description of the parameter"
+               "description": "The name of the city"
+           },
+           "days": {
+               "type": "integer",
+               "description": "Number of days to forecast (default: 3)"
            }
-       }
+       },
+       "required": ["city"]
    }
    ```
-6. Manually test the function:
 
-   First, run the script:
-   ``` bash
-   python plugin.py
-   ```
+3. Test locally by running `python plugin.py` and using the plugin emulator
 
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-7. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Deploy by copying the folder to the plugins directory
 
 
 ## Next Steps
