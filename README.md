@@ -48,6 +48,7 @@ print(f'Response: {response}')
 Response: Your GPU is an NVIDIA GeForce RTX 5090 with a Driver version of 572.83.
 """
 ```
+
 3. **Extend G-Assist with a Plugin**
 ```python
 from gassist_sdk import Plugin
@@ -87,7 +88,7 @@ ninja is LIVE!
 Title: Friday Fortnite!
 Game: Fortnite
 Viewers: 45,231
-Started At: 2024-03-14T12:34:56Z
+Started At: 2025-03-14T12:34:56Z
 ```
 
 When a streamer is offline:
@@ -140,17 +141,10 @@ See our [Twitch Plugin Example Code](./plugins/examples/twitch/) for a step-by-s
 
 ```mermaid
 flowchart TD
-    A[System Assist Module]
-    A -->|Runs Inference| B[Inference Engine]
-    A -->|Implements Built-In Functions| C[Core Functions]
-    A -->|Manages via JSON-RPC 2.0| D[Plugin Engine]
-    D <-->|Protocol V2| E[Plugin 1]
-    D <-->|Protocol V2| F[Plugin 2]
-    D <-->|Protocol V2| G[Plugin n]
-    H[Community Code]
-    H -->|Develops & Contributes| E
-    H -->|Develops & Contributes| F
-    H -->|Develops & Contributes| G
+    A[G-Assist] --> B[Inference Engine]
+    B -->|Built-in Commands| C[Core Functions]
+    B -->|Plugin Commands| D[Plugin Engine]
+    D <-->|JSON-RPC 2.0| E[Plugins]
 ```
 
 ### Protocol V2 Features
@@ -241,6 +235,11 @@ The manifest file acts as the bridge between G-Assist and your plugin. G-Assist 
 ## NVIDIA-Built G-Assist Plugins
 Explore our official example plugins:
 
+### Getting Started
+- **[Hello World (Python)](./plugins/examples/hello-world)** - Minimal Python plugin template to get started quickly
+- **[Hello World (C++)](./plugins/examples/hello-world-cpp)** - Minimal C++ plugin template for compiled plugins
+- **[Hello World (Node.js)](./plugins/examples/hello-world-nodejs)** - Minimal Node.js plugin template for JavaScript developers
+
 ### AI & Information
 - **[Gemini AI Integration](./plugins/examples/gemini)** - Query Google's Gemini AI for real-time information, general knowledge, and web searches
 - **[Weather](./plugins/examples/weather)** - Get current weather conditions for any city
@@ -270,6 +269,7 @@ Check out what others have built:
 - **[Plugin SDK (Python)](./plugins/sdk/python/)** - Protocol V2 SDK for building plugins with minimal boilerplate
 - **[Plugin SDK (C++)](./plugins/sdk/cpp/)** - Header-only C++ SDK for performance-critical plugins
 - **[Plugin SDK (Node.js)](./plugins/sdk/nodejs/)** - JavaScript SDK for Node.js plugins
+- **[Plugin Emulator](./plugins/plugin_emulator/)** - Test and debug plugins locally without G-Assist running
 - **[Python Bindings](./api/bindings/python/)** - Python API for interacting with G-Assist
 - **[C++ API](./api/c++/)** - Native C++ interface for performance-critical applications
 - **[ChatGPT-powered Plugin Builder](./plugins/plugin-builder/)** - AI-assisted plugin development tool
