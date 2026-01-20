@@ -1,0 +1,21 @@
+# G-Assist Plugin Emulator Requirements
+
+# Core dependencies (no additional packages needed for basic functionality)
+# The emulator uses only Python standard library for core features:
+# - subprocess (process management)
+# - threading (background reader thread)
+# - json (JSON-RPC protocol)
+# - struct (message framing)
+# - queue (thread-safe communication)
+# - pathlib (path handling)
+
+# Optional: Color output for CLI
+colorama>=0.4.6
+
+# For autonomous testing mode (LLM judge integration)
+# These are required only if using --test command with autonomous mode
+openai>=1.0.0
+
+# Note: The LLM judge uses NVIDIA API which is OpenAI-compatible
+# Set LLM_API_KEY environment variable with your NVIDIA API key
+

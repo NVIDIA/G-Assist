@@ -1,0 +1,51 @@
+{
+    "manifestVersion": 1,
+    "protocol_version": "2.0",
+    "description": "Example plugin demonstrating the protocol V2 SDK",
+    "executable": "plugin.py",
+    "persistent": false,
+    "passthrough": true,
+    "functions": [
+        {
+            "name": "example_greet",
+            "description": "Greets the user with a personalized message",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the person to greet"
+                    }
+                },
+                "required": ["name"]
+            },
+            "tags": ["greeting", "example"]
+        },
+        {
+            "name": "example_calculate",
+            "description": "Performs a simple calculation",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "description": "Operation to perform",
+                        "enum": ["add", "subtract", "multiply", "divide"]
+                    },
+                    "a": {
+                        "type": "number",
+                        "description": "First operand"
+                    },
+                    "b": {
+                        "type": "number",
+                        "description": "Second operand"
+                    }
+                },
+                "required": ["operation", "a", "b"]
+            },
+            "tags": ["math", "example"]
+        }
+    ],
+    "tags": ["example", "demo"]
+}
+

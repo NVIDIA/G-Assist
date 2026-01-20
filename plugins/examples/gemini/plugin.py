@@ -22,6 +22,7 @@ This plugin integrates Google Gemini with G-Assist, providing:
 - Interactive setup wizard for API key configuration
 """
 
+import atexit
 import json
 import logging
 import os
@@ -30,7 +31,6 @@ import time
 import queue
 import threading
 import webbrowser
-import subprocess
 from typing import Optional
 
 # LAZY IMPORTS - these are slow and will be loaded on first use
@@ -98,32 +98,45 @@ PLUGIN_DIR = os.path.join(
 )
 API_KEY_FILE = os.path.join(PLUGIN_DIR, 'gemini-api.key')
 CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
-LOG_FILE = os.path.join(PLUGIN_DIR, 'gemini-plugin.log')
 
 os.makedirs(PLUGIN_DIR, exist_ok=True)
 
-# Logging with immediate flush
-class FlushingFileHandler(logging.FileHandler):
-    def emit(self, record):
-        super().emit(record)
-        self.flush()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[FlushingFileHandler(LOG_FILE)]
-)
+# Use SDK's logging (writes to gassist_sdk.log)
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_resources():
+    """Clean up genai client HTTP connections on shutdown."""
+    global client
+    if client is not None:
+        try:
+            if hasattr(client, '_http_client') and client._http_client:
+                client._http_client.close()
+            elif hasattr(client, 'close'):
+                client.close()
+        except Exception:
+            pass
+
+
+# Register cleanup to run on exit
+atexit.register(_cleanup_resources)
+
 
 # ============================================================================
 # GLOBAL STATE
 # ============================================================================
 API_KEY: Optional[str] = None
 client = None
-model: str = 'gemini-pro'
+model: str = 'gemini-2.5-flash'  # Fast model, override via config.json
 SETUP_COMPLETE = False
 conversation_history = []  # Stores {"role": "user/assistant", "content": "..."}
 PENDING_CALL: Optional[dict] = None  # {"func": callable, "args": {...}}
+
+# Store last query for retry after API key change
+_last_query: Optional[str] = None
+
+# Track API key file modification time to detect external changes
+_api_key_file_mtime: float = 0.0
 
 
 def store_pending_call(func, **kwargs):
@@ -161,7 +174,7 @@ plugin = Plugin(
 
 def load_api_key() -> bool:
     """Load and validate API key from file."""
-    global API_KEY, client, SETUP_COMPLETE
+    global API_KEY, client, SETUP_COMPLETE, _api_key_file_mtime
     
     if not os.path.isfile(API_KEY_FILE):
         logger.info("[INIT] No API key file found")
@@ -184,11 +197,76 @@ def load_api_key() -> bool:
         client = test_client
         API_KEY = key
         SETUP_COMPLETE = True
+        # Track file modification time to detect external changes
+        _api_key_file_mtime = os.path.getmtime(API_KEY_FILE)
         logger.info("[INIT] API key validated successfully")
         return True
     except Exception as e:
         logger.error(f"[INIT] API key validation failed: {e}")
         return False
+
+
+def load_api_key_with_keepalive() -> bool:
+    """
+    Load API key in background thread while sending keepalives.
+    
+    This prevents heartbeat timeout during slow operations like:
+    - Importing google.genai library (2-5 seconds)
+    - Validating API key via network call (5-10 seconds)
+    
+    Returns:
+        True if API key loaded and validated successfully, False otherwise.
+    """
+    result_queue = queue.Queue()
+    
+    def worker():
+        try:
+            success = load_api_key()
+            result_queue.put(("success", success))
+        except Exception as e:
+            logger.error(f"[INIT] API key loading error: {e}")
+            result_queue.put(("error", str(e)))
+    
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    
+    # Send keepalives every 2 seconds while waiting for background thread
+    logger.info("[INIT] Loading API key with keepalives...")
+    while thread.is_alive():
+        plugin.stream(".")
+        thread.join(timeout=2.0)
+    
+    # Get result from completed thread
+    try:
+        msg_type, result = result_queue.get(timeout=1.0)
+        if msg_type == "error":
+            return False
+        return result
+    except queue.Empty:
+        logger.error("[INIT] API key loading thread completed but no result received")
+        return False
+
+
+def _check_api_key_file_changed() -> bool:
+    """Check if API key file was modified externally and reload if needed."""
+    global API_KEY, client, SETUP_COMPLETE, _api_key_file_mtime
+    
+    if not os.path.isfile(API_KEY_FILE):
+        return False
+    
+    try:
+        current_mtime = os.path.getmtime(API_KEY_FILE)
+        if current_mtime > _api_key_file_mtime:
+            logger.info("[INIT] API key file changed externally, reloading...")
+            # Reset state to force reload
+            API_KEY = None
+            client = None
+            SETUP_COMPLETE = False
+            return load_api_key_with_keepalive()
+    except Exception as e:
+        logger.debug(f"[INIT] Error checking API key file mtime: {e}")
+    
+    return True  # No change, current key is still valid
 
 
 def load_model_config():
@@ -222,34 +300,19 @@ def sanitize_history_for_search(history: list) -> list:
     return clean_history
 
 
-def convert_openai_history_to_google_gemini(openai_history):
-    """Convert OpenAI chat history to Google Gemini format."""
-    google_history = []
-    for message in openai_history:
-        role = message.get("role")
-        content = message.get("content")
-        part = Part(text=content)
-        if role == "user":
-            google_history.append(UserContent(parts=[part]))
-        elif role == "assistant":
-            google_history.append(ModelContent(parts=[part]))
-    return google_history
-
-
-def stream_gemini_response(context: list, timeout_seconds: int = 30) -> str:
+def stream_gemini_response(context: list, timeout_seconds: int = 120) -> str:
     """
     Stream Gemini response with timeout.
     
     Args:
         context: List of message dicts with role/content
-        timeout_seconds: Maximum time to wait
+        timeout_seconds: Maximum time to wait (default 120s for web search queries)
         
     Returns:
         Full response text
     """
     global client, model, conversation_history
     
-    import sys
     logger.info("GEMINI: Entering stream_gemini_response()")
     sys.stderr.flush()
     
@@ -298,7 +361,6 @@ def stream_gemini_response(context: list, timeout_seconds: int = 30) -> str:
     stream_thread.start()
     
     logger.info("GEMINI: Started streaming thread")
-    import sys
     sys.stderr.flush()  # Force flush logs
     
     start_time = time.time()
@@ -382,7 +444,7 @@ def run_setup_wizard() -> str:
     global API_KEY, client, SETUP_COMPLETE
     
     # Check if key exists and is valid
-    if load_api_key():
+    if load_api_key_with_keepalive():
         plugin.set_keep_session(True)
         return """_
 Google Gemini plugin is configured and ready!
@@ -393,7 +455,7 @@ I'll stay in conversation mode - just keep typing your questions!
 Type "exit" to leave Gemini mode."""
     
     # Show setup instructions
-    message = f"""_
+    message = """_
 **Gemini Plugin - First Time Setup**
 
 Welcome! Let's get your Google Gemini API key. This takes about **1 minute**.
@@ -412,17 +474,11 @@ I'm opening Google AI Studio in your browser...
 
 ---
 
-**Step 2: Save Your Key**
+**Step 2: Paste Your Key Here**
 
-I'm opening the key file for you:
-```
-{API_KEY_FILE}
-```
+Just paste your API key in this chat and I'll save it for you.
 
-1. Paste your API key
-2. Save the file
-
-Say **"next"** or **"continue"** when you've saved the file, and I'll complete your original request.\r"""
+_(Your key starts with "AIza...")_\r"""
     
     try:
         # Open browser
@@ -433,32 +489,6 @@ Say **"next"** or **"continue"** when you've saved the file, and I'll complete y
             )
         else:
             webbrowser.open("https://aistudio.google.com/app/apikey")
-        
-        time.sleep(1)
-        
-        # Create key file if needed
-        os.makedirs(os.path.dirname(API_KEY_FILE), exist_ok=True)
-        if not os.path.exists(API_KEY_FILE):
-            with open(API_KEY_FILE, 'w') as f:
-                f.write("")
-        
-        # Open in Notepad
-        subprocess.Popen(['notepad.exe', API_KEY_FILE])
-        
-        # Try to bring Notepad to foreground
-        if sys.platform == 'win32':
-            try:
-                import win32gui
-                import win32con
-                time.sleep(0.5)
-                def enum_callback(hwnd, results):
-                    title = win32gui.GetWindowText(hwnd).lower()
-                    if 'gemini-api.key' in title or 'notepad' in title:
-                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                        win32gui.SetForegroundWindow(hwnd)
-                win32gui.EnumWindows(enum_callback, None)
-            except:
-                pass
                 
     except Exception as e:
         logger.error(f"[WIZARD] Error: {e}")
@@ -484,18 +514,26 @@ def query_gemini(query: str = None, context: Context = None, _from_on_input: boo
         _from_on_input: Internal flag - True when called from on_input (italics already escaped)
         _from_pending: Internal flag - True when called from execute_pending_call
     """
-    global API_KEY, client, SETUP_COMPLETE, conversation_history
+    global API_KEY, client, SETUP_COMPLETE, conversation_history, _last_query
+    
+    # Check if API key file was modified externally
+    _check_api_key_file_changed()
     
     # Check if setup is needed - try to load API key silently first
     if not SETUP_COMPLETE or not client:
         logger.info("[QUERY] API not initialized, attempting to load API key...")
-        if not load_api_key():
+        if not load_api_key_with_keepalive():
             # Key doesn't exist or is invalid - store pending call and run setup wizard
             logger.info("[QUERY] API key not configured, storing pending call and running setup wizard")
             store_pending_call(query_gemini, query=query, context=context)
             return run_setup_wizard()
     
     load_model_config()
+    
+    # Store query for retry after API key errors
+    if query:
+        _last_query = query
+        logger.info(f"[QUERY] Stored _last_query: {_last_query[:50]}...")
     
     logger.info(f"GEMINI: Processing query: {query[:50] if query else 'None'}...")
     
@@ -522,26 +560,50 @@ def query_gemini(query: str = None, context: Context = None, _from_on_input: boo
     
     try:
         clean_context = sanitize_history_for_search(ctx)
-        stream_gemini_response(clean_context, timeout_seconds=30)
+        stream_gemini_response(clean_context, timeout_seconds=120)
+        
+        # Clear last query after successful response
+        _last_query = None
         
         # Stay in conversation mode
         plugin.set_keep_session(True)
         return ""  # Response was streamed
         
     except Exception as e:
-        error_str = str(e)
+        error_str = str(e).upper()
         logger.error(f"GEMINI: API error: {error_str}")
         
-        if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
-            plugin.stream("\n\nRate limit reached. Please try again in a moment.")
-            plugin.set_keep_session(True)
-            return ""
-        
-        if 'API_KEY_INVALID' in error_str or 'INVALID_ARGUMENT' in error_str:
+        # API key issues - prompt for new key
+        key_error_indicators = [
+            'API_KEY_INVALID', 'INVALID_API_KEY', 'API KEY',
+            'UNAUTHENTICATED', '401',
+            'PERMISSION_DENIED', '403',
+            'INVALID_ARGUMENT',
+        ]
+        if any(indicator in error_str for indicator in key_error_indicators):
+            logger.info("[ERROR] API key issue detected, prompting for new key")
             SETUP_COMPLETE = False
             API_KEY = None
             client = None
-            return "_ **API key is invalid.** Please check your key and try again.\n\n" + run_setup_wizard()
+            plugin.set_keep_session(True)
+            return (
+                "_ **API key issue detected.**\n\n"
+                "Your API key may be invalid, expired, or lack permissions.\n\n"
+                "Please paste a new API key to continue.\n\n"
+                "_(Get one at https://aistudio.google.com/app/apikey)_"
+            )
+        
+        # Rate limit / quota - offer to use different key
+        if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str or 'QUOTA' in error_str:
+            logger.info("[ERROR] Rate limit or quota exceeded")
+            plugin.set_keep_session(True)
+            return (
+                "_ **Rate limit or quota exceeded.**\n\n"
+                "You can:\n"
+                "- Wait a moment and try again\n"
+                "- Paste a different API key to switch accounts\n\n"
+                "_(Your key starts with \"AIza...\")_"
+            )
         
         # Keep session active so user can retry
         plugin.set_keep_session(True)
@@ -556,51 +618,104 @@ def on_input(content: str):
     Args:
         content: The user's message
     """
-    global SETUP_COMPLETE, client, conversation_history
+    global SETUP_COMPLETE, client, conversation_history, API_KEY, _last_query
+    
+    # Check if API key file was modified externally
+    _check_api_key_file_changed()
     
     logger.info(f"[INPUT] Received: {content[:50]}...")
     
-    # If setup isn't complete, try to load API key and execute pending call
+    # Save query for potential retry (before any checks that might fail)
+    # Only save if it's not an API key
+    if 'AIza' not in content:
+        _last_query = content
+        logger.info(f"[INPUT] Saved _last_query: {content[:50]}...")
+    
+    # Always check for API key input first (allows switching keys after errors)
+    # Check if input looks like an API key (starts with AIza, ~39 chars)
+    # Also handle common cases: quotes, "my key is...", etc.
+    content_stripped = content.strip().strip('"\'')  # Remove quotes
+    
+    # Extract API key if user typed something like "my key is AIza..."
+    if 'AIza' in content_stripped:
+        # Find the API key portion
+        idx = content_stripped.find('AIza')
+        potential_key = content_stripped[idx:].split()[0].strip('"\'.,;:')
+        
+        if potential_key.startswith('AIza') and len(potential_key) >= 35:
+            logger.info("[INPUT] Detected API key input, saving to file...")
+            try:
+                os.makedirs(os.path.dirname(API_KEY_FILE), exist_ok=True)
+                with open(API_KEY_FILE, 'w') as f:
+                    f.write(potential_key)
+                logger.info("[INPUT] API key saved to file")
+                
+                # Reset state to force re-validation with new key
+                SETUP_COMPLETE = False
+                API_KEY = None
+                client = None
+                
+                # Now try to load and validate it
+                if load_api_key_with_keepalive():
+                    logger.info("[INPUT] API key validated")
+                    plugin.stream("_ ")  # Close engine's italic
+                    plugin.stream("_API key saved and verified!_\n\n")
+                    
+                    # Try pending call first (from setup wizard)
+                    result = execute_pending_call()
+                    if result is not None:
+                        return result
+                    
+                    # No pending call - check if we have a last query to retry
+                    logger.info(f"[INPUT] Checking _last_query: {_last_query}")
+                    if _last_query:
+                        saved_query = _last_query
+                        logger.info(f"[INPUT] Retrying last query: {saved_query[:50]}...")
+                        return query_gemini(query=saved_query, _from_on_input=True)
+                    
+                    plugin.set_keep_session(True)
+                    return "You're all set! Ask me anything."
+                else:
+                    plugin.set_keep_session(True)
+                    return (
+                        "**API key saved but validation failed.**\n\n"
+                        "Please check that you copied the complete key from Google AI Studio.\n\n"
+                        "Paste your API key again to retry."
+                    )
+            except Exception as e:
+                logger.error(f"[INPUT] Error saving API key: {e}")
+                plugin.set_keep_session(True)
+                return f"**Error saving API key:** {e}\n\nPlease try again."
+    
+    # If setup isn't complete, try to load existing key or prompt for one
     if not SETUP_COMPLETE:
-        logger.info("[INPUT] Setup not complete, verifying API key...")
-        if load_api_key():
-            # Key is valid - stream confirmation and execute the pending call
-            logger.info("[INPUT] API key verified, executing pending call...")
-            plugin.stream("_ ")  # Close engine's italic
+        logger.info("[INPUT] Setup not complete, checking for existing key...")
+        
+        if load_api_key_with_keepalive():
+            logger.info("[INPUT] API key verified from file, executing pending call...")
+            plugin.stream("_ ")
             plugin.stream("_Gemini plugin configured!_\n\n")
             result = execute_pending_call()
             if result is not None:
                 return result
-            # No pending call - show ready message
             plugin.set_keep_session(True)
             return "You're all set! Ask me anything."
-        else:
-            plugin.set_keep_session(True)
-            return (
-                "**API key not found.**\n\n"
-                "The key file is still empty or invalid.\n\n"
-                "---\n\n"
-                "Please make sure you:\n"
-                "1. Pasted your **API key** from Google AI Studio\n"
-                "2. **Saved** the file\n\n"
-                f"_Key file:_ `{API_KEY_FILE}`\n\n"
-                "Say **\"next\"** or **\"continue\"** when ready."
-            )
-    
-    # Check for exit commands (only after setup is complete)
-    exit_commands = ['exit', 'quit', 'stop', 'bye', 'done', 'exit gemini', 
-                     'stop gemini', 'quit gemini']
-    if content.lower().strip() in exit_commands:
-        logger.info("[INPUT] Exit command received")
-        conversation_history = []
-        plugin.set_keep_session(False)
-        return "_ Exiting Gemini mode. Conversation history cleared."
-    
-    # Check for clear history
-    if content.lower().strip() in ['clear', 'reset', 'new conversation', 'clear history']:
-        conversation_history = []
+        
+        # No valid key yet - prompt user with context
         plugin.set_keep_session(True)
-        return "_ Conversation history cleared. Ask me anything!"
+        if _last_query:
+            return (
+                "**API key invalid or expired.**\n\n"
+                "Please paste a valid Gemini API key to continue.\n\n"
+                "Your query will be sent automatically once the key is verified.\n\n"
+                "_(Get a key at https://aistudio.google.com/app/apikey)_"
+            )
+        else:
+            return (
+                "**Waiting for your API key.**\n\n"
+                "Please paste your Gemini API key here.\n\n"
+                "_(It starts with \"AIza...\")_"
+            )
     
     # Add user message to history
     conversation_history.append({"role": "user", "content": content})

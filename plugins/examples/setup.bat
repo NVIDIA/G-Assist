@@ -343,7 +343,10 @@ if "%P_TYPE%"=="nodejs" (
         )
     )
     if exist "%P_DIR%\launch.bat" copy /Y "%P_DIR%\launch.bat" "%P_DEPLOY_DIR%\" >nul 2>&1
-    if exist "%P_LIBS%\gassist-sdk.js" copy /Y "%P_LIBS%\gassist-sdk.js" "%P_DEPLOY_DIR%\" >nul 2>&1
+    if exist "%P_LIBS%\gassist-sdk.js" (
+        if not exist "%P_DEPLOY_DIR%\libs" mkdir "%P_DEPLOY_DIR%\libs"
+        copy /Y "%P_LIBS%\gassist-sdk.js" "%P_DEPLOY_DIR%\libs\" >nul 2>&1
+    )
 )
 
 :: Check for deployment errors
