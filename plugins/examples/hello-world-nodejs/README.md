@@ -15,23 +15,35 @@ A simple example plugin demonstrating the **G-Assist Node.js SDK** and **JSON-RP
 
 ### 1. Setup
 
-Copy the SDK from the central location:
-```batch
-copy ..\..\sdk\nodejs\gassist-sdk.js .
+From the `plugins/examples` directory, run:
+```bash
+setup.bat hello-world-nodejs
 ```
+
+This copies the Node.js SDK to `libs/gassist-sdk.js`.
 
 ### 2. Deploy
 
-Copy this folder to:
-```
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-nodejs\
+Deploy using the setup script:
+```bash
+setup.bat hello-world-nodejs -deploy
 ```
 
-Files needed:
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-nodejs`:
 - `plugin.js`
 - `manifest.json`
 - `launch.bat`
-- `gassist-sdk.js` (copy from `plugins/sdk/nodejs/`)
+- `libs/gassist-sdk.js`
+
+### 3. Test with Plugin Emulator
+
+Test your deployed plugin using the emulator:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the hello-world-nodejs plugin from the interactive menu to test the commands.
 
 ## Project Structure
 
@@ -41,9 +53,11 @@ hello-world-nodejs/
 ├── manifest.json       # Function definitions for LLM
 ├── launch.bat          # Wrapper script to launch Node.js plugin
 ├── package.json        # npm package info
+├── libs/               # Dependencies (created by setup.bat)
+│   └── gassist-sdk.js  # G-Assist Node.js SDK
 └── README.md           # This file
 
-# SDK location (copy to plugin folder for deployment):
+# SDK location (copied by setup.bat):
 plugins/sdk/nodejs/
 ├── gassist-sdk.js      # G-Assist Node.js SDK
 └── README.md           # SDK documentation
@@ -51,14 +65,12 @@ plugins/sdk/nodejs/
 
 **Note:** The `launch.bat` wrapper is required because the engine launches plugins as executables. The batch file calls `node plugin.js` to run the Node.js plugin.
 
-For deployment, copy `gassist-sdk.js` from `plugins/sdk/nodejs/` to your plugin folder.
-
 ## How It Works
 
 ### The Node.js SDK Pattern
 
 ```javascript
-const { Plugin } = require('./gassist-sdk');
+const { Plugin } = require('./libs/gassist-sdk');
 
 const plugin = new Plugin('my-plugin', '1.0.0', 'Description');
 
@@ -122,7 +134,15 @@ Plugin logs are written to:
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-nodejs\hello-world-nodejs.log
 ```
 
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Cannot find module './libs/gassist-sdk'" | Run `setup.bat hello-world-nodejs` from examples folder |
+| Commands not recognized | Ensure `manifest.json` function names match `plugin.command()` names |
+| Plugin not responding | Check the log file for errors |
+| Node.js not found | Ensure Node.js is installed and in PATH |
+
 ## License
 
 Apache License 2.0
-

@@ -14,44 +14,32 @@ Transform your G-Assist experience with real-time Twitch stream status checking!
 ## Before You Start
 Make sure you have:
 - Windows PC
-- Python 3.6 or higher installed
+- Python 3.8 or higher installed
 - Twitch Developer Application credentials - Visit the [Twitch Developer Console](https://dev.twitch.tv/console) to create them
 - NVIDIA G-Assist installed
 
 ## Installation Guide
 
-### Step 1: Get the Files
-```bash
-git clone <repo link>
-cd twitch
-```
-This downloads all the necessary files to your computer.
-
-### Step 2: Set up your Twitch App
+### Step 1: Set up your Twitch App
 - Register an application. Follow directions here: https://dev.twitch.tv/docs/authentication/register-app 
     - Set OAuth Redirect URLs to http://localhost:3000
     - Set Category to Application Integration
 - From your Developer Console, in the “Applications” tab, locate your app under “Developer Applications”, and click “Manage”.
 - Copy Client ID and Client Secret and paste to the `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` values in the `config.json file` 
 
-### Step 3: Setup
-From the `examples/` folder, run:
+### Step 2: Setup and Deploy
+From the `plugins/examples` directory, run:
 ```bash
 setup.bat twitch
 ```
-This installs all required Python packages and copies the SDK to `libs/`.
+This installs dependencies to the `libs/` folder and copies the G-Assist SDK.
 
-### Step 4: Install the Plugin
-Copy the entire `twitch` folder to:
+To deploy the plugin to G-Assist:
 ```bash
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+setup.bat twitch -deploy
 ```
 
-💡 **Tip**: Python plugins run directly—no build step required! Make sure all files are copied, including:
-- `plugin.py` (main plugin script)
-- `manifest.json`
-- `config.json` (with your Twitch Client ID and Secret configured)
-- `libs/` folder (contains the G-Assist SDK)
+💡 **Tip**: Make sure G-Assist is closed when deploying!
 
 ## How to Use
 Once everything is set up, you can check Twitch stream status through simple chat commands.
@@ -88,11 +76,14 @@ When you first try to use the Twitch plugin without configuration, it will autom
 
 Just say **"next"** or **"continue"** to move between steps. The setup takes about 5 minutes and once complete, your original query is executed automatically!
 
-## Troubleshooting Tips
+## Troubleshooting
 
-### Authentication Issues
-- **Getting "Failed to authenticate" errors?**
-  - Verify your Client ID and Secret in config.json
+| Problem | Solution |
+|---------|----------|
+| "Failed to authenticate" errors | Verify your Client ID and Secret in config.json |
+| Setup wizard keeps appearing | Make sure you saved the config file after adding credentials |
+| Plugin not loading | Verify files are deployed and restart G-Assist |
+| OAuth token expired | The plugin automatically refreshes tokens; if issues persist, check credentials |
 
 ### Logging
 The plugin logs all activity to:
@@ -126,7 +117,6 @@ twitch/
 {
     "manifestVersion": 1,
     "name": "twitch",
-    "version": "2.0.0",
     "description": "Check Twitch stream status",
     "executable": "plugin.py",
     "persistent": true,
@@ -135,14 +125,13 @@ twitch/
         {
             "name": "check_twitch_live_status",
             "description": "Checks if a Twitch user is live and retrieves stream details.",
-            "tags": ["twitch", "live_status", "streaming"],
+            "tags": ["twitch", "live", "streaming"],
             "properties": {
                 "username": {
                     "type": "string",
                     "description": "The Twitch username to check."
                 }
-            },
-            "required": ["username"]
+            }
         }
     ]
 }
@@ -303,27 +292,25 @@ The SDK handles all protocol details automatically:
 }
 ```
 
-### Testing the Plugin
+### Testing
 
-1. **Setup**
-   ```bash
-   # From the examples/ folder
-   setup.bat twitch
-   ```
-
-2. **Local Testing**
+1. **Local test** - Run directly to check for syntax errors:
    ```bash
    python plugin.py
    ```
-   Use the plugin emulator from `plugins/plugin_emulator` for interactive testing.
 
-3. **Deployment**
-   Copy the entire `twitch` folder to:
+2. **Deploy** - From `plugins/examples` directory:
+   ```bash
+   setup.bat twitch -deploy
    ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\
+
+3. **Plugin emulator** - Test commands without G-Assist:
+   ```bash
+   python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
    ```
-   
-   Python plugins run directly—no build step required!
+   Then select the twitch plugin and test commands interactively.
+
+4. **G-Assist test** - Open G-Assist and try: "Is ninja streaming?"
 
 ### Adding New Commands
 
@@ -347,12 +334,11 @@ The SDK handles all protocol details automatically:
                "type": "string",
                "description": "The Twitch username"
            }
-       },
-       "required": ["username"]
+       }
    }
    ```
 
-3. Test and deploy!
+3. Deploy with `setup.bat twitch -deploy` and test!
 
 ### Pro Tips
 

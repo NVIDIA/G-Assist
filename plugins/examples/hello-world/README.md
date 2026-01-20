@@ -27,12 +27,28 @@ This pip installs dependencies from `requirements.txt` and copies the SDK to `li
 
 ### 2. Deploy
 
-Copy this entire folder to:
-```
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world\
+Deploy using the setup script:
+```bash
+setup.bat hello-world -deploy
 ```
 
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world`:
+- `plugin.py`
+- `manifest.json`
+- `config.json`
+- `libs/` folder (contains SDK)
+
 The plugin runs directly as a Python script - no build step required!
+
+### 3. Test with Plugin Emulator
+
+Test your deployed plugin using the emulator:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the hello-world plugin from the interactive menu to test the commands.
 
 ## Project Structure
 

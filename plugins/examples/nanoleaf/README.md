@@ -7,12 +7,12 @@ Transform your Nanoleaf LED panels into an interactive lighting experience with 
 - Use natural language: speak or type your commands
 - Works with any Nanoleaf device that supports the [Nanoleaf API](https://nanoleafapi.readthedocs.io/en/latest/index.html)
 - Seamlessly integrates with your G-Assist setup
-- Easy to set up and configure
+- Interactive setup wizard for first-time configuration
 
 ## Before You Start
 Make sure you have:
 - Windows PC
-- Python 3.x installed on your computer
+- Python 3.8 or higher installed
 - Your Nanoleaf device set up and connected to your 2.4GHz WiFi network
 - G-Assist installed on your system
 - Your Nanoleaf device's IP address 
@@ -23,46 +23,43 @@ Make sure you have:
 
 ## Installation Guide
 
-### Step 1: Get the Files
+### Step 1: Setup
+From the `plugins/examples` directory, run:
 ```bash
-git clone <repo link>
-cd nanoleaf
+setup.bat nanoleaf
 ```
-This downloads all the necessary files to your computer.
+This installs all required Python packages (`nanoleafapi`) and copies the SDK to `libs/`.
 
-### Step 2: Set Up Python Environment
-Run our setup script to create a virtual environment and install dependencies:
-
-```bash
-setup.bat
-```
-
-### Step 3: Configure Your Device
-1. Find the `config.json` file in the folder
+### Step 2: Configure Your Device
+1. Find the `config.json` file in the plugin folder
 2. Open it with any text editor (like Notepad)
 3. Replace the IP address with your Nanoleaf's IP address:
 ```json
 {
-  "ip": "192.168.1.100"  # Replace with your Nanoleaf's IP address
+  "ip": "192.168.1.100"
 }
 ```
 
-### Step 4: Build the Plugin
+### Step 3: Deploy
+Deploy using the setup script:
 ```bash
-build.bat
+setup.bat nanoleaf -deploy
 ```
 
-### Step 5: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `nanoleaf` folder to:
-```bash
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
-```
-
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-plugin-nanoleaf.exe`)
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf`:
+- `plugin.py`
 - `manifest.json`
 - `config.json` (with your Nanoleaf IP address configured)
+- `libs/` folder (contains dependencies and SDK)
+
+### Step 4: Test with Plugin Emulator
+Test your deployed plugin using the emulator:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the nanoleaf plugin from the interactive menu to test the commands.
 
 ## How to Use
 Once everything is set up, you can control your Nanoleaf panels through G-Assist! Try these commands:
@@ -83,16 +80,20 @@ When you first try to use the Nanoleaf plugin without configuration, it will aut
 
 No manual config editing required unless you prefer it!
 
+## Troubleshooting
+| Issue | Solution |
+|-------|----------|
+| Can't find your Nanoleaf's IP? | Make sure your Nanoleaf is connected to your 2.4GHz WiFi network (5GHz networks are not supported) |
+| Commands not working? | Double-check that all files were copied to the plugins folder & restart G-Assist |
+| Connection failed? | Verify the IP address is correct and you're on the same network as the Nanoleaf |
+| Pairing failed? | Hold the power button on your Nanoleaf for 5-7 seconds to enter pairing mode |
+
 ### Logging
 The plugin logs all activity to:
 ```
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\nanoleaf\nanoleaf-plugin.log
 ```
 Check this file for detailed error messages and debugging information.
-
-## Troubleshooting Tips
-- **Can't find your Nanoleaf's IP?** Make sure your Nanoleaf is connected to your 2.4GHz WiFi network (5GHz networks are not supported)
-- **Commands not working?** Double-check that all three files were copied to the plugins folder & restart G-Assist
 
 ## Developer Documentation
 
@@ -176,50 +177,56 @@ The plugin implements a pending call pattern for seamless first-time setup:
 To add a new command:
 
 1. Define the function with the `@plugin.command` decorator:
-   ```python
-   @plugin.command("my_new_command")
-   def my_new_command(param: str = "", _from_pending: bool = False):
-       """Command description."""
-       # Check configuration
-       load_config()
-       if not SETUP_COMPLETE or not NANOLEAF_IP:
-           store_pending_call(my_new_command, param=param)
-           plugin.set_keep_session(True)
-           return get_setup_instructions()
-       
-       # Ensure connection
-       if not ensure_connected():
-           return "**Connection failed.**..."
-       
-       # Implement command logic
-       try:
-           # Your code here
-           return "**Success!**"
-       except Exception as e:
-           logger.error(f"Error: {e}")
-           return "**Failed.**..."
-   ```
+```python
+@plugin.command("my_new_command")
+def my_new_command(param: str = "", _from_pending: bool = False):
+    """Command description."""
+    # Check configuration
+    load_config()
+    if not SETUP_COMPLETE or not NANOLEAF_IP:
+        store_pending_call(my_new_command, param=param)
+        plugin.set_keep_session(True)
+        return get_setup_instructions()
+    
+    # Ensure connection
+    if not ensure_connected():
+        return "**Connection failed.**..."
+    
+    # Implement command logic
+    try:
+        # Your code here
+        return "**Success!**"
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return "**Failed.**..."
+```
 
 2. Add the function to `manifest.json`:
-   ```json
-   {
-      "name": "my_new_command",
-      "description": "Description of what the command does",
-      "tags": ["nanoleaf", "lights"],
-      "properties": {
-         "param": {
-            "type": "string",
-            "description": "Description of the parameter"
-         }
+```json
+{
+   "name": "my_new_command",
+   "description": "Description of what the command does",
+   "tags": ["nanoleaf", "lights"],
+   "properties": {
+      "param": {
+         "type": "string",
+         "description": "Description of the parameter"
       }
    }
-   ```
+}
+```
 
-3. Build and test:
-   ```bash
-   build.bat
-   ```
-   Copy the dist folder contents to the plugins directory and test with G-Assist
+3. Deploy the plugin:
+```bash
+setup.bat nanoleaf -deploy
+```
+
+4. Test using the plugin emulator:
+```bash
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+
+5. Test with G-Assist by using voice or text commands to trigger your new function.
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
