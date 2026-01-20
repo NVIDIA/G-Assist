@@ -17,9 +17,13 @@ A Python tool that emulates the engine's plugin communication capabilities for p
 ## Installation
 
 ```bash
-# From the rise-acceptance-test directory
-cd plugin_emulator
+# From the plugins/plugin_emulator directory
 pip install -r requirements.txt
+```
+
+Or install from the `plugins` directory:
+```bash
+pip install -r plugin_emulator/requirements.txt
 ```
 
 ## Quick Start
@@ -328,4 +332,4 @@ plugin_emulator/
 
 ## License
 
-Internal NVIDIA use only.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](../examples/hello-world/LICENSE) file for details.

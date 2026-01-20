@@ -13,9 +13,19 @@ A simple example plugin demonstrating the **G-Assist C++ SDK** and **JSON-RPC V2
 
 ## Quick Start
 
-### 1. Build with CMake
+### 1. Setup
 
-```batch
+From the `plugins/examples` directory, run:
+```bash
+setup.bat hello-world-cpp
+```
+
+This copies the C++ SDK header to `libs/include/`.
+
+### 2. Build with CMake
+
+```bash
+cd hello-world-cpp
 mkdir build
 cd build
 cmake .. -G "Visual Studio 17 2022" -A x64
@@ -28,20 +38,30 @@ The executable and manifest.json will be in `build/Release/`.
 
 ### Alternative: Command Line (MSVC)
 
-```batch
-cl /EHsc /std:c++17 /O2 /I..\..\sdk\cpp /I<path-to-nlohmann> plugin.cpp /Fe:g-assist-plugin-hello-world-cpp.exe
+```bash
+cl /EHsc /std:c++17 /O2 /Ilibs/include plugin.cpp /Fe:g-assist-plugin-hello-world-cpp.exe
 ```
 
-### 2. Deploy
+### 3. Deploy
 
-Copy to:
-```
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-cpp\
+Deploy using the setup script:
+```bash
+setup.bat hello-world-cpp -deploy
 ```
 
-Files needed:
-- `g-assist-plugin-hello-world-cpp.exe`
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-cpp`:
+- `g-assist-plugin-hello-world-cpp.exe` (from `build/Release/`)
 - `manifest.json`
+
+### 4. Test with Plugin Emulator
+
+Test your deployed plugin using the emulator:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the hello-world-cpp plugin from the interactive menu to test the commands.
 
 ## Project Structure
 
@@ -50,32 +70,32 @@ hello-world-cpp/
 ├── plugin.cpp           # Main plugin code
 ├── manifest.json        # Function definitions for LLM
 ├── CMakeLists.txt       # CMake build configuration
+├── libs/                # Dependencies (created by setup.bat)
+│   └── include/
+│       └── gassist_sdk.hpp
 └── README.md            # This file
 
 # SDK location (referenced by CMake):
 plugins/sdk/cpp/
-├── gassist_sdk.hpp      # G-Assist C++ SDK
+├── gassist_sdk.hpp      # G-Assist C++ SDK (includes nlohmann/json)
 └── README.md            # SDK documentation
 ```
-
-**Note:** nlohmann/json is automatically downloaded by CMake during build.
 
 ## How It Works
 
 ### The C++ SDK Pattern
 
 ```cpp
-#include <nlohmann/json.hpp>
 #include "gassist_sdk.hpp"
 
-using json = nlohmann::json;
+using gassist::json;
 
 int main() {
     gassist::Plugin plugin("my-plugin", "1.0.0", "Description");
     
     plugin.command("my_function", [&](const json& args) -> json {
         std::string param = args.value("param", "default");
-        return "Result: " + param;
+        return json("Result: " + param);
     });
     
     plugin.run();
@@ -90,7 +110,7 @@ plugin.command("long_operation", [&](const json& args) -> json {
     plugin.stream("Starting...\n");
     // do work
     plugin.stream("Done!\n");
-    return "";  // All output was streamed
+    return json("");  // All output was streamed
 });
 ```
 
@@ -99,7 +119,7 @@ plugin.command("long_operation", [&](const json& args) -> json {
 ```cpp
 plugin.command("start_chat", [&](const json& args) -> json {
     plugin.set_keep_session(true);
-    return "Chat started!";
+    return json("Chat started!");
 });
 
 plugin.command("on_input", [&](const json& args) -> json {
@@ -107,18 +127,18 @@ plugin.command("on_input", [&](const json& args) -> json {
     
     if (content == "exit") {
         plugin.set_keep_session(false);
-        return "Goodbye!";
+        return json("Goodbye!");
     }
     
     plugin.set_keep_session(true);
-    return "You said: " + content;
+    return json("You said: " + content);
 });
 ```
 
 ## Dependencies
 
-- **nlohmann/json**: Download from https://github.com/nlohmann/json/releases
-- **C++17**: Required for `std::filesystem` and structured bindings
+- **nlohmann/json**: Automatically downloaded by CMake during build (no manual download needed)
+- **C++17**: Required for structured bindings and modern features
 
 ## Logs
 
@@ -127,7 +147,15 @@ Plugin logs are written to:
 %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\hello-world-cpp\hello-world-cpp.log
 ```
 
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Cannot find gassist_sdk.hpp" | Run `setup.bat hello-world-cpp` from examples folder |
+| CMake errors about nlohmann/json | Ensure internet connection for FetchContent download |
+| Commands not recognized | Ensure `manifest.json` function names match command registrations |
+| Plugin not responding | Check the log file for errors |
+
 ## License
 
 Apache License 2.0
-

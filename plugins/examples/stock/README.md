@@ -15,7 +15,7 @@ Transform your G-Assist experience with real-time stock market data! This plugin
 
 ## Before You Start
 Make sure you have:
-- Python 3.6 or higher installed
+- Python 3.8 or higher installed
 - NVIDIA G-Assist installed
 - Internet connection
 
@@ -23,37 +23,25 @@ Make sure you have:
 
 ## Quickstart
 
-### Step 1: Get the Files
+### Step 1: Setup
+From the `plugins/examples` directory, run:
 ```bash
-git clone <repo link>
-cd stock
+setup.bat stock
 ```
+This installs dependencies to the `libs/` folder and copies the G-Assist SDK.
 
-### Step 2: Setup and Build
-1. Run the setup script:
+### Step 2: Deploy
 ```bash
-setup.bat
+setup.bat stock -deploy
 ```
-This installs all required Python packages.
-
-2. Run the build script:
-```bash
-build.bat
+This copies the plugin files to:
 ```
-This creates the executable and prepares all necessary files.
-
-### Step 3: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `stock` folder to:
-```
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
+%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\stock
 ```
 
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-stock-plugin.exe`)
-- `manifest.json`
+💡 **Tip**: Make sure G-Assist is closed when deploying!
 
-### Step 4: Start Using It!
+### Step 3: Start Using It!
 Just ask G-Assist about any stock — the plugin will automatically guide you through setup if needed!
 
 ## First-Time Setup
@@ -119,19 +107,12 @@ The plugin stores its configuration at:
 
 ## Troubleshooting
 
-### API Issues
-- **"No quote found" errors?**
-  - Use the exact ticker symbol (e.g., `NVDA` not `NVIDIA`)
-  - Try looking up the ticker first: *"What's the ticker for NVIDIA?"*
-
-- **"Connection error" messages?**
-  - Check your internet connection
-  - Verify your API key is correct
-  - Check if you've exceeded your daily API limit (800 calls/day on free tier)
-
-- **Setup wizard keeps appearing?**
-  - Make sure you saved the config file after adding your API key
-  - Check that the API key is at least 10 characters long
+| Problem | Solution |
+|---------|----------|
+| "No quote found" errors | Use exact ticker symbol (e.g., `NVDA` not `NVIDIA`). Try looking up the ticker first. |
+| "Connection error" messages | Check internet connection, verify API key, check if you've exceeded daily limit (800 calls/day) |
+| Setup wizard keeps appearing | Make sure you saved the config file. API key must be at least 10 characters. |
+| Plugin not loading | Verify files are deployed and restart G-Assist |
 
 ### Logging
 The plugin logs all activity to:
@@ -213,12 +194,25 @@ The plugin implements a pending call pattern for seamless setup:
    }
    ```
 
-3. Test locally:
+### Testing
+
+1. **Local test** - Run directly to check for syntax errors:
    ```bash
    python plugin.py
    ```
 
-4. Build and deploy using `setup.bat` and `build.bat`
+2. **Deploy** - From `plugins/examples` directory:
+   ```bash
+   setup.bat stock -deploy
+   ```
+
+3. **Plugin emulator** - Test commands without G-Assist:
+   ```bash
+   python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+   ```
+   Then select the stock plugin and test commands interactively.
+
+4. **G-Assist test** - Open G-Assist and try: "What's the stock price of NVIDIA?"
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.

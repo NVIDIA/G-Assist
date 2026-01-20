@@ -6,14 +6,15 @@ Transform your music experience with G-Assist! This plugin lets you control Spot
 - Control Spotify playback (play, pause, next, previous)
 - Toggle shuffle mode
 - Adjust volume levels
+- Queue tracks for playback
 - Access and manage your playlists
+- Interactive setup wizard for first-time configuration
 - Seamlessly integrates with your G-Assist setup
-- Easy to set up and configure
 
 ## Before You Start
 Make sure you have:
 - Windows PC
-- Python 3.x installed on your computer
+- Python 3.8 or higher installed on your computer
 - Spotify Account (Free or Premium)
 - Spotify Developer Account
 - G-Assist installed on your system
@@ -53,30 +54,25 @@ Create a `config.json` file with your app credentials:
 ```json
 {
     "client_id": "<Your Client ID>",
-    "client_secret": "<Your Client Secret>",
-    "username": "<Your Spotify Username>"
+    "client_secret": "<Your Client Secret>"
 }
 ```
 
-### Step 4: Set Up Python Environment
-Run our setup script to create a virtual environment and install dependencies:
+💡 **Note**: The setup wizard will guide you through this configuration on first use if the file is empty.
+
+### Step 4: Set Up and Deploy
+From the `plugins/examples` directory, run:
 ```bash
-setup.bat
+setup.bat spotify
+```
+This installs dependencies to the `libs/` folder and copies the G-Assist SDK.
+
+To deploy the plugin to G-Assist:
+```bash
+setup.bat spotify -deploy
 ```
 
-### Step 5: Build the Plugin
-```bash
-build.bat
-```
-This will create a `dist\spotify` folder containing all the required files for the plugin.
-
-### Step 6: Install the Plugin
-1. Copy the entire `dist\spotify` folder to:
-   ```
-   %PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\
-   ```
-
-💡 **Tip**: Make sure all G-Assist clients are closed when copying files!
+💡 **Tip**: Make sure all G-Assist clients are closed when deploying!
 
 ## How to Use
 Once installed, you can control Spotify through G-Assist. Try these commands:
@@ -146,10 +142,15 @@ The plugin logs all activity to:
 ```
 Check this file for detailed error messages and debugging information.
 
-## Troubleshooting Tips
-- **Plugin not working?** Verify all files are copied to the plugins folder and restart G-Assist
-- **Can't authenticate?** Double-check your client ID and secret in config.json, delete auth.json
-- **"INVALID_CLIENT: Invalid redirect URI" error?** Your Spotify app's redirect URI doesn't match exactly. Make sure it's `http://127.0.0.1:8888/callback` (not `localhost`, not `https`, no trailing slash)
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Plugin not working | Verify files are deployed and restart G-Assist |
+| Can't authenticate | Double-check client ID/secret in config.json, delete auth.json |
+| "INVALID_CLIENT: Invalid redirect URI" | Redirect URI doesn't match exactly. Must be `http://127.0.0.1:8888/callback` (not `localhost`, not `https`, no trailing slash) |
+| Port 8888 in use | Check if another app is using port 8888, or update `redirect_port` in config.json |
+| No active device found | Open Spotify and start playing something first |
 
 ## Developer Documentation
 
@@ -249,8 +250,26 @@ def spotify_start_playback(name: str = "", type: str = "track", artist: str = ""
       }
    }
    ```
-4. Test locally by running `python plugin.py`
-5. Build and install the updated plugin
+
+### Testing
+
+1. **Local test** - Run directly to check for syntax errors:
+   ```bash
+   python plugin.py
+   ```
+
+2. **Deploy** - From `plugins/examples` directory:
+   ```bash
+   setup.bat spotify -deploy
+   ```
+
+3. **Plugin emulator** - Test commands without G-Assist:
+   ```bash
+   python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+   ```
+   Then select the spotify plugin and test commands interactively.
+
+4. **G-Assist test** - Open G-Assist and try voice commands like "Hey Spotify, what's playing?"
 
 
 ## Want to Contribute?

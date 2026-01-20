@@ -15,11 +15,11 @@ Make sure you have:
 - Logitech G HUB Gaming Software installed
 - Compatible Logitech G devices
 - G-Assist installed on your system
-- Visual Studio 2022
+- Visual Studio 2022 (for building from source)
 
 💡 **Tip**: Not all Logitech devices are supported. Check your device compatibility with LED Illumination SDK 9.00!
 
-✅ **Protocol V2**: This plugin now uses **Protocol V2** (JSON-RPC 2.0) with the G-Assist SDK for simplified, standards-based communication!
+✅ **Protocol V2**: This plugin uses **Protocol V2** (JSON-RPC 2.0) with the G-Assist C++ SDK for simplified, standards-based communication!
 
 ## Installation Guide
 
@@ -50,24 +50,23 @@ The installer will:
 
 If you prefer to build and install manually:
 
-#### Step 1: Get the Files
+#### Step 1: Setup
+From the `plugins/examples` directory, run:
 ```bash
-git clone --recurse-submodules <repository-url>
-cd logiled
+setup.bat logiled
 ```
+This copies the C++ SDK header to `libs/include/`.
 
 #### Step 2: Get Required Dependencies
 1. Download and install [Logitech G HUB](https://www.logitechg.com/en-us/innovation/g-hub.html)
 2. Download [LED Illumination SDK 9.00](https://www.logitechg.com/sdk/LED_SDK_9.00.zip) from the [Developer Lab](https://www.logitechg.com/en-us/innovation/developer-lab.html)
-3. Download [JSON for Modern C++ v3.11.3](https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip)
 
-#### Step 3: Set Up Dependencies
+**Note:** nlohmann/json is included in the project - no separate download needed.
+
+#### Step 3: Set Up LED SDK
 ```bash
 # Extract the SDK to project directory
 tar -xf path\to\LED_SDK_9.00.zip
-
-# Extract JSON library
-mkdir json && tar -xf path\to\include.zip -C json
 ```
 
 #### Step 4: Build the Plugin
@@ -75,17 +74,26 @@ mkdir json && tar -xf path\to\include.zip -C json
 2. Select Release configuration and x64 platform
 3. Build the solution (F7 or Build → Build Solution)
 
-#### Step 5: Install Manually
-1. Create the plugin directory:
-   ```
-   %programdata%\NVIDIA Corporation\nvtopps\rise\adapters\logiled
-   ```
+#### Step 5: Deploy
+Deploy using the setup script:
+```bash
+setup.bat logiled -deploy
+```
 
-2. Copy these files to the directory:
-   - `x64\Release\g-assist-plugin-logiled.exe`
-   - `manifest.json`
+Or manually copy these files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\logiled`:
+- `x64\Release\g-assist-plugin-logiled.exe`
+- `manifest.json`
 
-3. ⚠️ **Important**: Manually apply ACL security restrictions or use the installer for proper security.
+#### Step 6: Test with Plugin Emulator
+Test your deployed plugin using the emulator:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the logiled plugin from the interactive menu to test the commands.
+
+⚠️ **Important**: For full security, use the installer which applies ACL restrictions.
 
 ## How to Use
 Once everything is set up, you can control your Logitech devices through G-Assist! Try these commands:
@@ -95,14 +103,16 @@ Once everything is set up, you can control your Logitech devices through G-Assis
 
 💡 **Tip**: You can use either voice commands or type your requests directly into G-Assist!
 
-## Troubleshooting Tips
-- **Installer failing?** Make sure Visual Studio 2022 is installed with C++ development tools
-- **Build failing?** Ensure all dependencies (LED SDK, JSON library) are extracted to the correct locations
-- **Commands not working?** Verify G HUB is running and "Game lighting control" is enabled in Settings
-- **Lighting not changing?** On Windows 11, go to Settings > Personalization > Dynamic Lighting and disable "Use Dynamic Lighting on my devices"
-- **Device not responding?** Check if your device is supported by LED SDK 9.00
-- **Plugin not loading?** Check the installation directory and ensure G-Assist is restarted
-- **Security errors during install?** Run the installer as Administrator
+## Troubleshooting
+| Issue | Solution |
+|-------|----------|
+| Installer failing? | Make sure Visual Studio 2022 is installed with C++ development tools |
+| Build failing? | Ensure LED SDK is extracted to the correct location |
+| Commands not working? | Verify G HUB is running and "Game lighting control" is enabled in Settings |
+| Lighting not changing? | On Windows 11, go to Settings > Personalization > Dynamic Lighting and disable "Use Dynamic Lighting on my devices" |
+| Device not responding? | Check if your device is supported by LED SDK 9.00 |
+| Plugin not loading? | Check the installation directory and ensure G-Assist is restarted |
+| Security errors during install? | Run the installer as Administrator |
 
 ## Advanced Configuration
 

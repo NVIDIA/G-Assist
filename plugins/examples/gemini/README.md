@@ -1,13 +1,13 @@
 # Gemini Plugin for G-Assist
 
-Transform your G-Assist experience with the power of Google's Gemini AI! This plugin integrates Gemini's advanced AI capabilities directly into G-Assist, allowing you to generate text, maintain contextual conversations, and get AI-powered responses with ease.
+Transform your G-Assist experience with the power of Google's Gemini AI! This plugin integrates Gemini's advanced AI capabilities directly into G-Assist, allowing you to search the web, maintain contextual conversations, and get AI-powered responses with ease.
 
 ## What Can It Do?
-- Generate human-like text responses using Gemini
+- Search the web using Google Search grounding
+- Generate human-like text responses
 - Hold context-aware conversations that remember previous interactions
-- Built-in safety settings for content filtering
 - Real-time streaming responses
-- Seamless integration with G-Assist
+- Interactive setup wizard for easy API key configuration
 
 ## Before You Start
 Make sure you have:
@@ -19,32 +19,36 @@ Make sure you have:
 
 ## Installation Guide
 
-### Step 1: Get the Files
+### Step 1: Setup the Plugin Environment
+From the `plugins/examples` directory, run the setup script:
 ```bash
-git clone <repo link>
-cd gemini-plugin
+setup.bat gemini
 ```
 
-### Step 2: Set Up Python Packages
-```bash
-python -m pip install -r requirements.txt
-```
+This will:
+- Install pip dependencies (`google-genai`) to the `libs/` folder
+- Copy the G-Assist Python SDK to `libs/gassist_sdk/`
 
-### Step 3: Configure the Model (Optional)
-Adjust `config.json` to your needs:
+### Step 2: Configure the Model (Optional)
+Adjust `config.json` to change the model:
 ```json
 {
   "model": "gemini-2.5-flash"
 }
 ```
 
-### Step 4: Build and Deploy the Plugin
+### Step 3: Deploy the Plugin
 From the `plugins/examples` directory, run:
 ```bash
-setup.bat gemini --deploy
+setup.bat gemini -deploy
 ```
-This will build the plugin and deploy it to the G-Assist plugins directory.
+This will deploy the plugin to the G-Assist plugins directory.
 
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\gemini`:
+- `plugin.py`
+- `manifest.json`
+- `config.json`
+- `libs/` folder (contains dependencies and SDK)
 
 ## How to Use
 Once installed, you can use Gemini through G-Assist! On first use, the plugin will guide you through a setup wizard to configure your API key - just paste it directly in the chat when prompted.
@@ -101,7 +105,7 @@ The Gemini plugin is built using the G-Assist Python SDK (`gassist_sdk`), which 
 - Builds conversation context and streams responses
 - Parameters:
   - `query`: The user's question
-  - `context`: Conversation history from G-Assist
+  - `context`: Context object from G-Assist SDK containing conversation history
 
 ##### Command: `on_input`
 - Handles follow-up user input in passthrough/conversational mode
@@ -166,11 +170,20 @@ To add new features:
       }
    }
    ```
-3. Test using the plugin emulator from `plugins/plugin-builder`:
+3. Deploy the plugin:
    ```bash
-   python -m plugin_emulator --plugin gemini --interactive
+   setup.bat gemini -deploy
    ```
-4. Run `setup.bat gemini --deploy` from the `plugins/examples` directory to build and deploy
+
+4. Test using the plugin emulator from the `plugins` directory:
+   ```bash
+   cd plugins/plugin_emulator
+   pip install -r requirements.txt
+   python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+   ```
+   Select the gemini plugin from the interactive menu to test your new function.
+
+5. Test with G-Assist by using voice or text commands to trigger your new function.
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
@@ -180,5 +193,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Acknowledgments
 We use some amazing open-source software to make this work. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full list.
-
-

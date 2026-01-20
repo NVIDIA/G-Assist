@@ -4,10 +4,10 @@ A powerful plugin that enables G-Assist to interact with Discord, allowing you t
 
 ## What Can It Do?
 - Send text messages to Discord channels
-- Share latest G-Assist charts (csv)
-- Upload latest NVIDIA App video clips
-- Secure token-based authentication
-- Comprehensive logging for debugging
+- Share latest G-Assist performance charts (CSV)
+- Upload latest NVIDIA ShadowPlay video clips
+- Share latest NVIDIA ShadowPlay screenshots
+- Automatic setup wizard for first-time configuration
 
 ## Before You Start
 - G-Assist installed on your system
@@ -57,28 +57,28 @@ A powerful plugin that enables G-Assist to interact with Discord, allowing you t
 - To send Desktop captures: `"GAME_DIRECTORY": "Desktop"`
 
 ### Step 2: Setup the Plugin Environment
-Run the setup script:
+From the `plugins/examples` directory, run the setup script with the plugin name:
 ```bash
-setup.bat
+setup.bat discord
 ```
 
-### Step 3: Build the Plugin
-Run the build script:
+This will:
+- Install pip dependencies from `requirements.txt` to the `libs/` folder
+- Copy the G-Assist Python SDK to `libs/gassist_sdk/`
+
+### Step 3: Deploy the Plugin
+You can deploy directly using the setup script:
 ```bash
-build.bat
+setup.bat discord -deploy
 ```
 
-### Step 4: Install the Plugin
-1. Navigate to the `dist` folder created by the build script
-2. Copy the `discord` folder to:
-```bash
-%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins
-```
-
-💡 **Tip**: Make sure all files are copied, including:
-- The executable (`g-assist-plugin-discord.exe`)
+Or manually copy the following files to `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\discord`:
+- `plugin.py`
 - `manifest.json`
 - `config.json` (with your Discord bot token and channel ID configured)
+- `libs/` folder (contains dependencies and SDK)
+
+💡 **Tip**: The `-deploy` flag handles all file copying automatically.
 
 ## How to Use
 Once everything is set up, you can interact with Discord through simple chat commands.
@@ -104,20 +104,30 @@ No manual config editing required unless you prefer it!
 ## Developer Documentation
 
 ### Plugin Architecture
-The Discord plugin is built as a Python-based G-Assist plugin that communicates with Discord's API. The plugin follows a command-based architecture where it continuously listens for commands from G-Assist and executes corresponding Discord operations.
+The Discord plugin is built using the G-Assist Python SDK (V2). It uses a decorator-based command pattern where functions are registered with `@plugin.command()` and the SDK handles all communication with the G-Assist engine.
 
 ### Core Components
 
-#### Command Handling
-- `read_command()`: Reads JSON-formatted commands from G-Assist's input pipe
-  - Uses Windows API to read from STDIN
-  - Returns parsed JSON command or None if invalid
-  - Handles chunked input for large messages
+#### Plugin Setup
+```python
+from gassist_sdk import Plugin
 
-- `write_response()`: Sends JSON-formatted responses back to G-Assist
-  - Uses Windows API to write to STDOUT
-  - Appends `<<END>>` marker to indicate message completion
-  - Response format: `{"success": bool, "message": Optional[str]}`
+plugin = Plugin(
+    name="discord",
+    version="2.0.0",
+    description="Send messages and media to Discord"
+)
+```
+
+#### Command Registration
+Commands are registered using the `@plugin.command()` decorator:
+```python
+@plugin.command("send_message_to_discord_channel")
+def send_message_to_discord_channel(message: str = ""):
+    """Send a text message to Discord channel."""
+    # Implementation here
+    return "Message sent!"
+```
 
 #### Configuration
 - Configuration is stored in `config.json` at `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\discord\config.json`
@@ -129,32 +139,22 @@ The Discord plugin is built as a Python-based G-Assist plugin that communicates 
 #### Available Commands
 The plugin supports the following commands:
 
-1. `initialize`
-   - Loads configuration from config.json
-   - Sets up global bot token and channel ID
-   - Returns success/failure response
-   - Called before every command to make sure config is set up correctly
-
-2. `shutdown`
-   - Gracefully terminates the plugin
-   - Returns success response
-
-3. `send_message_to_discord_channel`
+1. `send_message_to_discord_channel`
    - Parameters: `{"message": str}`
    - Sends text message to configured Discord channel
-   - Returns success/failure with optional message
+   - Returns success/failure message
 
-4. `send_latest_chart_to_discord_channel`
+2. `send_latest_chart_to_discord_channel`
    - Parameters: `{"caption": Optional[str]}`
    - Finds and sends latest CSV from G-Assist charts directory
    - Directory: `%USERPROFILE%\Videos\NVIDIA\G-Assist`
 
-5. `send_latest_shadowplay_clip_to_discord_channel`
+3. `send_latest_shadowplay_clip_to_discord_channel`
    - Parameters: `{"caption": Optional[str]}`
    - Finds and sends latest MP4 from game-specific directory
    - Directory: `%USERPROFILE%\Videos\NVIDIA\{GAME_DIRECTORY}`
 
-6. `send_latest_screenshot_to_discord_channel`
+4. `send_latest_screenshot_to_discord_channel`
    - Parameters: `{"caption": Optional[str]}`
    - Finds and sends latest PNG from game-specific directory
    - Directory: `%USERPROFILE%\Videos\NVIDIA\{GAME_DIRECTORY}`
@@ -164,69 +164,77 @@ The plugin supports the following commands:
   - Finds most recently modified file with given extension
   - Returns full file path or None if no files found
 
-- `generate_success_response(message: Optional[str] = None) -> Response`
-  - Creates standardized success response
-  - Optional message for additional context
-
-- `generate_failure_response(message: Optional[str] = None) -> Response`
-  - Creates standardized failure response
-  - Optional error message for debugging
+- `load_config()`
+  - Loads Discord bot configuration from config.json
+  - Sets global BOT_TOKEN, CHANNEL_ID, and GAME_DIRECTORY
 
 ### Logging
-- Log file location: `%USERPROFILE%\discord-plugin.log`
+- Log file location: `%PROGRAMDATA%\NVIDIA Corporation\nvtopps\rise\plugins\discord\discord-plugin.log`
 - Logging level: INFO
 - Format: `%(asctime)s - %(levelname)s - %(message)s`
 - Captures all command execution, API calls, and errors
 
 ### Error Handling
-- All commands implement try-catch blocks
+- All commands implement try-except blocks
 - API errors are logged with full response text
 - File operations include existence checks
-- Invalid configurations trigger appropriate error responses
+- Invalid configurations trigger the setup wizard automatically
 
 ### Adding New Commands
 To add a new command:
-1. Implement command function with signature: `def new_command(params: dict = None, context: dict = None, system_info: dict = None) -> dict`
-2. Add command to `commands` dictionary in `main()`
-3. Implement proper error handling and logging
-4. Return standardized response using `generate_success_response()` or `generate_failure_response()`
-5. Add the function to the `functions` list in `manifest.json` file: 
-   ```json
-   {
-      "name": "new_command",
-      "description": "Description of what the command does",
-      "tags": ["relevant", "tags"],
-      "properties": {
-         "parameter_name": {
-            "type": "string",
-            "description": "Description of the parameter"
-         }
+
+1. Create a new function with the `@plugin.command()` decorator:
+```python
+@plugin.command("new_command")
+def new_command(param_name: str = ""):
+    """Description of what the command does."""
+    # Load config if needed
+    load_config()
+    
+    # Implement your logic
+    try:
+        # Your code here
+        return "Success message to display"
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return "Error message to display"
+```
+
+2. Add the function to the `functions` list in `manifest.json`:
+```json
+{
+   "name": "new_command",
+   "description": "Description of what the command does",
+   "tags": ["relevant", "tags"],
+   "properties": {
+      "param_name": {
+         "type": "string",
+         "description": "Description of the parameter"
       }
    }
-   ```
-6. Manually test the function:
+}
+```
 
-   First, run the script:
-   ``` bash
-   python plugin.py
-   ```
+3. Test locally by running:
+```bash
+python plugin.py
+```
+The plugin will start and listen for commands from stdin (useful for debugging).
 
-   Run the initialize command: 
-      ``` json
-      {
-         "tool_calls" : "initialize"
-      }
-      ```
-   Run the new command:
-      ``` json
-      {
-         "tool_calls" : "new_command", 
-         "params": {
-            "parameter_name": "parameter_value"
-         }
-      }
-      ```
-7. Run the setup & build scripts as outlined above, install the plugin by placing the files in the proper location and test your updated plugin. Use variations of standard user messages to make sure the function is adequately documented in the `manifest.json`
+4. Deploy the plugin:
+```bash
+setup.bat discord -deploy
+```
+
+5. Test using the plugin emulator from the `plugins` directory:
+```bash
+cd plugins/plugin_emulator
+pip install -r requirements.txt
+python -m plugin_emulator -d "C:\ProgramData\NVIDIA Corporation\nvtopps\rise\plugins"
+```
+Select the discord plugin from the interactive menu to test your new function.
+
+6. Test with G-Assist by using voice or text commands to trigger your new function.
 
 ## Want to Contribute?
 We'd love your help making this plugin even better! Check out [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
