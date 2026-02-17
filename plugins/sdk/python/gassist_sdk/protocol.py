@@ -12,7 +12,10 @@ import sys
 import threading
 import logging
 from typing import Any, Dict, Optional
-from ctypes import windll, byref, create_string_buffer, c_ulong
+if sys.platform == "win32":
+    from ctypes import windll, byref, create_string_buffer, c_ulong
+else:
+    windll = byref = create_string_buffer = c_ulong = None
 
 from .types import JsonRpcRequest, JsonRpcResponse, JsonRpcNotification
 

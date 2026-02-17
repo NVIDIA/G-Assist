@@ -407,7 +407,10 @@ class Plugin:
         # Build kwargs based on what the handler accepts
         kwargs = {}
         for param_name, param in sig.parameters.items():
-            if param_name in arguments:
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                # **kwargs — forward all arguments
+                kwargs.update(arguments)
+            elif param_name in arguments:
                 kwargs[param_name] = arguments[param_name]
             elif param_name == "context" and context is not None:
                 kwargs[param_name] = context

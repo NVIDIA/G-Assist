@@ -1,0 +1,6 @@
+# MCP Stdio Filesystem Plugin — dependencies
+#
+# The G-Assist SDK (gassist_sdk) is bundled in the libs/ folder and does NOT
+# need to be installed via pip.  Only the external MCP server is required.
+
+mcp-server-filesystem
