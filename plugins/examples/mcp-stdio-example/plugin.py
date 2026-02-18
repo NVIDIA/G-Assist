@@ -76,10 +76,15 @@ PLUGIN_VERSION = "1.0.0"
 
 # Directories the MCP filesystem server is allowed to operate on.
 # Override via environment variable (comma-separated for multiple dirs).
-ALLOWED_DIRS = os.environ.get(
+_raw_dirs = os.environ.get(
     "MCP_FS_ALLOWED_DIRS",
     os.path.join(os.path.expanduser("~"), "Documents"),
-).split(",")
+)
+ALLOWED_DIRS = [
+    os.path.expanduser(d)
+    for d in (entry.strip() for entry in _raw_dirs.split(","))
+    if d
+]
 
 # Resolve npx — the official MCP filesystem server is a Node.js package.
 NPX_CMD = shutil.which("npx")
