@@ -233,7 +233,7 @@ def discover_tools(mcp: MCPClient) -> List[FunctionDef]:
 # Static utility commands (mixed alongside auto-discovered tools)
 # ---------------------------------------------------------------------------
 @plugin.command("plugin_status")
-def plugin_status(context: Context = None):
+def plugin_status(_context: Context = None):
     """
     Show the plugin status, connected MCP server info, and project directory.
     """
