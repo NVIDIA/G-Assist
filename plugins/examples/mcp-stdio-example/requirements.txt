@@ -1,0 +1,11 @@
+# MCP Stdio Filesystem Plugin — dependencies
+#
+# The G-Assist SDK (gassist_sdk) is bundled in the libs/ folder and does NOT
+# need to be installed via pip.
+#
+# This plugin requires Node.js (>= 18) and npx, which are used to run the
+# official MCP filesystem server package:
+#
+#   @modelcontextprotocol/server-filesystem  (Node.js / npm)
+#
+# No Python packages beyond the bundled SDK are needed.

@@ -121,13 +121,18 @@ class FunctionDef:
     
     def to_manifest_function(self) -> Dict[str, Any]:
         """Convert to manifest function format."""
-        return {
+        func: Dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
-            "properties": self.properties,
-            "required": self.required
         }
+        if self.properties:
+            func["parameters"] = {
+                "type": "object",
+                "properties": self.properties,
+                "required": self.required,
+            }
+        return func
 
 
 # =============================================================================
