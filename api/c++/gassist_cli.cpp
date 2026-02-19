@@ -70,9 +70,27 @@ public:
 static Semaphore g_responseSemaphore;
 static std::mutex g_responseMutex;
 static std::string g_finalResult;
+static std::string g_chartData;  // Store GRAPH content separately
 static bool g_systemReady = false;
 static bool g_responseCompleted = false;
 static std::atomic<bool> g_waitingForAsrFinal(false);
+
+// Per-content-type completion tracking (bitmask).
+// A type becomes "expected" when we first receive data for it and
+// "completed" when its callback reports completed==1.  The semaphore
+// is only released once every expected type has completed.
+static constexpr unsigned CT_TEXT                    = 1u << 0;
+static constexpr unsigned CT_CUSTOM_BEHAVIOR         = 1u << 1;
+static constexpr unsigned CT_CUSTOM_BEHAVIOR_RESULT  = 1u << 2;
+static constexpr unsigned CT_GRAPH                   = 1u << 3;
+
+static unsigned g_expectedTypes  = 0;
+static unsigned g_completedTypes = 0;
+
+static bool AllExpectedTypesComplete() {
+    return g_expectedTypes != 0 &&
+           (g_completedTypes & g_expectedTypes) == g_expectedTypes;
+}
 
 // ============================================================================
 // WAV File Handling
@@ -183,12 +201,65 @@ void RiseCallback(NV_RISE_CALLBACK_DATA_V1* pData) {
                 } else {
                     // LLM response - accumulate
                     g_finalResult += chunk;
+                    g_expectedTypes |= CT_TEXT;
                 }
             }
 
             if (pData->completed == 1) {
-                g_responseCompleted = true;
-                if (!g_waitingForAsrFinal.load()) {
+                g_completedTypes |= CT_TEXT;
+                if (!g_waitingForAsrFinal.load() && AllExpectedTypesComplete()) {
+                    g_responseCompleted = true;
+                    g_responseSemaphore.release();
+                }
+            }
+            break;
+        }
+
+        // Handle CUSTOM_BEHAVIOR - contains JSON tool calls
+        case NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR: {
+            std::string chunk(pData->content);
+            if (!chunk.empty()) {
+                g_finalResult += chunk;
+                g_expectedTypes |= CT_CUSTOM_BEHAVIOR;
+            }
+            if (pData->completed == 1) {
+                g_completedTypes |= CT_CUSTOM_BEHAVIOR;
+                if (AllExpectedTypesComplete()) {
+                    g_responseCompleted = true;
+                    g_responseSemaphore.release();
+                }
+            }
+            break;
+        }
+
+        // Handle CUSTOM_BEHAVIOR_RESULT - contains JSON tool call results
+        case NV_RISE_CONTENT_TYPE_CUSTOM_BEHAVIOR_RESULT: {
+            std::string chunk(pData->content);
+            if (!chunk.empty()) {
+                g_finalResult += chunk;
+                g_expectedTypes |= CT_CUSTOM_BEHAVIOR_RESULT;
+            }
+            if (pData->completed == 1) {
+                g_completedTypes |= CT_CUSTOM_BEHAVIOR_RESULT;
+                if (AllExpectedTypesComplete()) {
+                    g_responseCompleted = true;
+                    g_responseSemaphore.release();
+                }
+            }
+            break;
+        }
+
+        // Handle GRAPH - contains chart/graph data
+        case NV_RISE_CONTENT_TYPE_GRAPH: {
+            std::string chunk(pData->content);
+            if (!chunk.empty()) {
+                g_chartData += chunk;
+                g_expectedTypes |= CT_GRAPH;
+            }
+            if (pData->completed == 1) {
+                g_completedTypes |= CT_GRAPH;
+                if (AllExpectedTypesComplete()) {
+                    g_responseCompleted = true;
                     g_responseSemaphore.release();
                 }
             }
@@ -263,6 +334,8 @@ std::string DoASR(const std::string& wavFilePath) {
         std::lock_guard<std::mutex> lock(g_responseMutex);
         g_finalResult.clear();
         g_responseCompleted = false;
+        g_expectedTypes  = 0;
+        g_completedTypes = 0;
     }
     while (g_responseSemaphore.try_acquire()) {}
 
@@ -315,6 +388,8 @@ std::string DoASR(const std::string& wavFilePath) {
         std::lock_guard<std::mutex> lock(g_responseMutex);
         g_finalResult.clear();
         g_responseCompleted = false;
+        g_expectedTypes  = 0;
+        g_completedTypes = 0;
     }
     while (g_responseSemaphore.try_acquire()) {}
 
@@ -365,7 +440,10 @@ std::string DoLLM(const std::string& prompt) {
     {
         std::lock_guard<std::mutex> lock(g_responseMutex);
         g_finalResult.clear();
+        g_chartData.clear();
         g_responseCompleted = false;
+        g_expectedTypes  = 0;
+        g_completedTypes = 0;
     }
     while (g_responseSemaphore.try_acquire()) {}
 
@@ -444,8 +522,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Output only the result
+    // Output the result
     std::cout << result << std::endl;
+
+    // Output chart data if present (on stderr to separate from main result)
+    {
+        std::lock_guard<std::mutex> lock(g_responseMutex);
+        if (!g_chartData.empty()) {
+            std::cerr << "[CHART_DATA]" << std::endl;
+            std::cerr << g_chartData << std::endl;
+        }
+    }
 
     return 0;
 }
