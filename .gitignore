@@ -181,3 +181,8 @@ cython_debug/
 .pypirc
 # Sensitive keys (use *.key.sample for templates)
 *.key
+
+# skillevaluator run output. Anything under skills/ is validated and signed by
+# NVCARPS-CI, so generated reports must not land there.
+skills/**/skillevaluator-output-*.html
+skills/**/skillevaluator-output-*.json
