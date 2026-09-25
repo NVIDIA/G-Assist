@@ -20,11 +20,11 @@ Transform your ideas into functional G-Assist plugins with AI-powered guidance. 
 
 ### Step 1: Clone the Repository
 
-Clone the full g-assist-plugins-page repository to get the SDK, example plugins, and setup scripts:
+Clone the NVIDIA/G-Assist repository to get the SDK, example plugins, and setup scripts:
 
 ```bash
-git clone https://github.com/NVIDIA/g-assist-plugins-page.git
-cd g-assist-plugins-page
+git clone https://github.com/NVIDIA/G-Assist.git
+cd G-Assist
 ```
 
 ### Step 2: Open in Cursor
