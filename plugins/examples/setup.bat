@@ -33,10 +33,12 @@ echo.
 if /i "%PLUGIN_NAME%"=="all" (
     echo Setting up ALL plugins...
     echo.
-    
+    set SETUP_FAILED=0
+
     for /d %%d in ("%EXAMPLES_DIR%*") do (
         if exist "%%d\manifest.json" (
             call :setup_plugin "%%~nxd"
+            if errorlevel 1 set SETUP_FAILED=1
         )
     )
     
@@ -44,12 +46,14 @@ if /i "%PLUGIN_NAME%"=="all" (
     echo ============================================================
     echo All plugins setup complete!
     echo ============================================================
+    if !SETUP_FAILED!==1 exit /b 1
 )
 if /i "%PLUGIN_NAME%"=="all" goto :done
 
 :: Single plugin setup
 if exist "%EXAMPLES_DIR%%PLUGIN_NAME%\manifest.json" (
     call :setup_plugin "%PLUGIN_NAME%"
+    if errorlevel 1 exit /b 1
 ) else (
     echo ERROR: Plugin "%PLUGIN_NAME%" not found.
     echo.
@@ -92,7 +96,10 @@ echo Plugin type: %P_TYPE%
 if not exist "%P_LIBS%" mkdir "%P_LIBS%"
 
 :: Handle based on plugin type
-if "%P_TYPE%"=="python" call :setup_python
+if "%P_TYPE%"=="python" (
+    call :setup_python
+    if errorlevel 1 exit /b 1
+)
 if "%P_TYPE%"=="cpp" call :setup_cpp
 if "%P_TYPE%"=="nodejs" call :setup_nodejs
 if "%P_TYPE%"=="unknown" (
@@ -123,8 +130,14 @@ set "P_REQUIREMENTS=%P_DIR%\requirements.txt"
 if exist "%P_REQUIREMENTS%" (
     findstr /v /r "^#" "%P_REQUIREMENTS%" | findstr /r /v "^$" >nul 2>&1
     if not errorlevel 1 (
-        echo Installing pip dependencies to libs/...
-        %PYTHON% -m pip install -r "%P_REQUIREMENTS%" --target "%P_LIBS%" --upgrade --quiet
+        if not defined PYTHON (
+            echo ERROR: No Python interpreter found. Cannot install pip dependencies.
+            echo   Install G-Assist, add python to PATH, or set GA_PYTHON_DEV to a python.exe.
+            exit /b 1
+        ) else (
+            echo Installing pip dependencies to libs/...
+            "%PYTHON%" -m pip install -r "%P_REQUIREMENTS%" --target "%P_LIBS%" --upgrade --quiet
+        )
     ) else (
         echo No pip dependencies in requirements.txt
     )
@@ -413,40 +426,42 @@ exit /b 0
 :: CHECK PYTHON VERSION
 :: ============================================================
 :check_python_version
-:: Determine if we have 'python' or 'python3' in the path
+:: Prefer an explicit override so plugin authors can match a chosen interpreter.
+if defined GA_PYTHON_DEV (
+    if exist "%GA_PYTHON_DEV%" (
+        set "PYTHON=%GA_PYTHON_DEV%"
+        for /f "tokens=2" %%v in ('"%PYTHON%" --version 2^>^&1') do set CURRENT_VERSION=%%v
+        echo Using GA_PYTHON_DEV: "%PYTHON%" (version !CURRENT_VERSION!)
+        goto :eof
+    )
+    echo WARNING: GA_PYTHON_DEV is set but was not found: "%GA_PYTHON_DEV%"
+)
+
+:: Prefer the RISE embedded interpreter so wheels match the runtime G-Assist uses.
+if exist "%RISE_PYTHON%" (
+    set "PYTHON=%RISE_PYTHON%"
+    for /f "tokens=2" %%v in ('"%PYTHON%" --version 2^>^&1') do set CURRENT_VERSION=%%v
+    echo Using RISE embedded Python: "%PYTHON%" (version !CURRENT_VERSION!)
+    goto :eof
+)
+
+:: Fall back to PATH python / python3 for machines without G-Assist installed.
 where /q python
 if ERRORLEVEL 1 (
     where /q python3
     if ERRORLEVEL 1 (
-        echo WARNING: Python not found in PATH
+        echo WARNING: Python not found in PATH and RISE python.exe is missing
         goto :eof
     )
-    set PYTHON=python3
+    set "PYTHON=python3"
 ) else (
-    set PYTHON=python
+    set "PYTHON=python"
 )
 
-:: Get current Python version
-for /f "tokens=2" %%v in ('%PYTHON% --version 2^>^&1') do set CURRENT_VERSION=%%v
+for /f "tokens=2" %%v in ('"%PYTHON%" --version 2^>^&1') do set CURRENT_VERSION=%%v
 echo Using Python: %PYTHON% (version %CURRENT_VERSION%)
-
-:: Check if RISE embedded Python exists and compare versions
-if exist "%RISE_PYTHON%" (
-    for /f "tokens=2" %%v in ('"%RISE_PYTHON%" --version 2^>^&1') do set RISE_VERSION=%%v
-    echo RISE embedded Python: !RISE_VERSION!
-    
-    :: Compare major.minor versions
-    for /f "tokens=1,2 delims=." %%a in ("%CURRENT_VERSION%") do set CURRENT_MAJOR_MINOR=%%a.%%b
-    for /f "tokens=1,2 delims=." %%a in ("!RISE_VERSION!") do set RISE_MAJOR_MINOR=%%a.%%b
-    
-    if not "!CURRENT_MAJOR_MINOR!"=="!RISE_MAJOR_MINOR!" (
-        echo.
-        echo WARNING: Python version mismatch!
-        echo   Your Python: %CURRENT_VERSION% - RISE Python: !RISE_VERSION!
-        echo   Consider using RISE Python: "%RISE_PYTHON%"
-        echo.
-    )
-)
+echo WARNING: RISE embedded Python not found at "%RISE_PYTHON%"
+echo   Plugins will run under NVIDIA App with a different interpreter. Install G-Assist or set GA_PYTHON_DEV.
 goto :eof
 
 :: ============================================================
