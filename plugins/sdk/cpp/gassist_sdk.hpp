@@ -35,6 +35,9 @@
 #include <cstdint>
 #include <mutex>
 #include <vector>
+#include <thread>
+#include <queue>
+#include <condition_variable>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -48,6 +51,47 @@ namespace gassist {
 
 // Use nlohmann::json directly
 using json = nlohmann::json;
+
+namespace detail {
+
+inline json rpc_params(const json& message) {
+    if (message.contains("params") && message["params"].is_object()) {
+        return message["params"];
+    }
+    return json::object();
+}
+
+inline json rpc_arguments(const json& params) {
+    if (params.contains("arguments") && params["arguments"].is_object()) {
+        return params["arguments"];
+    }
+    return json::object();
+}
+
+inline json as_text(const json& data) {
+    if (data.is_null()) {
+        return "";
+    }
+    if (data.is_string()) {
+        return data;
+    }
+    // Engine requires complete.params.data to be natural-language text.
+    return data.dump();
+}
+
+inline bool rpc_request_id(const json& message, int& out_id) {
+    if (!message.contains("id") || message["id"].is_null()) {
+        out_id = -1;
+        return true;
+    }
+    if (message["id"].is_number_integer()) {
+        out_id = message["id"].get<int>();
+        return true;
+    }
+    return false;
+}
+
+} // namespace detail
 
 // ============================================================================
 // Protocol Handler
@@ -205,7 +249,7 @@ public:
 
     Plugin(const std::string& name, const std::string& version, const std::string& description = "")
         : m_name(name), m_version(version), m_description(description),
-          m_running(false), m_current_request_id(-1), m_keep_session(false) {
+          m_running(false), m_worker_running(false), m_current_request_id(-1), m_keep_session(false) {
         // Open log file
         std::string log_path = get_plugin_dir() + "\\" + name + ".log";
         m_log_file.open(log_path, std::ios::app);
@@ -213,6 +257,7 @@ public:
     }
 
     ~Plugin() {
+        shutdown_worker();
         if (m_log_file.is_open()) {
             m_log_file.close();
         }
@@ -220,6 +265,7 @@ public:
 
     // Register a command handler
     void command(const std::string& name, CommandHandler handler) {
+        std::lock_guard<std::mutex> lock(m_commands_lock);
         m_commands[name] = handler;
         log("Registered command: " + name);
     }
@@ -245,6 +291,8 @@ public:
     void run() {
         log("Starting plugin main loop");
         m_running = true;
+        m_worker_running = true;
+        m_worker_thread = std::thread([this]() { execute_worker(); });
 
         while (m_running) {
             json message;
@@ -252,9 +300,15 @@ public:
                 break;
             }
 
-            handle_message(message);
+            std::string method = message.value("method", "");
+            if (method == "execute") {
+                enqueue_work(std::move(message));
+            } else {
+                handle_message(message);
+            }
         }
 
+        shutdown_worker();
         log("Plugin stopped");
     }
 
@@ -278,10 +332,59 @@ private:
         }
     }
 
+    void enqueue_work(json message) {
+        {
+            std::lock_guard<std::mutex> lock(m_work_mutex);
+            m_work_queue.push(std::move(message));
+        }
+        m_work_cv.notify_one();
+    }
+
+    void execute_worker() {
+        while (true) {
+            json message;
+            {
+                std::unique_lock<std::mutex> lock(m_work_mutex);
+                m_work_cv.wait(lock, [this]() {
+                    return !m_work_queue.empty() || !m_worker_running;
+                });
+                if (!m_worker_running && m_work_queue.empty()) {
+                    return;
+                }
+                message = std::move(m_work_queue.front());
+                m_work_queue.pop();
+            }
+
+            std::lock_guard<std::mutex> exec_lock(m_execute_lock);
+            try {
+                handle_message(message);
+            } catch (const std::exception& e) {
+                log(std::string("Error processing message: ") + e.what());
+            } catch (...) {
+                log("Error processing message: unknown exception");
+            }
+        }
+    }
+
+    void shutdown_worker() {
+        m_running = false;
+        {
+            std::lock_guard<std::mutex> lock(m_work_mutex);
+            m_worker_running = false;
+            while (!m_work_queue.empty()) {
+                m_work_queue.pop();
+            }
+        }
+        m_work_cv.notify_one();
+        if (m_worker_thread.joinable()) {
+            m_worker_thread.join();
+        }
+    }
+
     void handle_message(const json& message) {
         std::string method = message.value("method", "");
         int id = message.contains("id") ? message["id"].get<int>() : -1;
-        json params = message.value("params", json::object());
+        json params = detail::rpc_params(message);
 
         log("Received: " + method);
 
@@ -307,14 +410,19 @@ private:
     }
 
     void handle_initialize(int id, const json& params) {
+        (void)params;
         log("Initializing...");
 
         json commands = json::array();
-        for (const auto& [name, handler] : m_commands) {
-            json cmd;
-            cmd["name"] = name;
-            cmd["description"] = "";
-            commands.push_back(cmd);
+        {
+            std::lock_guard<std::mutex> lock(m_commands_lock);
+            for (const auto& [name, handler] : m_commands) {
+                (void)handler;
+                json cmd;
+                cmd["name"] = name;
+                cmd["description"] = "";
+                commands.push_back(cmd);
+            }
         }
 
         json response;
@@ -331,22 +439,27 @@ private:
 
     void handle_execute(int id, const json& params) {
         std::string function_name = params.value("function", "");
-        json arguments = params.value("arguments", json::object());
+        json arguments = detail::rpc_arguments(params);
 
         log("Executing: " + function_name);
 
         m_current_request_id = id;
         m_keep_session = false;
 
-        auto it = m_commands.find(function_name);
-        if (it == m_commands.end()) {
-            send_error(id, -32601, "Unknown command: " + function_name);
-            m_current_request_id = -1;
-            return;
+        CommandHandler handler;
+        {
+            std::lock_guard<std::mutex> lock(m_commands_lock);
+            auto it = m_commands.find(function_name);
+            if (it == m_commands.end()) {
+                send_error(id, -32601, "Unknown command: " + function_name);
+                m_current_request_id = -1;
+                return;
+            }
+            handler = it->second;
         }
 
         try {
-            json result = it->second(arguments);
+            json result = handler(arguments);
             send_complete(id, true, result);
         } catch (const std::exception& e) {
             send_error(id, -1, e.what());
@@ -370,12 +483,22 @@ private:
         m_current_request_id = id;
         m_keep_session = false;
 
-        auto it = m_commands.find("on_input");
-        if (it != m_commands.end()) {
+        CommandHandler handler;
+        bool has_handler = false;
+        {
+            std::lock_guard<std::mutex> lock(m_commands_lock);
+            auto it = m_commands.find("on_input");
+            if (it != m_commands.end()) {
+                handler = it->second;
+                has_handler = true;
+            }
+        }
+
+        if (has_handler) {
             try {
                 json args;
                 args["content"] = content;
-                json result = it->second(args);
+                json result = handler(args);
                 send_complete(id, true, result);
             } catch (const std::exception& e) {
                 send_error(id, -1, e.what());
@@ -393,7 +516,7 @@ private:
         notification["method"] = "complete";
         notification["params"]["request_id"] = request_id;
         notification["params"]["success"] = success;
-        notification["params"]["data"] = data;
+        notification["params"]["data"] = detail::as_text(data);
         notification["params"]["keep_session"] = m_keep_session;
         m_protocol.write_message(notification);
     }
@@ -413,7 +536,14 @@ private:
     std::string m_description;
     Protocol m_protocol;
     std::map<std::string, CommandHandler> m_commands;
+    std::mutex m_commands_lock;
+    std::mutex m_execute_lock;
+    std::queue<json> m_work_queue;
+    std::mutex m_work_mutex;
+    std::condition_variable m_work_cv;
+    std::thread m_worker_thread;
     bool m_running;
+    bool m_worker_running;
     int m_current_request_id;
     bool m_keep_session;
     std::ofstream m_log_file;
