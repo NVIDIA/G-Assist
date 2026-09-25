@@ -71,7 +71,7 @@ except ImportError as e:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-PLUGIN_NAME = "mcp-stdio-filesystem"
+PLUGIN_NAME = "mcp-stdio-example"
 PLUGIN_VERSION = "1.0.0"
 
 # Directories the MCP filesystem server is allowed to operate on.
@@ -126,6 +126,17 @@ def _build_server_command() -> List[str]:
 server_command = _build_server_command()
 logger.info(f"MCP server command: {server_command}")
 
+# Static commands that must survive FunctionRegistry.update_manifest().
+# Discovered MCP tools are rewritten from the registry; anything not in
+# base_functions or the registry is dropped from manifest.json.
+PLUGIN_STATUS_FUNCTION = {
+    "name": "plugin_status",
+    "description": (
+        "Show the plugin status, connected MCP server info, and allowed directories."
+    ),
+    "tags": ["plugin_status", "status", "mcp", "stdio"],
+}
+
 # ---------------------------------------------------------------------------
 # Create the stdio transport and MCPPlugin
 # ---------------------------------------------------------------------------
@@ -145,6 +156,7 @@ plugin = MCPPlugin(
     poll_interval=0,              # static tool set — no need to poll
     auto_refresh_session=False,   # stdio doesn't use sessions
     source_dir=_plugin_dir,
+    base_functions=[PLUGIN_STATUS_FUNCTION],
 )
 
 
@@ -235,7 +247,7 @@ def discover_tools(mcp: MCPClient) -> List[FunctionDef]:
 @plugin.command("plugin_status")
 def plugin_status(_context: Context = None):
     """
-    Show the plugin status, connected MCP server info, and project directory.
+    Show the plugin status, connected MCP server info, and allowed directories.
     """
     server = plugin.mcp.server_info if plugin.mcp else None
     return json.dumps({

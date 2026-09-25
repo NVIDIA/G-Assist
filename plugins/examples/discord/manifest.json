@@ -22,7 +22,8 @@
           "type": "string",
           "description": "The text content of the message"
         }
-      }
+      },
+      "required": ["message"]
     },
     {
       "name": "send_latest_chart_to_discord_channel",

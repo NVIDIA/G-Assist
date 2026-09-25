@@ -19,7 +19,8 @@
           "type": "string",
           "description": "the color"
         }
-      }
+      },
+      "required": ["color"]
     },
     {
       "name": "nanoleaf_change_profile",
@@ -34,7 +35,8 @@
           "type": "string",
           "description": "the name of the profile/effect to activate"
         }
-      }
+      },
+      "required": ["profile"]
     }
   ],
   "tethered": true,

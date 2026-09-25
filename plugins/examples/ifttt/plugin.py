@@ -200,18 +200,20 @@ plugin = Plugin(
 # COMMANDS
 # ============================================================================
 @plugin.command("trigger_gaming_setup")
-def trigger_gaming_setup(_from_pending: bool = False):
+def trigger_gaming_setup(event_name: str = "", _from_pending: bool = False):
     """
     Trigger IFTTT gaming setup applet with latest gaming news.
     
     Args:
+        event_name: Optional IFTTT event name. Falls back to config EVENT_NAME.
         _from_pending: Internal flag, True when called from execute_pending_call
     """
     global IFTTT_WEBHOOK_KEY, EVENT_NAME, SETUP_COMPLETE
     
     load_config()
-    if not SETUP_COMPLETE or not IFTTT_WEBHOOK_KEY or not EVENT_NAME:
-        store_pending_call(trigger_gaming_setup)
+    chosen_event = (event_name or "").strip() or EVENT_NAME
+    if not SETUP_COMPLETE or not IFTTT_WEBHOOK_KEY or not chosen_event:
+        store_pending_call(trigger_gaming_setup, event_name=chosen_event)
         logger.info("[COMMAND] Webhook not configured - showing setup wizard")
         plugin.set_keep_session(True)
         # Open IFTTT join/login page and config file for user
@@ -238,7 +240,7 @@ def trigger_gaming_setup(_from_pending: bool = False):
         plugin.stream("_ ")  # Close engine's italic
     plugin.stream("_Triggering IFTTT applet..._\n\n")
     
-    webhook_url = f"https://maker.ifttt.com/trigger/{EVENT_NAME}/with/key/{IFTTT_WEBHOOK_KEY}"
+    webhook_url = f"https://maker.ifttt.com/trigger/{chosen_event}/with/key/{IFTTT_WEBHOOK_KEY}"
     webhook_data = {}
     
     # Fetch and include IGN news
@@ -256,7 +258,7 @@ def trigger_gaming_setup(_from_pending: bool = False):
         
         if 200 <= response.status_code < 300:
             # Escape underscores in event name to prevent markdown formatting
-            safe_event_name = EVENT_NAME.replace("_", "\\_")
+            safe_event_name = chosen_event.replace("_", "\\_")
             news_info = ""
             if headlines:
                 news_info = f"\n\n**Headlines sent:**\n"
@@ -266,21 +268,21 @@ def trigger_gaming_setup(_from_pending: bool = False):
                     news_info += f"- {safe_headline}\n"
             return f"**{safe_event_name}** triggered!{news_info}"
         elif response.status_code == 401:
-            logger.error(f"IFTTT webhook {EVENT_NAME} failed (401): {response.text}")
+            logger.error(f"IFTTT webhook {chosen_event} failed (401): {response.text}")
             return (
                 "**Authentication failed.**\n\n"
                 "Your **Webhook Key** appears to be invalid.\n\n"
                 f"_Config:_ `{CONFIG_FILE}`"
             )
         else:
-            logger.error(f"IFTTT webhook {EVENT_NAME} failed: {response.text}")
+            logger.error(f"IFTTT webhook {chosen_event} failed: {response.text}")
             return (
                 "**Failed to trigger applet.**\n\n"
                 f"IFTTT returned an error _(status {response.status_code})_.\n\n"
                 "Please try again later."
             )
     except Exception as e:
-        logger.error(f"Error triggering IFTTT webhook {EVENT_NAME}: {str(e)}")
+        logger.error(f"Error triggering IFTTT webhook {chosen_event}: {str(e)}")
         return (
             "**Connection error.**\n\n"
             "Unable to reach IFTTT. Please check your internet connection and try again."
