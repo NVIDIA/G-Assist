@@ -17,6 +17,22 @@
 const fs = require('fs');
 const path = require('path');
 
+function asText(data) {
+    if (data == null) return '';
+    if (typeof data === 'string') return data;
+    try {
+        const text = JSON.stringify(data);
+        if (typeof text === 'string') return text;
+    } catch (err) {
+        // BigInt, circular refs, and similar values throw; fall through.
+    }
+    try {
+        return String(data);
+    } catch (err) {
+        return '';
+    }
+}
+
 // ============================================================================
 // Protocol Handler
 // ============================================================================
@@ -203,7 +219,7 @@ class Plugin {
             method: 'stream',
             params: {
                 request_id: this.currentRequestId,
-                data: data
+                data: asText(data)
             }
         });
     }
@@ -360,7 +376,7 @@ class Plugin {
             params: {
                 request_id: requestId,
                 success: success,
-                data: data,
+                data: asText(data),
                 keep_session: this.keepSession
             }
         });

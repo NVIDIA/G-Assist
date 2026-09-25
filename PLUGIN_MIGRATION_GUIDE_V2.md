@@ -140,7 +140,7 @@ def search_web(query: str):
     """Search the web for information."""
     plugin.stream("Searching...")
     results = do_search(query)
-    return {"results": results}
+    return f"Found {len(results)} results."
 
 if __name__ == "__main__":
     plugin.run()

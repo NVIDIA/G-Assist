@@ -10,11 +10,12 @@ Provides a simple decorator-based API for building plugins:
     @plugin.command("search")
     def search(query: str):
         plugin.stream("Searching...")
-        return {"results": [...]}
+        return "Found N results."
 
     plugin.run()
 """
 
+import json
 import logging
 import sys
 import os
@@ -73,7 +74,7 @@ def command(name: str = None, description: str = None):
     Usage:
         @plugin.command("search", description="Search the web")
         def search(query: str):
-            return {"results": [...]}
+            return "Found N results."
     """
     def decorator(func: F) -> F:
         func._gassist_command = True
@@ -81,6 +82,18 @@ def command(name: str = None, description: str = None):
         func._gassist_description = description or func.__doc__ or ""
         return func
     return decorator
+
+
+def _as_text(data: Any) -> str:
+    """Coerce handler output to the string the engine expects in complete/stream data."""
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    try:
+        return json.dumps(data, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(data)
 
 
 class Plugin:
@@ -137,7 +150,7 @@ class Plugin:
         Usage:
             @plugin.command("search_web")
             def search_web(query: str):
-                return {"results": [...]}
+                return "Found N results."
         """
         def decorator(func: F) -> F:
             cmd_name = name or func.__name__
@@ -174,7 +187,7 @@ class Plugin:
             method="stream",
             params={
                 "request_id": self._current_request_id,
-                "data": data
+                "data": _as_text(data)
             }
         )
         self._protocol.send_notification(notification)
@@ -420,13 +433,13 @@ class Plugin:
         return handler(**kwargs)
     
     def _send_complete(self, request_id: int, success: bool, data: Any, keep_session: bool):
-        """Send completion notification."""
+        """Send completion notification. Engine requires params.data to be a string."""
         notification = JsonRpcNotification(
             method="complete",
             params={
                 "request_id": request_id,
                 "success": success,
-                "data": data,
+                "data": _as_text(data),
                 "keep_session": keep_session
             }
         )

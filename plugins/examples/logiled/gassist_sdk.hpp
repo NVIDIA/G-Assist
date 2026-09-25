@@ -395,12 +395,20 @@ private:
     }
 
     void send_complete(int request_id, bool success, const json& data) {
+        json payload = data;
+        if (data.is_null()) {
+            payload = "";
+        } else if (!data.is_string()) {
+            // Engine requires complete.params.data to be natural-language text.
+            payload = data.dump();
+        }
+
         json notification;
         notification["jsonrpc"] = "2.0";
         notification["method"] = "complete";
         notification["params"]["request_id"] = request_id;
         notification["params"]["success"] = success;
-        notification["params"]["data"] = data;
+        notification["params"]["data"] = payload;
         notification["params"]["keep_session"] = m_keep_session;
         m_protocol.write_message(notification);
     }
