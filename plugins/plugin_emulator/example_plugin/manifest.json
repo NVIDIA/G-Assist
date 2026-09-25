@@ -4,7 +4,7 @@
     "description": "Example plugin demonstrating the protocol V2 SDK",
     "executable": "plugin.py",
     "persistent": false,
-    "passthrough": true,
+    "passthrough": false,
     "functions": [
         {
             "name": "example_greet",

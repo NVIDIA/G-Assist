@@ -318,10 +318,19 @@ def build_execute_request(
 
 
 def build_shutdown_request(request_id: int) -> JsonRpcRequest:
-    """Build a shutdown request"""
+    """Build a shutdown request (legacy). Prefer build_shutdown_notification()."""
     return JsonRpcRequest(
         method="shutdown",
         id=request_id,
+        params={}
+    )
+
+
+def build_shutdown_notification() -> JsonRpcRequest:
+    """Build a shutdown notification. Protocol V2 expects no id and no reply."""
+    return JsonRpcRequest(
+        method="shutdown",
+        id=None,
         params={}
     )
 

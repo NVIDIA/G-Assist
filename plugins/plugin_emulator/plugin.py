@@ -33,17 +33,31 @@ from .protocol import (
     build_initialize_request,
     build_execute_request,
     build_shutdown_request,
+    build_shutdown_notification,
     build_ping_request,
     build_input_request,
     MAX_MESSAGE_SIZE,
     HEARTBEAT_TIMEOUT_MS,
     EXECUTE_TIMEOUT_MS,
     PING_INTERVAL_MS,
+    PING_TIMEOUT_MS,
 )
 from .manifest import PluginManifest, FunctionDefinition
 
 
 logger = logging.getLogger(__name__)
+
+
+def _as_text(data: Any) -> str:
+    """Coerce complete/stream payload to a string. Engine requires NL text."""
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    try:
+        return json.dumps(data, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(data)
 
 
 class PluginState(Enum):
@@ -137,6 +151,7 @@ class Plugin:
         
         # Reader thread
         self._reader_thread: Optional[threading.Thread] = None
+        self._stderr_thread: Optional[threading.Thread] = None
         self._reader_running = False
         
         # Response queue for synchronous operations
@@ -203,7 +218,7 @@ class Plugin:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 cwd=self.directory,
                 env=env,
                 shell=False,
@@ -222,6 +237,13 @@ class Plugin:
                 daemon=True
             )
             self._reader_thread.start()
+
+            self._stderr_thread = threading.Thread(
+                target=self._drain_stderr,
+                name=f"PluginStderr-{self.name}",
+                daemon=True
+            )
+            self._stderr_thread.start()
             
             self.state = PluginState.RUNNING
             logger.info(f"Plugin '{self.name}' started (PID: {self._process.pid})")
@@ -337,18 +359,26 @@ class Plugin:
         
         self.state = PluginState.STOPPING
         
-        request = build_shutdown_request(self._next_request_id)
-        self._next_request_id += 1
+        # Protocol V2 shutdown is a notification: no id, no response.
+        notification = build_shutdown_notification()
+        self._send_request(notification)
         
-        response = self._send_and_wait(request, timeout_ms=5000)
+        if self._process:
+            try:
+                self._process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Plugin '{self.name}' did not exit after shutdown notification")
         
-        # Give plugin time to cleanup
-        time.sleep(0.5)
-        
-        # Force stop if still running
-        self.stop()
-        
-        return response
+        stopped = self.stop()
+        if stopped:
+            return PluginResponse(
+                success=True,
+                message="Plugin stopped"
+            )
+        return PluginResponse(
+            success=False,
+            message="Failed to stop plugin"
+        )
     
     def execute(
         self,
@@ -446,18 +476,23 @@ class Plugin:
     
     def send_ping(self) -> bool:
         """
-        Send ping to check plugin liveness.
+        Send ping and wait for a matching pong.
         
         Returns:
-            True if ping was sent successfully
+            True if a pong was received within PING_TIMEOUT_MS
         """
+        return self.ping_and_wait()
+    
+    def ping_and_wait(self, timeout_ms: int = PING_TIMEOUT_MS) -> bool:
+        """Send ping and wait for the plugin's JSON-RPC pong response."""
         if not self.is_running:
             return False
         
         request = build_ping_request(self._next_request_id)
         self._next_request_id += 1
         
-        return self._send_request(request)
+        response = self._send_and_wait(request, timeout_ms=timeout_ms)
+        return response.success
     
     def update_heartbeat(self):
         """Update the last heartbeat timestamp"""
@@ -546,6 +581,32 @@ class Plugin:
         
         return env
     
+    def _drain_stderr(self):
+        """Keep plugin stderr off the JSON-RPC stdout stream."""
+        try:
+            while self._reader_running and self._process and self._process.stderr:
+                chunk = self._process.stderr.read(256)
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.warning(f"Plugin '{self.name}' stderr: {text}")
+        except Exception:
+            pass
+    
+    def _queue_notification(self, request_id: Any, response: PluginResponse) -> None:
+        """Deliver complete/error to the matching pending request, or broadcast."""
+        if request_id is not None:
+            response_queue = self._pending_responses.get(request_id)
+            if response_queue is None:
+                logger.warning(
+                    f"Notification for unknown request_id {request_id} from plugin '{self.name}'"
+                )
+                return
+            response_queue.put(response)
+            return
+        for queue_obj in self._pending_responses.values():
+            queue_obj.put(response)
     def _send_request(self, request: JsonRpcRequest) -> bool:
         """Send a request without waiting for response"""
         if not self._process or not self._process.stdin:
@@ -734,19 +795,17 @@ class Plugin:
         """Handle a JSON-RPC response"""
         response = JsonRpcResponse.from_dict(msg)
         
-        # Check for pong
-        if response.result and isinstance(response.result, dict):
-            if "timestamp" in response.result:
-                # This is a pong response
-                logger.debug(f"Pong from plugin '{self.name}'")
-                return
-            
-            # Check for acknowledgment
-            if response.result.get("acknowledged"):
-                logger.debug(f"Acknowledgment from plugin '{self.name}'")
-                return
+        # Input acknowledgements are JSON-RPC responses on the same id as the
+        # later complete notification. Swallow them so execute/input waits for
+        # complete. Pong and initialize results must be queued.
+        if (
+            response.result
+            and isinstance(response.result, dict)
+            and response.result.get("acknowledged")
+        ):
+            logger.debug(f"Acknowledgment from plugin '{self.name}'")
+            return
         
-        # Route to pending request
         response_queue = self._pending_responses.get(response.id)
         if response_queue:
             plugin_response = PluginResponse(
@@ -764,28 +823,26 @@ class Plugin:
         """Handle a JSON-RPC notification"""
         notif = JsonRpcNotification.from_dict(msg)
         method = notif.method
-        params = notif.params
+        params = notif.params or {}
         
         if method == "stream":
-            # Streaming data
-            data = params.get("data", "")
+            data = _as_text(params.get("data", ""))
             if data:
                 self._current_full_response += data
                 if self._on_stream:
                     self._on_stream(data)
                     
         elif method == "complete":
-            # Command completed
             success = params.get("success", True)
-            data = params.get("data", "")
+            data = _as_text(params.get("data", ""))
             awaiting_input = params.get("keep_session", False)
+            request_id = params.get("request_id")
             
             if data:
                 self._current_full_response += data
             
             self._awaiting_input = awaiting_input
             
-            # Create and queue response
             response = PluginResponse(
                 success=success,
                 message=self._current_full_response,
@@ -793,17 +850,15 @@ class Plugin:
                 awaiting_input=awaiting_input
             )
             
-            # Route to any pending request
-            for queue_obj in self._pending_responses.values():
-                queue_obj.put(response)
+            self._queue_notification(request_id, response)
             
             if self._on_complete:
                 self._on_complete(success, self._current_full_response)
                 
         elif method == "error":
-            # Error notification
             code = params.get("code", -1)
             message = params.get("message", "Unknown error")
+            request_id = params.get("request_id")
             
             logger.error(f"Error from plugin '{self.name}': {message} (code={code})")
             
@@ -817,8 +872,7 @@ class Plugin:
                 error_code=code
             )
             
-            for queue_obj in self._pending_responses.values():
-                queue_obj.put(response)
+            self._queue_notification(request_id, response)
             
             if self._on_error:
                 self._on_error(message, code)
