@@ -1,0 +1,9 @@
+include:
+  - project: nvcarps/ci-group/nvcarps-ci
+    ref: main
+    file: /.gitlab/nvcarps-upstream-ci.yml
+
+variables:
+  NVCARPS_CI_TRIGGER_BRANCH: "main"
+  NVCARPS_CI_UPSTREAM_PROFILE: "external"
+  NVCARPS_CI_AUTO_SIGN: "true"
