@@ -142,15 +142,20 @@ Execute a plugin command/function.
 }
 ```
 
-Response (non-streaming):
+The plugin must **not** put the user-visible result in a JSON-RPC `result` on this
+request. Stream optional progress via `stream` notifications, then finish with a
+`complete` notification (see Plugin → Engine). `complete.params.data` is a
+**string** of natural-language text.
+
 ```json
 {
     "jsonrpc": "2.0",
-    "id": 3,
-    "result": {
+    "method": "complete",
+    "params": {
+        "request_id": 3,
         "success": true,
         "data": "The current NVIDIA stock price is...",
-        "keep_session": true
+        "keep_session": false
     }
 }
 ```
@@ -306,7 +311,7 @@ def search_web(query: str, context: list = None):
     """Search the web for information."""
     plugin.stream("Searching...")
     results = do_search(query)
-    return {"results": results}
+    return f"Found {len(results)} results."
 
 @plugin.command("get_weather")  
 def get_weather(location: str):

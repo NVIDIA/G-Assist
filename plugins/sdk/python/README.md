@@ -37,7 +37,7 @@ def search_web(query: str):
     """Search the web for information."""
     plugin.stream("Searching...")  # Send streaming update
     results = do_search(query)
-    return {"results": results}
+    return f"Found {len(results)} results."
 
 @plugin.command("get_weather")
 def get_weather(location: str):
@@ -465,17 +465,9 @@ LogLevel.ERROR
 
 ## Protocol Versions
 
-### V2 (Default)
-
-Uses JSON-RPC 2.0 with length-prefixed framing. Recommended for new plugins.
-
-### V1 (Legacy)
-
-Uses plain JSON with `<<END>>` delimiter. For backwards compatibility:
-
-```python
-plugin = Plugin("my-plugin", use_legacy_protocol=True)
-```
+G-Assist plugins use **Protocol V2** (JSON-RPC 2.0 with length-prefixed framing).
+The SDK no longer supports Protocol V1 (`<<END>>` framing). Legacy plugins must
+be migrated; see `PLUGIN_MIGRATION_GUIDE_V2.md`.
 
 ## Examples
 
@@ -494,7 +486,7 @@ Create a `manifest.json` alongside your plugin:
     "version": "1.0.0",
     "description": "My awesome plugin",
     "author": "Your Name",
-    "main": "plugin.py",
+    "executable": "plugin.py",
     "protocol_version": "2.0",
     "functions": [
         {
@@ -519,7 +511,7 @@ Create a `manifest.json` alongside your plugin:
 
 ### Plugin not responding
 
-Check `plugin_sdk.log` in the SDK directory for error messages.
+Check `gassist_sdk.log` in the plugin working directory for error messages. If that directory is not writable, the SDK writes the same file in the system temp directory instead.
 
 ### Commands not found
 
