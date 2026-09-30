@@ -97,7 +97,7 @@ class Protocol {
     }
 
     close() {
-        this.closed = false;
+        this.closed = true;
     }
 
     _readBytes(count) {
@@ -223,11 +223,9 @@ class Plugin {
         this.log('Starting plugin main loop');
         this.running = true;
 
-        // Set stdin to raw mode for binary reading
-        if (process.stdin.setRawMode) {
-            process.stdin.setRawMode(true);
-        }
-        process.stdin.resume();
+        // Length-prefixed JSON-RPC needs buffered binary reads. Do not call
+        // setEncoding; an encoding makes stdin emit strings instead of Buffers.
+        process.stdin.pause();
 
         while (this.running) {
             const message = await this.protocol.readMessage();
