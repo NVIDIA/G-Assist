@@ -35,8 +35,14 @@ class Context:
     messages: List[Message] = field(default_factory=list)
     
     @classmethod
-    def from_list(cls, data: List[Dict[str, str]]) -> "Context":
-        return cls(messages=[Message.from_dict(m) for m in data])
+    def from_list(cls, data: Any) -> "Context":
+        if not isinstance(data, list):
+            return cls()
+        messages = []
+        for item in data:
+            if isinstance(item, dict):
+                messages.append(Message.from_dict(item))
+        return cls(messages=messages)
     
     def last_user_message(self) -> Optional[str]:
         """Get the last user message content."""
@@ -55,7 +61,9 @@ class SystemInfo:
     raw: str = ""
     
     @classmethod
-    def from_string(cls, data: str) -> "SystemInfo":
+    def from_string(cls, data: Any) -> "SystemInfo":
+        if not isinstance(data, str):
+            data = "" if data is None else str(data)
         return cls(raw=data)
 
 

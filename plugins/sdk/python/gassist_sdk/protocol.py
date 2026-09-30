@@ -132,13 +132,18 @@ class Protocol:
                 # Serialize to JSON - use default handler to catch non-serializable objects
                 def safe_serialize(obj):
                     """Handle non-serializable objects by converting to string."""
-                    logger.warning(f"NON-SERIALIZABLE OBJECT: type={type(obj).__name__}, repr={repr(obj)[:200]}")
+                    logger.warning("Non-serializable object of type %s", type(obj).__name__)
                     return f"<non-serializable: {type(obj).__name__}>"
                 
                 payload = json.dumps(message, ensure_ascii=False, default=safe_serialize).encode("utf-8")
                 
-                # DEBUG: Log exactly what we're sending
-                logger.info(f"SENDING MESSAGE: {payload[:500]}")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Sending JSON-RPC message method=%s id=%s size=%d",
+                        message.get("method"),
+                        message.get("id"),
+                        len(payload),
+                    )
                 
                 if len(payload) > self.MAX_MESSAGE_SIZE:
                     logger.error(f"Message too large to send: {len(payload)} bytes")
