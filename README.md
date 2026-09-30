@@ -247,7 +247,6 @@ Explore our official example plugins:
 - **[Twitch](./plugins/examples/twitch)** - Check if streamers are live and get stream details
 
 ### Smart Lighting
-- **[Corsair iCUE](./plugins/examples/corsair)** - Control Corsair RGB peripheral lighting (keyboard, mouse, headset)
 - **[Logitech G HUB](./plugins/examples/logiled)** - Control Logitech G RGB peripheral lighting (keyboard, mouse, headset)
 - **[Nanoleaf](./plugins/examples/nanoleaf)** - Control Nanoleaf smart lighting panels
 - **[OpenRGB](./plugins/examples/openrgb)** - Universal RGB lighting control for multiple device brands
