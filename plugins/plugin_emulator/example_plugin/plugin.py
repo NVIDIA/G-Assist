@@ -52,18 +52,34 @@ def send_notification(method: str, params: dict):
     sys.stdout.buffer.flush()
 
 
-def stream(data: str):
+_active_request_id: Optional[int] = None
+
+
+def stream(data: str, request_id: Optional[int] = None):
     """Send streaming data to engine"""
-    send_notification("stream", {"data": data})
+    rid = request_id if request_id is not None else _active_request_id
+    params = {"data": data}
+    if rid is not None:
+        params["request_id"] = rid
+    send_notification("stream", params)
 
 
-def complete(success: bool = True, data: str = "", keep_session: bool = False):
+def complete(
+    success: bool = True,
+    data: str = "",
+    keep_session: bool = False,
+    request_id: Optional[int] = None,
+):
     """Signal completion to engine"""
-    send_notification("complete", {
+    rid = request_id if request_id is not None else _active_request_id
+    params = {
         "success": success,
         "data": data,
         "keep_session": keep_session
-    })
+    }
+    if rid is not None:
+        params["request_id"] = rid
+    send_notification("complete", params)
 
 
 def log(level: str, message: str):
@@ -71,9 +87,13 @@ def log(level: str, message: str):
     send_notification("log", {"level": level, "message": message})
 
 
-def error(code: int, message: str):
+def error(code: int, message: str, request_id: Optional[int] = None):
     """Send error notification to engine"""
-    send_notification("error", {"code": code, "message": message})
+    rid = request_id if request_id is not None else _active_request_id
+    params = {"code": code, "message": message}
+    if rid is not None:
+        params["request_id"] = rid
+    send_notification("error", params)
 
 
 # ============================================================================
@@ -256,14 +276,16 @@ class ExamplePlugin:
         params = msg.get("params", {})
         request_id = msg.get("id")
         
+        global _active_request_id
+        _active_request_id = request_id
         self._current_request_id = request_id
         
         if method == "initialize":
             result = self.handle_initialize(params)
             send_response(request_id, result)
         elif method == "shutdown":
-            result = self.handle_shutdown(params)
-            send_response(request_id, result)
+            self.handle_shutdown(params)
+            sys.exit(0)
         elif method == "ping":
             result = self.handle_ping(params)
             send_response(request_id, result)

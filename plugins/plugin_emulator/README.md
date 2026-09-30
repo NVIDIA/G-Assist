@@ -105,6 +105,14 @@ python -m plugin_emulator -d /path/to/plugins test \
     --expectation "Should return a helpful response"
 ```
 
+### Protocol contract tests
+
+Stdlib unit tests cover manifest schema parsing, complete/stream text coercion, shutdown notifications, and request_id routing (including a live fixture plugin):
+
+```bash
+python -m unittest discover -s plugins/plugin_emulator/tests -v
+```
+
 ## Startup Progress
 
 The emulator shows detailed progress during initialization:

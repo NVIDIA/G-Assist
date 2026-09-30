@@ -63,9 +63,18 @@ class FunctionDefinition:
         description = func_dict.get("description", "")
         tags = func_dict.get("tags", [])
         
-        # Parse parameters from JSON Schema format
+        # Parse parameters from JSON Schema format.
+        # Official examples (hello-world, gemini, ...) use top-level
+        # properties/required. The emulator's own example_plugin uses a nested
+        # parameters object. Accept both so the engine-side tool matches G-Assist.
         parameters = []
-        params_schema = func_dict.get("parameters", {})
+        params_schema = func_dict.get("parameters")
+        if not isinstance(params_schema, dict) or "properties" not in params_schema:
+            params_schema = {
+                "type": "object",
+                "properties": func_dict.get("properties", {}) or {},
+                "required": func_dict.get("required", []) or [],
+            }
         
         if isinstance(params_schema, dict):
             properties = params_schema.get("properties", {})
