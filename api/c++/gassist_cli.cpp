@@ -26,6 +26,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include "nvapi.h"
 
 // ============================================================================
@@ -96,23 +97,10 @@ static bool AllExpectedTypesComplete() {
 // WAV File Handling
 // ============================================================================
 
-#pragma pack(push, 1)
-struct WavHeader {
-    char riff[4];
-    uint32_t fileSize;
-    char wave[4];
-    char fmt[4];
-    uint32_t fmtSize;
-    uint16_t audioFormat;
-    uint16_t channels;
-    uint32_t sampleRate;
-    uint32_t byteRate;
-    uint16_t blockAlign;
-    uint16_t bitsPerSample;
-    char data[4];
-    uint32_t dataSize;
-};
-#pragma pack(pop)
+static bool ReadExact(std::ifstream& file, void* buffer, size_t size) {
+    file.read(reinterpret_cast<char*>(buffer), static_cast<std::streamsize>(size));
+    return static_cast<size_t>(file.gcount()) == size;
+}
 
 bool LoadWavFile(const std::string& filename, std::vector<int16_t>& samples, int& sampleRate, int& channels) {
     std::ifstream file(filename, std::ios::binary);
@@ -120,25 +108,118 @@ bool LoadWavFile(const std::string& filename, std::vector<int16_t>& samples, int
         return false;
     }
 
-    WavHeader header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(WavHeader));
+    char riff[4];
+    uint32_t chunkSize = 0;
+    char wave[4];
+    if (!ReadExact(file, riff, 4) || !ReadExact(file, &chunkSize, 4) || !ReadExact(file, wave, 4)) {
+        return false;
+    }
+    if (std::strncmp(riff, "RIFF", 4) != 0 || std::strncmp(wave, "WAVE", 4) != 0) {
+        return false;
+    }
+    (void)chunkSize;
+    uint16_t audioFormat = 0;
+    uint16_t channelCount = 0;
+    uint16_t bitsPerSample = 0;
+    uint32_t sampleRateValue = 0;
+    uint32_t dataSize = 0;
+    std::streampos dataPos = 0;
+    bool foundFmt = false;
+    bool foundData = false;
 
-    if (std::strncmp(header.riff, "RIFF", 4) != 0 || std::strncmp(header.wave, "WAVE", 4) != 0) {
+    while (file && !(foundFmt && foundData)) {
+        char chunkId[4];
+        uint32_t subchunkSize = 0;
+        if (!ReadExact(file, chunkId, 4) || !ReadExact(file, &subchunkSize, 4)) {
+            return false;
+        }
+
+        if (std::strncmp(chunkId, "fmt ", 4) == 0) {
+            if (subchunkSize < 16) {
+                return false;
+            }
+            if (!ReadExact(file, &audioFormat, 2) ||
+                !ReadExact(file, &channelCount, 2) ||
+                !ReadExact(file, &sampleRateValue, 4)) {
+                return false;
+            }
+            uint32_t byteRate = 0;
+            uint16_t blockAlign = 0;
+            if (!ReadExact(file, &byteRate, 4) ||
+                !ReadExact(file, &blockAlign, 2) ||
+                !ReadExact(file, &bitsPerSample, 2)) {
+                return false;
+            }
+            if (subchunkSize > 16) {
+                file.seekg(static_cast<std::streamoff>(subchunkSize - 16), std::ios::cur);
+            }
+            foundFmt = true;
+        } else if (std::strncmp(chunkId, "data", 4) == 0) {
+            dataSize = subchunkSize;
+            dataPos = file.tellg();
+            file.seekg(static_cast<std::streamoff>(subchunkSize), std::ios::cur);
+            foundData = true;
+        } else {
+            file.seekg(static_cast<std::streamoff>(subchunkSize), std::ios::cur);
+        }
+
+        if (subchunkSize % 2 == 1) {
+            file.seekg(1, std::ios::cur);
+        }
+    }
+
+    if (!foundFmt || !foundData || audioFormat != 1 || bitsPerSample != 16 || dataSize == 0) {
+        return false;
+    }
+    if (dataSize % sizeof(int16_t) != 0) {
         return false;
     }
 
-    if (header.audioFormat != 1 || header.bitsPerSample != 16) {
+    sampleRate = static_cast<int>(sampleRateValue);
+    channels = static_cast<int>(channelCount);
+
+    file.clear();
+    file.seekg(dataPos);
+    if (!file) {
         return false;
     }
-
-    sampleRate = header.sampleRate;
-    channels = header.channels;
-
-    size_t numSamples = header.dataSize / sizeof(int16_t);
+    size_t numSamples = dataSize / sizeof(int16_t);
     samples.resize(numSamples);
-    file.read(reinterpret_cast<char*>(samples.data()), header.dataSize);
+    if (!ReadExact(file, samples.data(), dataSize)) {
+        return false;
+    }
 
     return true;
+}
+
+// ============================================================================
+// JSON Helpers
+// ============================================================================
+
+static std::string EscapeJsonString(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    for (unsigned char ch : value) {
+        switch (ch) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    char buffer[7];
+                    std::snprintf(buffer, sizeof(buffer), "\\u%04x", ch);
+                    escaped += buffer;
+                } else {
+                    escaped += static_cast<char>(ch);
+                }
+                break;
+        }
+    }
+    return escaped;
 }
 
 // ============================================================================
@@ -448,7 +529,12 @@ std::string DoLLM(const std::string& prompt) {
     while (g_responseSemaphore.try_acquire()) {}
 
     // Build JSON request
-    std::string jsonRequest = "{\"prompt\":\"" + prompt + "\",\"context_assist\":{},\"client_config\":{}}";
+    std::string jsonRequest = "{\"prompt\":\"" + EscapeJsonString(prompt) +
+                              "\",\"context_assist\":{},\"client_config\":{}}";
+
+    if (jsonRequest.length() >= sizeof(NV_REQUEST_RISE_SETTINGS_V1::content)) {
+        return "ERROR: LLM prompt too long";
+    }
 
     // Send request
     NV_REQUEST_RISE_SETTINGS_V1 requestSettings = { 0 };
