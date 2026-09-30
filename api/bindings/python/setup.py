@@ -14,8 +14,8 @@ setup(
     ],
     include_package_data=True,        # Include files specified by MANIFEST.in (if any)
     package_data={
-        # Include the precompiled DLL file in the g-assist package.
-        "gassist": ["python_binding.dll"]
+        # Include the precompiled DLL in the installed rise package.
+        "rise": ["python_binding.dll"]
     },
     zip_safe=False  # Disables zip-safe mode; needed for binaries in some cases.
 )
