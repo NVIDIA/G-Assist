@@ -18,8 +18,10 @@ Provides a simple decorator-based API for building plugins:
 import logging
 import sys
 import os
+import queue
 import traceback
 import signal
+import threading
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 from dataclasses import dataclass, field
 
@@ -123,6 +125,10 @@ class Plugin:
         self._current_request_id: Optional[int] = None
         self._initialized = False
         self._keep_session = False
+        self._execute_lock = threading.Lock()
+        self._commands_lock = threading.Lock()
+        self._work_queue: "queue.Queue[Optional[JsonRpcRequest]]" = queue.Queue()
+        self._worker_thread: Optional[threading.Thread] = None
         
         # Register shutdown handler
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -143,11 +149,12 @@ class Plugin:
             cmd_name = name or func.__name__
             cmd_desc = description or func.__doc__ or ""
             
-            self._commands[cmd_name] = CommandInfo(
-                name=cmd_name,
-                handler=func,
-                description=cmd_desc
-            )
+            with self._commands_lock:
+                self._commands[cmd_name] = CommandInfo(
+                    name=cmd_name,
+                    handler=func,
+                    description=cmd_desc
+                )
             
             logger.debug(f"Registered command: {cmd_name}")
             return func
@@ -210,6 +217,12 @@ class Plugin:
         # Initialize V2 protocol
         self._protocol = Protocol()
         self._running = True
+        self._worker_thread = threading.Thread(
+            target=self._execute_worker,
+            name="gassist-execute",
+            daemon=True,
+        )
+        self._worker_thread.start()
         
         try:
             self._run_loop()
@@ -219,18 +232,36 @@ class Plugin:
             logger.error(f"Unexpected error: {e}\n{traceback.format_exc()}")
         finally:
             self._running = False
+
+            # Drop any queued execute/input requests; we're shutting down.
+            try:
+                while True:
+                    self._work_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+            self._work_queue.put(None)
+            if self._worker_thread is not None:
+                self._worker_thread.join(timeout=2.0)
             logger.info(f"Plugin '{self.name}' stopped")
     
     def _run_loop(self):
-        """Main loop for V2 (JSON-RPC) protocol."""
+        """Main loop for V2 (JSON-RPC) protocol.
+
+        Ping/initialize/shutdown stay on this thread so a long command cannot
+        miss the engine watchdog (ping timeout is 1s; two misses kill the plugin).
+        """
         while self._running:
             try:
                 request = self._protocol.read_message()
                 if request is None:
                     break
-                
-                self._handle_request(request)
-                
+
+                if request.method in ("execute", "input"):
+                    self._work_queue.put(request)
+                else:
+                    self._handle_request(request)
+
             except ConnectionClosed:
                 break
             except ProtocolError as e:
@@ -238,6 +269,22 @@ class Plugin:
                 # Continue trying to read next message
             except Exception as e:
                 logger.error(f"Error processing message: {e}\n{traceback.format_exc()}")
+
+    def _execute_worker(self):
+        """Drain execute/input requests on a single worker thread."""
+        while True:
+            request = self._work_queue.get()
+            if request is None:
+                return
+            self._handle_request_safe(request)
+
+    def _handle_request_safe(self, request: JsonRpcRequest):
+        """Run execute/input on a worker without racing another command."""
+        try:
+            with self._execute_lock:
+                self._handle_request(request)
+        except Exception as e:
+            logger.error(f"Error processing {request.method}: {e}\n{traceback.format_exc()}")
     
     def _handle_request(self, request: JsonRpcRequest):
         """Handle a JSON-RPC request."""
@@ -285,8 +332,10 @@ class Plugin:
         logger.info(f"Initializing with engine version: {params.get('engine_version', 'unknown')}")
         
         # Debug: Log command info before building response
+        with self._commands_lock:
+            commands = list(self._commands.values())
         commands_list = []
-        for cmd in self._commands.values():
+        for cmd in commands:
             logger.debug(f"Command '{cmd.name}': description type={type(cmd.description).__name__}, value={repr(cmd.description)[:100]}")
             commands_list.append({
                 "name": cmd.name,
@@ -322,7 +371,8 @@ class Plugin:
         logger.info(f"Executing command: {function_name}")
         
         # Find command handler
-        cmd = self._commands.get(function_name)
+        with self._commands_lock:
+            cmd = self._commands.get(function_name)
         if cmd is None:
             response = JsonRpcResponse.make_error(
                 request.id,
@@ -373,7 +423,8 @@ class Plugin:
         
         try:
             # Find a handler for user input
-            handler = self._commands.get("on_input")
+            with self._commands_lock:
+                handler = self._commands.get("on_input")
             
             if handler:
                 result = self._call_handler(handler.handler, {"content": content}, None, None)
@@ -576,6 +627,8 @@ class MCPPlugin(Plugin):
         
         # Session manager (created after MCP client)
         self._session_manager: Optional["MCPSessionManager"] = None
+        self._session_stop_requested = False
+        self._session_lifecycle_lock = threading.Lock()
         
         # Discovery function (set via decorator)
         self._discoverer: Optional[Callable[["MCPClient"], List["FunctionDef"]]] = None
@@ -666,38 +719,56 @@ class MCPPlugin(Plugin):
     
     def run(self):
         """Start plugin with auto-discovery and session management."""
-        self._startup_discovery()
-        self._start_session_manager()
+        discovery = threading.Thread(
+            target=self._startup_discovery_and_session,
+            name="gassist-mcp-discovery",
+            daemon=True,
+        )
+        discovery.start()
         try:
             super().run()
         finally:
-            self._stop_session_manager()
+            with self._session_lifecycle_lock:
+                self._session_stop_requested = True
+                self._stop_session_manager_unlocked()
+
+    def _startup_discovery_and_session(self):
+        """Discover MCP tools without blocking initialize/ping."""
+        self._startup_discovery()
+        self._start_session_manager()
     
     def _start_session_manager(self):
         """Start the session manager for auto-refresh and polling."""
-        if not self.mcp or (not self._auto_refresh_session and self._poll_interval <= 0):
-            return
+        with self._session_lifecycle_lock:
+            if self._session_stop_requested:
+                return
+            if not self.mcp or (not self._auto_refresh_session and self._poll_interval <= 0):
+                return
         
-        from .mcp import MCPSessionManager
+            from .mcp import MCPSessionManager
         
-        # Use action_poller if provided (for dynamic data like Stream Deck actions)
-        # Otherwise use default MCP tools/list polling
-        custom_poll_fn = self._action_poller if self._action_poller else None
+            # Use action_poller if provided (for dynamic data like Stream Deck actions)
+            # Otherwise use default MCP tools/list polling
+            custom_poll_fn = self._action_poller if self._action_poller else None
         
-        self._session_manager = MCPSessionManager(
-            client=self.mcp,
-            poll_interval=self._poll_interval if (self._discoverer or self._action_poller) else 0,
-            session_refresh_margin=self._session_refresh_margin,
-            on_tools_changed=self._on_tools_changed,
-            on_session_refreshed=self._on_session_refreshed,
-            on_error=self._on_session_error,
-            custom_poll_fn=custom_poll_fn
-        )
-        self._session_manager.start()
-        logger.info(f"Session manager started (custom_poll={'yes' if custom_poll_fn else 'no'})")
+            self._session_manager = MCPSessionManager(
+                client=self.mcp,
+                poll_interval=self._poll_interval if (self._discoverer or self._action_poller) else 0,
+                session_refresh_margin=self._session_refresh_margin,
+                on_tools_changed=self._on_tools_changed,
+                on_session_refreshed=self._on_session_refreshed,
+                on_error=self._on_session_error,
+                custom_poll_fn=custom_poll_fn
+            )
+            self._session_manager.start()
+            logger.info(f"Session manager started (custom_poll={'yes' if custom_poll_fn else 'no'})")
     
     def _stop_session_manager(self):
         """Stop the session manager."""
+        with self._session_lifecycle_lock:
+            self._stop_session_manager_unlocked()
+
+    def _stop_session_manager_unlocked(self):
         if self._session_manager:
             self._session_manager.stop()
             self._session_manager = None
@@ -791,11 +862,12 @@ class MCPPlugin(Plugin):
                 return handler
             
             # Register as plugin command
-            self._commands[func.name] = CommandInfo(
-                name=func.name,
-                handler=make_handler(func.name),
-                description=func.description
-            )
+            with self._commands_lock:
+                self._commands[func.name] = CommandInfo(
+                    name=func.name,
+                    handler=make_handler(func.name),
+                    description=func.description
+                )
             
             logger.debug(f"Registered command: {func.name}")
     
@@ -831,11 +903,12 @@ class MCPPlugin(Plugin):
                 return handler
             
             # Register as command
-            self._commands[name] = CommandInfo(
-                name=name,
-                handler=make_lazy_handler(name),
-                description=func_data.get("description", "")
-            )
+            with self._commands_lock:
+                self._commands[name] = CommandInfo(
+                    name=name,
+                    handler=make_lazy_handler(name),
+                    description=func_data.get("description", "")
+                )
             
             logger.debug(f"Loaded cached command: {name}")
     
