@@ -31,7 +31,8 @@
                     "type": "string",
                     "description": "[optional] artist - the string of the name of the artist. Usually denoted by the word 'by' in a query. For example, in the query that asks 'Play 'Shake it Off' by Taylor Swift', the artist name is 'Taylor Swift'."
                 }
-            }
+            },
+            "required": []
         },
         {
             "name": "spotify_pause_playback",
@@ -40,7 +41,8 @@
                 "music",
                 "pause",
                 "stop"
-            ]
+            ],
+            "required": []
         },
         {
             "name": "spotify_next_track",
@@ -49,7 +51,8 @@
                 "music",
                 "skip",
                 "next"
-            ]
+            ],
+            "required": []
         },
         {
             "name": "spotify_previous_track",
@@ -59,7 +62,8 @@
                 "previous",
                 "back",
                 "replay"
-            ]
+            ],
+            "required": []
         },
         {
             "name": "spotify_shuffle_playback",
@@ -74,7 +78,8 @@
                     "type": "boolean",
                     "description": "State in which shuffle should be set to. 'true' is to shuffle user's playback. 'false' is to not shuffle user's playback."
                 }
-            }
+            },
+            "required": []
         },
         {
             "name": "spotify_set_volume",
@@ -90,7 +95,8 @@
                     "type": "number",
                     "description": "The volume to set. Must be a value from 0 to 100 inclusive."
                 }
-            }
+            },
+            "required": []
         },
         {
             "name": "spotify_get_currently_playing",
@@ -100,7 +106,8 @@
                 "current",
                 "playing",
                 "now"
-            ]
+            ],
+            "required": []
         },
         {
             "name": "spotify_queue_track",
@@ -115,13 +122,14 @@
                 },
                 "name": {
                     "type": "string",
-                    "description": "[optional] name - the string of the name of album, track or playlist"
+                    "description": "The name of the album, track, or playlist to queue"
                 },
                 "artist": {
                     "type": "string",
                     "description": "[optional] artist - the string of the name of the artist"
                 }
-            }
+            },
+            "required": ["name"]
         },
         {
             "name": "spotify_get_user_playlists",
@@ -137,7 +145,8 @@
                     "type": "number",
                     "description": "[optional] limit - the number of playlists to return. The default limit is 10."
                 }
-            }
+            },
+            "required": []
         }
     ]
 }

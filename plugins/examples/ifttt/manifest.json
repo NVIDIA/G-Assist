@@ -27,7 +27,8 @@
           "type": "string",
           "description": "The IFTTT event name to trigger"
         }
-      }
+      },
+      "required": []
     }
   ],
   "tethered": true,

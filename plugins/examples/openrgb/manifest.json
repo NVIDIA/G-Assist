@@ -14,7 +14,8 @@
         "openrgb",
         "devices",
         "list"
-      ]
+      ],
+      "required": []
     },
     {
       "name": "disable_lighting",
@@ -23,7 +24,8 @@
         "openrgb",
         "lighting",
         "off"
-      ]
+      ],
+      "required": []
     },
     {
       "name": "set_color",
@@ -43,7 +45,8 @@
           "type": "string",
           "description": "Color value to set "
         }
-      }
+      },
+      "required": ["color_name"]
     },
     {
       "name": "set_mode",
@@ -63,7 +66,8 @@
           "type": "string",
           "description": "Name of the effect to set"
         }
-      }
+      },
+      "required": ["effect_name"]
     }
   ],
   "tethered": true,
