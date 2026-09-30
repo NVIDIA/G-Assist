@@ -33,7 +33,8 @@
           "type": "string",
           "description": "The Twitch username to check (without the @ symbol). Example: 'ninja', 'shroud', 'pokimane'."
         }
-      }
+      },
+      "required": ["username"]
     }
   ]
 }

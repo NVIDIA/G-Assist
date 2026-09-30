@@ -152,7 +152,7 @@ Pass the transport to `MCPPlugin` instead of a URL:
 from gassist_sdk import MCPPlugin
 
 plugin = MCPPlugin(
-    name="mcp-stdio-filesystem",
+    name="mcp-stdio-example",
     version="1.0.0",
     mcp_transport=stdio_transport,
 )

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "name": "mcp-stdio-filesystem",
+  "name": "mcp-stdio-example",
   "version": "1.0.0",
   "description": "G-Assist plugin that connects to mcp-server-filesystem over stdio, providing file read/write/edit/list/move/delete operations.",
   "executable": "plugin.py",
@@ -351,6 +351,16 @@
       "tags": [
         "list_allowed_directories",
         "filesystem",
+        "mcp",
+        "stdio"
+      ]
+    },
+    {
+      "name": "plugin_status",
+      "description": "Show the plugin status, connected MCP server info, and allowed directories.",
+      "tags": [
+        "plugin_status",
+        "status",
         "mcp",
         "stdio"
       ]
